@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Safe Audit Agents</title>
+    <link rel="stylesheet" href="/styles.css?v=20260422-llm-progress" />
+  </head>
+  <body>
+    <canvas id="particle-field" aria-hidden="true"></canvas>
+    <div class="page-grain" aria-hidden="true"></div>
+
+    <main class="shell">
+      <section class="hero hero-grid">
+        <div class="hero-copy">
+          <p class="eyebrow">Frontend Access</p>
+          <h1>本地代码审计工作台</h1>
+          <p class="lede">支持两种入口：先从 GitHub 发现候选开源 CMS，或者直接导入你本地有权审计的代码仓库。进入审计阶段后，系统会先把选中的目标镜像到本地，再执行规则层和大模型复核，最后导出 HTML 报告。</p>
+          <div class="hero-strip">
+            <div class="hero-pill">
+              <strong>阶段 1</strong>
+              <span>发现或导入目标</span>
+            </div>
+            <div class="hero-pill">
+              <strong>阶段 2</strong>
+              <span>选择 Skill 与目标</span>
+            </div>
+            <div class="hero-pill">
+              <strong>阶段 3</strong>
+              <span>规则层 + LLM 复核</span>
+            </div>
+          </div>
+        </div>
+        <aside class="hero-status panel compact-panel">
+          <h2>快速状态</h2>
+          <div id="quick-status" class="status-grid">
+            <div class="status-card"><strong>LLM</strong><span>加载中</span></div>
+            <div class="status-card"><strong>GitHub</strong><span>加载中</span></div>
+            <div class="status-card"><strong>记忆</strong><span>加载中</span></div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head wrap-head">
+          <div>
+            <h2>连接设置</h2>
+            <p id="settings-summary" class="note">正在读取连接设置…</p>
+          </div>
+          <div class="button-row">
+            <button id="settings-refresh-button" class="ghost" type="button">刷新设置</button>
+            <button id="settings-test-button" class="ghost" type="button">测试连接</button>
+            <button id="clear-llm-button" class="ghost danger" type="button">清空 LLM Key</button>
+            <button id="clear-github-button" class="ghost danger" type="button">清空 GitHub Token</button>
+          </div>
+        </div>
+        <form id="settings-form" class="memory-form settings-grid">
+          <label>
+            LLM 提供商
+            <select name="providerId">
+              <option value="openai">OpenAI / Compatible</option>
+              <option value="compatible">OpenAI-Compatible Gateway</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="gemini">Gemini</option>
+              <option value="deepseek">DeepSeek</option>
+              <option value="qwen">Qwen</option>
+            </select>
+          </label>
+          <label>
+            LLM Base URL
+            <input name="baseUrl" placeholder="https://api.openai.com/v1" />
+          </label>
+          <label>
+            LLM 模型名
+            <input name="model" placeholder="gpt-4.1-mini" />
+          </label>
+          <label>
+            LLM API Key
+            <input name="apiKey" type="password" placeholder="留空则保留现有值" />
+          </label>
+          <label>
+            GitHub Token
+            <input name="githubToken" type="password" placeholder="留空则保留现有值" />
+          </label>
+          <label>
+            GitHub Owner 过滤
+            <input name="ownerFilter" placeholder="可选，例如 strapi" />
+          </label>
+          <label class="full-span">
+            备注
+            <textarea name="githubNotes" rows="3" placeholder="例如：公司 PAT，仅用于提高抓取稳定性"></textarea>
+          </label>
+          <div class="form-footer full-span">
+            <span class="mini-note">切换提供商时会自动填充推荐的 Base URL 和默认模型。</span>
+            <button type="submit">保存连接设置</button>
+          </div>
+        </form>
+        <div id="connection-test-result" class="detail empty small-detail">连接测试结果会显示在这里。</div>
+      </section>
+
+      <section class="panel launch-panel">
+        <div class="panel-head wrap-head">
+          <div>
+            <h2>启动审计任务</h2>
+            <p class="note">你可以先从 GitHub 发现候选目标，也可以直接导入本地仓库后再选择要审计的对象。</p>
+          </div>
+        </div>
+
+        <form id="task-form" class="memory-form">
+          <div class="source-switch">
+            <label class="source-card">
+              <input name="sourceType" type="radio" value="github" checked />
+              <div>
+                <strong>GitHub 候选发现</strong>
+                <span>适合先看一批公开 CMS 候选，再手动挑选目标进入镜像审计。</span>
+              </div>
+            </label>
+            <label class="source-card">
+              <input name="sourceType" type="radio" value="local" />
+              <div>
+                <strong>本地仓库导入</strong>
+                <span>适合直接导入你本地有权审计的仓库，并启用 LLM 二次复核。</span>
+              </div>
+            </label>
+          </div>
+
+          <div id="github-launch-fields" class="launch-fields">
+            <p class="mini-note mode-note">GitHub 候选发现阶段不会直接调用大模型。等你选中目标并开始审计后，系统会先下载本地审计镜像，再执行规则层和 LLM 复核。</p>
+            <div class="chip-row">
+              <button class="chip" data-query="topic:cms language:TypeScript" type="button">TypeScript CMS</button>
+              <button class="chip" data-query='"headless cms" language:JavaScript' type="button">Headless CMS</button>
+              <button class="chip" data-query="topic:cms language:PHP" type="button">PHP CMS</button>
+              <button class="chip" data-query='"content management system" archived:false' type="button">全部 CMS</button>
+            </div>
+            <div class="task-form task-form-wide">
+              <label>
+                GitHub 查询
+                <input name="query" value='topic:cms OR "headless cms" OR "content management system"' />
+              </label>
+              <label>
+                最低存活量
+                <input name="minAdoption" type="number" min="100" value="100" />
+              </label>
+              <label class="checkbox-row inline-check">
+                <input name="useMemory" type="checkbox" checked />
+                启用项目记忆
+              </label>
+            </div>
+          </div>
+
+          <div id="local-launch-fields" class="launch-fields hidden-panel">
+            <label>
+              本地仓库路径
+              <textarea name="localRepoPaths" rows="4" placeholder="每行一个绝对路径，例如：&#10;D:\\projects\\cms-a&#10;D:\\audit\\demo-site"></textarea>
+            </label>
+            <p class="mini-note">导入本地仓库后，系统会先在工作区生成过滤后的源码镜像，再执行规则审计和 LLM 二次复核。</p>
+          </div>
+
+          <div class="panel-subsection">
+            <div class="panel-head wrap-head">
+              <div>
+                <h3>审计 Skill</h3>
+                <p class="note">这些 Skill 是内置的防御性代码审计规则，不会从外部 GitHub 自动抓取。</p>
+              </div>
+              <div class="button-row">
+                <button id="select-all-skills-button" class="ghost" type="button">全选 Skill</button>
+                <button id="clear-skills-button" class="ghost" type="button">清空 Skill</button>
+              </div>
+            </div>
+            <div id="skill-picker" class="skill-grid">
+              <div class="empty-card">正在加载 Skill 列表…</div>
+            </div>
+          </div>
+
+          <div class="form-footer">
+            <span class="mini-note">GitHub 模式会先发现候选目标，审计时再下载镜像；本地模式会先导入仓库并直接进入镜像审计。</span>
+            <button id="task-submit-button" type="submit">启动任务</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>环境自检</h2>
+          <button id="env-refresh-button" class="ghost" type="button">重新检测</button>
+        </div>
+        <div id="env-report" class="detail empty">正在检测运行环境…</div>
+      </section>
+
+      <section class="grid memory-grid">
+        <article class="panel">
+          <div class="panel-head">
+            <h2>项目记忆</h2>
+            <button id="memory-refresh-button" class="ghost" type="button">刷新记忆</button>
+          </div>
+          <div id="memory-view" class="detail empty">正在读取项目记忆…</div>
+        </article>
+
+        <article class="panel">
+          <h2>团队规则</h2>
+          <form id="memory-form" class="memory-form">
+            <label>
+              默认查询
+              <input name="preferredQuery" value='topic:cms OR "headless cms" OR "content management system"' />
+            </label>
+            <label>
+              默认阈值
+              <input name="preferredMinAdoption" type="number" min="100" value="100" />
+            </label>
+            <label>
+              审计规则
+              <textarea name="rules" rows="8"></textarea>
+            </label>
+            <button type="submit">保存记忆与规则</button>
+          </form>
+        </article>
+      </section>
+
+      <section class="grid results-grid">
+        <article class="panel">
+          <div class="panel-head">
+            <h2>任务状态</h2>
+            <button id="refresh-button" class="ghost" type="button">刷新</button>
+          </div>
+          <div id="task-list" class="stack"></div>
+        </article>
+
+        <article class="panel detail-panel">
+          <h2>目标选择与报告</h2>
+          <div id="task-detail" class="detail empty">先启动一次任务，然后在这里选择要审计的项目并查看规则层与 LLM 复核结果。</div>
+        </article>
+      </section>
+    </main>
+
+    <div id="toast" class="toast hidden"></div>
+    <script type="module" src="/app.js?v=20260422-llm-progress"></script>
+  </body>
+</html>

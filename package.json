@@ -1,0 +1,10 @@
+{
+  "name": "safe-framework-audit-agents",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Frontend-accessible dual-agent workflow for safe OSS intelligence and defensive code auditing.",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

@@ -28,18 +28,6 @@ const SAMPLE_REPOS = [
     topics: ["cms", "headless-cms", "content-api"]
   },
   {
-    full_name: "keystonejs/keystone",
-    html_url: "https://github.com/keystonejs/keystone",
-    description: "The most powerful headless CMS for Node.js.",
-    stargazers_count: 9700,
-    forks_count: 1200,
-    language: "TypeScript",
-    updated_at: "2026-04-04T15:30:00Z",
-    pushed_at: "2026-04-08T11:45:00Z",
-    default_branch: "main",
-    topics: ["cms", "headless-cms", "graphql"]
-  },
-  {
     full_name: "payloadcms/payload",
     html_url: "https://github.com/payloadcms/payload",
     description: "TypeScript headless CMS and application framework.",
@@ -52,17 +40,25 @@ const SAMPLE_REPOS = [
     topics: ["cms", "headless-cms", "typescript"]
   },
   {
-    full_name: "appwrite/appwrite",
-    html_url: "https://github.com/appwrite/appwrite",
-    description: "Build like a team of hundreds with a full platform and admin control plane.",
-    stargazers_count: 47000,
-    forks_count: 4200,
-    language: "TypeScript",
-    updated_at: "2026-04-02T10:00:00Z",
-    pushed_at: "2026-04-07T18:20:00Z",
+    full_name: "wagtail/wagtail",
+    html_url: "https://github.com/wagtail/wagtail",
+    description: "A Django content management system focused on flexibility and user experience.",
+    stargazers_count: 20000,
+    forks_count: 4500,
+    language: "Python",
+    updated_at: "2026-04-07T10:00:00Z",
+    pushed_at: "2026-04-08T18:20:00Z",
     default_branch: "main",
-    topics: ["cms", "admin-panel", "backend"]
+    topics: ["cms", "enterprise", "editorial"]
   }
+];
+
+const SEARCH_PROFILES = [
+  { label: "cms-ts", query: "topic:cms language:TypeScript archived:false" },
+  { label: "headless-js", query: '"headless cms" language:JavaScript archived:false' },
+  { label: "headless-ts", query: '"headless cms" language:TypeScript archived:false' },
+  { label: "cms-php", query: "topic:cms language:PHP archived:false" },
+  { label: "content-platform", query: '"content management system" archived:false stars:>20' }
 ];
 
 const CMS_KEYWORDS = [
@@ -78,13 +74,25 @@ const CMS_KEYWORDS = [
   "editorial"
 ];
 
-const SEARCH_PROFILES = [
-  { label: "cms-ts", query: "topic:cms language:TypeScript archived:false" },
-  { label: "headless-js", query: '"headless cms" language:JavaScript archived:false' },
-  { label: "headless-ts", query: '"headless cms" language:TypeScript archived:false' },
-  { label: "cms-php", query: "topic:cms language:PHP archived:false" },
-  { label: "content-platform", query: '"content management system" archived:false stars:>20' }
-];
+const CMS_TYPE_KEYWORDS = {
+  all: [],
+  headless: ["headless", "api-first", "content api", "content-api"],
+  blog: ["blog", "publishing", "editorial", "news"],
+  ecommerce: ["ecommerce", "e-commerce", "shop", "storefront", "shopping"],
+  enterprise: ["enterprise", "digital experience", "portal", "dxp"],
+  education: ["lms", "education", "learning", "course"],
+  flatfile: ["flat-file", "flat file", "markdown"]
+};
+
+const INDUSTRY_KEYWORDS = {
+  all: [],
+  education: ["education", "learning", "course", "student", "campus"],
+  ecommerce: ["ecommerce", "store", "shop", "product", "catalog"],
+  media: ["media", "editorial", "news", "publishing", "magazine"],
+  enterprise: ["enterprise", "portal", "workflow", "business"],
+  government: ["government", "public sector", "civic", "municipal"],
+  community: ["forum", "community", "member", "social"]
+};
 
 const REVIEWABLE_EXTENSIONS = new Set([
   ".ts",
@@ -133,17 +141,23 @@ export class FrameworkScoutAgent {
     this.getGithubConfig = getGithubConfig || (() => ({}));
   }
 
-  async run({ query }) {
+  async run({ query, cmsType = "all", industry = "all", minAdoption = 0 }) {
     const source = await this.fetchTrendingFrameworks(query);
     const projects = [];
 
     for (const repo of source) {
-      projects.push(await this.materializeProject(repo));
+      const project = await this.materializeProject(repo);
+      if (!matchesProjectFilters(project, { cmsType, industry, minAdoption })) {
+        continue;
+      }
+      projects.push(project);
     }
 
     return {
       sourceMode: source === SAMPLE_REPOS ? "sample-fallback" : "live-github",
       query: normalizeCmsQuery(query),
+      cmsType,
+      industry,
       discoveredAt: new Date().toISOString(),
       summary: `已发现 ${projects.length} 个候选开源 CMS。选择目标后会先下载审计镜像，再执行规则层和 LLM 复核。`,
       projects
@@ -182,7 +196,6 @@ export class FrameworkScoutAgent {
         successCount += 1;
         const data = await response.json();
         const items = Array.isArray(data.items) ? data.items : [];
-
         for (const repo of items) {
           if (!isCmsLike(repo)) {
             continue;
@@ -212,6 +225,7 @@ export class FrameworkScoutAgent {
     const [owner, name] = repo.full_name.split("/");
     const estimatedLiveUsage = this.estimateLiveUsage(repo);
     const archiveFileName = `${owner}__${name}.json`;
+    const traits = inferProjectTraits(repo);
 
     return {
       id: `${owner}-${name}`,
@@ -226,6 +240,9 @@ export class FrameworkScoutAgent {
       updatedAt: repo.updated_at,
       pushedAt: repo.pushed_at,
       downloadArtifact: archiveFileName,
+      cmsType: traits.cmsType,
+      industries: traits.industries,
+      tags: traits.tags,
       adoptionSignals: {
         stars: repo.stargazers_count || 0,
         forks: repo.forks_count || 0,
@@ -439,7 +456,7 @@ export class FrameworkScoutAgent {
         }
       }
     } catch {
-      // Ignore metadata lookup failure and fall back to common branch names.
+      // ignore
     }
 
     return [...new Set(refs.filter(Boolean))];
@@ -447,7 +464,6 @@ export class FrameworkScoutAgent {
 
   async fetchGithubResource(url, token) {
     let lastError = null;
-
     for (let attempt = 0; attempt < FETCH_RETRY_LIMIT; attempt += 1) {
       try {
         let response = await fetch(url, { headers: this.buildGithubHeaders(token) });
@@ -459,13 +475,11 @@ export class FrameworkScoutAgent {
         lastError = error;
       }
     }
-
     throw lastError || new Error("GitHub request failed");
   }
 
   async fetchRawResource(url, token) {
     let lastError = null;
-
     for (let attempt = 0; attempt < FETCH_RETRY_LIMIT; attempt += 1) {
       try {
         let response = await fetch(url, { headers: this.buildRawHeaders(token) });
@@ -477,7 +491,6 @@ export class FrameworkScoutAgent {
         lastError = error;
       }
     }
-
     throw lastError || new Error("Raw file request failed");
   }
 
@@ -492,7 +505,7 @@ export class FrameworkScoutAgent {
     return headers;
   }
 
-  buildRawHeaders(token) {
+  buildRawHeaders() {
     return { "User-Agent": "safe-framework-audit-agents" };
   }
 
@@ -549,6 +562,29 @@ function scoreRepo(repo) {
   return stars * 1.05 + forks * 2.15 + keywordBoost + freshnessBoost;
 }
 
+function inferProjectTraits(repo) {
+  const text = `${repo.full_name || ""} ${repo.description || ""} ${(repo.topics || []).join(" ")}`.toLowerCase();
+  const cmsType = Object.entries(CMS_TYPE_KEYWORDS).find(([key, values]) => key !== "all" && values.some((value) => text.includes(value)))?.[0] || "generic";
+  const industries = Object.entries(INDUSTRY_KEYWORDS)
+    .filter(([key, values]) => key !== "all" && values.some((value) => text.includes(value)))
+    .map(([key]) => key);
+  const tags = Array.from(new Set([...(repo.topics || []), cmsType, ...(industries.length ? industries : ["general"])]));
+  return { cmsType, industries: industries.length ? industries : ["general"], tags };
+}
+
+function matchesProjectFilters(project, { cmsType, industry, minAdoption }) {
+  if (Number(project.adoptionSignals?.estimatedLiveUsage || 0) < Number(minAdoption || 0)) {
+    return false;
+  }
+  if (cmsType && cmsType !== "all" && project.cmsType !== cmsType) {
+    return false;
+  }
+  if (industry && industry !== "all" && !(project.industries || []).includes(industry)) {
+    return false;
+  }
+  return true;
+}
+
 function shouldIncludePath(filePath) {
   const lowered = filePath.toLowerCase();
   if (IGNORED_SEGMENTS.some((segment) => lowered.includes(segment))) {
@@ -579,7 +615,7 @@ function shouldIncludePath(filePath) {
     "schema"
   ];
 
-  return REVIEWABLE_EXTENSIONS.has(path.extname(filePath).toLowerCase()) && interestingNames.some((name) => lowered.includes(name));
+  return REVIEWABLE_EXTENSIONS.has(path.extname(lowered)) && interestingNames.some((token) => lowered.includes(token));
 }
 
 function shouldMirrorPath(filePath) {
@@ -588,72 +624,60 @@ function shouldMirrorPath(filePath) {
     return false;
   }
 
-  if (!REVIEWABLE_EXTENSIONS.has(path.extname(filePath).toLowerCase())) {
-    return false;
-  }
+  const boostedSegments = [
+    "auth",
+    "login",
+    "session",
+    "permission",
+    "policy",
+    "upload",
+    "storage",
+    "admin",
+    "config",
+    "controller",
+    "route",
+    "api",
+    "middleware",
+    "access",
+    "rbac",
+    "role",
+    "plugin",
+    "graphql",
+    "bootstrap",
+    "seed",
+    "schema",
+    "security"
+  ];
 
-  return /(auth|permission|policy|access|role|admin|upload|secret|config|route|controller|service|plugin|bootstrap|seed|schema|collection|api|middleware|query|db|database|graphql|resolver)/.test(lowered);
+  return REVIEWABLE_EXTENSIONS.has(path.extname(lowered)) && boostedSegments.some((token) => lowered.includes(token));
 }
 
 function rankPath(filePath) {
   const lowered = filePath.toLowerCase();
   let score = 0;
-
-  for (const keyword of ["auth", "permission", "policy", "access", "admin", "route", "upload", "rbac", "role", "bootstrap", "seed"]) {
-    if (lowered.includes(keyword)) {
-      score += 3;
-    }
-  }
-
-  for (const keyword of ["config", "schema", "plugin", "middleware", "api", "controller", "collection"]) {
-    if (lowered.includes(keyword)) {
-      score += 2;
-    }
-  }
-
+  if (/auth|permission|policy|access|role/.test(lowered)) score += 90;
+  if (/upload|storage|asset/.test(lowered)) score += 75;
+  if (/admin|route|controller|middleware|graphql|api/.test(lowered)) score += 60;
+  if (/config|bootstrap|seed|schema/.test(lowered)) score += 40;
   return score;
 }
 
 function rankMirrorPath(filePath) {
   const lowered = filePath.toLowerCase();
   let score = rankPath(filePath);
-
-  for (const keyword of ["service", "query", "database", "db", "resolver", "graphql"]) {
-    if (lowered.includes(keyword)) {
-      score += 2;
-    }
-  }
-
-  if (/\.(ts|tsx|js|jsx|php|py)$/.test(lowered)) {
-    score += 1;
-  }
-
-  if (/config|bootstrap|route|controller|service/.test(lowered)) {
-    score += 2;
-  }
-
+  if (/test|spec/.test(lowered)) score -= 30;
+  if (/users-permissions|authentication|graphql/.test(lowered)) score += 45;
   return score;
 }
 
-function calculateFreshnessBoost(isoValue) {
-  if (!isoValue) {
+function calculateFreshnessBoost(dateValue) {
+  if (!dateValue) {
     return 0;
   }
-
-  const pushedAt = Date.parse(isoValue);
-  if (!Number.isFinite(pushedAt)) {
-    return 0;
-  }
-
-  const ageInDays = (Date.now() - pushedAt) / (1000 * 60 * 60 * 24);
-  if (ageInDays <= 30) {
-    return 1800;
-  }
-  if (ageInDays <= 90) {
-    return 900;
-  }
-  if (ageInDays <= 180) {
-    return 300;
-  }
+  const ageMs = Date.now() - new Date(dateValue).getTime();
+  const ageDays = ageMs / (1000 * 60 * 60 * 24);
+  if (ageDays <= 14) return 4000;
+  if (ageDays <= 45) return 2200;
+  if (ageDays <= 90) return 900;
   return 0;
 }

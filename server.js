@@ -10,6 +10,7 @@ import { getProviderPreset, maskSecret, resolveLlmConfig } from "./src/config/ll
 import { buildEnvironmentReport } from "./src/services/environmentReport.js";
 import { DefensiveLlmReviewer } from "./src/services/llmReviewService.js";
 import { createMemoryStore } from "./src/services/memoryStore.js";
+import { createFingerprintService } from "./src/services/fingerprintService.js";
 import { writeAuditHtmlReport } from "./src/services/reportWriter.js";
 import { createSettingsStore } from "./src/services/settingsStore.js";
 import { createTaskStore } from "./src/store/taskStore.js";
@@ -32,6 +33,7 @@ const llmReviewer = new DefensiveLlmReviewer();
 const auditAgent = new AuditAnalystAgent({ llmReviewer });
 const tasks = createTaskStore();
 const memoryStore = createMemoryStore({ filePath: memoryFile });
+const fingerprintService = createFingerprintService({ downloadsDir });
 
 await fs.mkdir(downloadsDir, { recursive: true });
 await fs.mkdir(reportsDir, { recursive: true });
@@ -74,6 +76,11 @@ const server = http.createServer(async (req, res) => {
           token: body?.github?.token ? body.github.token : current.github.token,
           ownerFilter: body?.github?.ownerFilter ?? current.github.ownerFilter,
           notes: body?.github?.notes ?? current.github.notes
+        },
+        fofa: {
+          email: body?.fofa?.email ?? current.fofa.email,
+          apiKey: body?.fofa?.apiKey ? body.fofa.apiKey : current.fofa.apiKey,
+          notes: body?.fofa?.notes ?? current.fofa.notes
         }
       });
       return sendJson(res, 200, sanitizeSettings(updated));
@@ -90,6 +97,23 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/api/memory") {
       return sendJson(res, 200, await memoryStore.read());
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/fingerprint/projects") {
+      return sendJson(res, 200, await fingerprintService.listProjects());
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/fingerprint/analyze") {
+      const body = await readJson(req);
+      return sendJson(res, 200, await fingerprintService.analyzeProject(String(body?.projectId || "")));
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/fingerprint/match") {
+      const body = await readJson(req);
+      return sendJson(res, 200, await fingerprintService.matchAssets({
+        projectId: String(body?.projectId || ""),
+        assetText: String(body?.assetText || "")
+      }));
     }
 
     if (req.method === "POST" && url.pathname === "/api/memory") {
@@ -172,7 +196,12 @@ async function runScout(taskId) {
   const task = tasks.getTask(taskId);
   const scoutResult = task.sourceType === "local"
     ? await localScoutAgent.run({ localRepoPaths: task.localRepoPaths })
-    : await scoutAgent.run({ query: task.query });
+    : await scoutAgent.run({
+      query: task.query,
+      cmsType: task.cmsType,
+      industry: task.industry,
+      minAdoption: task.minAdoption
+    });
   tasks.updateTask(taskId, {
     status: "awaiting_selection",
     phase: "target-selection",
@@ -366,6 +395,13 @@ function sanitizeSettings(settings) {
       ownerFilter: settings.github.ownerFilter,
       notes: settings.github.notes
     },
+    fofa: {
+      email: settings.fofa.email,
+      apiKeyConfigured: Boolean(settings.fofa.apiKey),
+      apiKeyMasked: maskSecret(settings.fofa.apiKey),
+      notes: settings.fofa.notes,
+      safeMode: "stored-only"
+    },
     updatedAt: settings.updatedAt
   };
 }
@@ -452,39 +488,45 @@ function applyMemoryDefaults(body, memory) {
         .map((item) => item.trim())
         .filter(Boolean);
 
-  if (sourceType === "local") {
-    return {
-      ...body,
-      sourceType,
-      selectedSkillIds,
-      localRepoPaths,
-      useMemory,
-      query: "local repository import",
-      minAdoption: 0
-    };
-  }
+    if (sourceType === "local") {
+      return {
+        ...body,
+        sourceType,
+        selectedSkillIds,
+        localRepoPaths,
+        useMemory,
+        query: "local repository import",
+        cmsType: "all",
+        industry: "all",
+        minAdoption: 0
+      };
+    }
 
   if (!useMemory) {
     return {
       ...body,
       sourceType,
-      selectedSkillIds,
-      localRepoPaths: [],
-      useMemory: false,
-      query: body.query || 'topic:cms OR "headless cms" OR "content management system"',
-      minAdoption: Number(body.minAdoption || 100)
-    };
-  }
+        selectedSkillIds,
+        localRepoPaths: [],
+        useMemory: false,
+        query: body.query || 'topic:cms OR "headless cms" OR "content management system"',
+        cmsType: body.cmsType || "all",
+        industry: body.industry || "all",
+        minAdoption: Number(body.minAdoption || 100)
+      };
+    }
   return {
     ...body,
     sourceType,
-    selectedSkillIds,
-    localRepoPaths: [],
-    useMemory,
-    query: body.query || memory.preferences.preferredQuery,
-    minAdoption: Number(body.minAdoption || memory.preferences.preferredMinAdoption || 100)
-  };
-}
+      selectedSkillIds,
+      localRepoPaths: [],
+      useMemory,
+      query: body.query || memory.preferences.preferredQuery,
+      cmsType: body.cmsType || "all",
+      industry: body.industry || "all",
+      minAdoption: Number(body.minAdoption || memory.preferences.preferredMinAdoption || 100)
+    };
+  }
 
 function buildMemorySnapshot(memory) {
   return { rules: memory.rules, preferences: memory.preferences, learnedPatterns: memory.learnedPatterns.slice(0, 5) };

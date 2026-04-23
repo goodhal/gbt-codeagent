@@ -13,6 +13,11 @@ const DEFAULT_SETTINGS = {
     ownerFilter: "",
     notes: ""
   },
+  fofa: {
+    email: "",
+    apiKey: "",
+    notes: ""
+  },
   updatedAt: null
 };
 
@@ -34,6 +39,7 @@ export function createSettingsStore({ filePath }) {
         ...patch,
         llm: { ...current.llm, ...(patch.llm || {}) },
         github: { ...current.github, ...(patch.github || {}) },
+        fofa: { ...current.fofa, ...(patch.fofa || {}) },
         updatedAt: new Date().toISOString()
       });
       await fs.mkdir(path.dirname(filePath), { recursive: true });
@@ -52,6 +58,10 @@ export function createSettingsStore({ filePath }) {
         github: {
           ...current.github,
           token: targets.includes("github") ? "" : current.github.token
+        },
+        fofa: {
+          ...current.fofa,
+          apiKey: targets.includes("fofa") ? "" : current.fofa.apiKey
         },
         updatedAt: new Date().toISOString()
       });
@@ -74,6 +84,11 @@ function normalize(value) {
       token: value?.github?.token || "",
       ownerFilter: value?.github?.ownerFilter || "",
       notes: value?.github?.notes || ""
+    },
+    fofa: {
+      email: value?.fofa?.email || "",
+      apiKey: value?.fofa?.apiKey || "",
+      notes: value?.fofa?.notes || ""
     },
     updatedAt: value?.updatedAt || null
   };

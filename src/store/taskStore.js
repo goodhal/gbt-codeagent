@@ -13,6 +13,8 @@ export function createTaskStore() {
         createdAt: new Date().toISOString(),
         sourceType: input.sourceType || "github",
         query: input.query || 'topic:cms OR "headless cms" OR "content management system"',
+        cmsType: input.cmsType || "all",
+        industry: input.industry || "all",
         localRepoPaths: Array.isArray(input.localRepoPaths) ? input.localRepoPaths : [],
         minAdoption: Number(input.minAdoption || 100),
         useMemory: input.useMemory !== false,

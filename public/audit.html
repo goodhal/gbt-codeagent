@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>代码审计批量辅助</title>
+    <title>审计中心 - 代码审计批量辅助</title>
     <link rel="stylesheet" href="/styles.css?v=20260423-multipage" />
   </head>
-  <body data-page="overview">
+  <body data-page="audit">
     <canvas id="particle-field" aria-hidden="true"></canvas>
     <div class="page-grain" aria-hidden="true"></div>
     <div class="app-shell">
@@ -28,27 +28,24 @@
       <main class="main">
         <header class="page-header">
           <div>
-            <p class="eyebrow">Overview</p>
-            <h1>项目总览</h1>
-            <p class="lede">把候选发现、目标选择、镜像审计、源码指纹和配置拆开，让整个使用流程更清楚。</p>
+            <p class="eyebrow">Audit</p>
+            <h1>审计中心</h1>
+            <p class="lede">在这里查看任务、筛选候选目标、启动审计，以及查看规则层和 LLM 复核结果。</p>
           </div>
         </header>
 
         <section class="page-grid">
           <article class="panel">
             <div class="panel-head">
-              <h2>当前环境</h2>
-              <button id="env-refresh-button" class="ghost" type="button">刷新</button>
+              <h2>任务列表</h2>
+              <button id="refresh-button" class="ghost" type="button">刷新</button>
             </div>
-            <div id="env-report" class="detail empty">正在读取环境信息…</div>
+            <div id="task-list" class="stack"></div>
           </article>
 
-          <article class="panel">
-            <div class="panel-head">
-              <h2>最近任务</h2>
-              <a class="ghost-link" href="/audit.html">前往审计中心</a>
-            </div>
-            <div id="overview-tasks" class="stack"></div>
+          <article class="panel detail-panel">
+            <h2>任务详情</h2>
+            <div id="task-detail" class="detail empty">请选择左侧任务。</div>
           </article>
         </section>
       </main>

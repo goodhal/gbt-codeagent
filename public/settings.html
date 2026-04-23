@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>设置中心 - 代码审计批量辅助</title>
+    <link rel="stylesheet" href="/styles.css?v=20260423-multipage" />
+  </head>
+  <body data-page="settings">
+    <canvas id="particle-field" aria-hidden="true"></canvas>
+    <div class="page-grain" aria-hidden="true"></div>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="/index.html">
+          <strong>代码审计批量辅助</strong>
+          <span>Multi-Page Console</span>
+        </a>
+        <nav class="nav">
+          <a data-nav href="/index.html">总览</a>
+          <a data-nav href="/discover.html">目标发现</a>
+          <a data-nav href="/audit.html">审计中心</a>
+          <a data-nav href="/fingerprints.html">源码指纹</a>
+          <a data-nav href="/settings.html">设置中心</a>
+        </nav>
+        <div id="quick-status" class="sidebar-status"></div>
+      </aside>
+
+      <main class="main">
+        <header class="page-header">
+          <div>
+            <p class="eyebrow">Settings</p>
+            <h1>设置中心</h1>
+            <p class="lede">统一管理 LLM、GitHub、FOFA 配置存档，以及项目记忆和团队规则。</p>
+          </div>
+        </header>
+
+        <section class="stack">
+          <article class="panel">
+            <div class="panel-head">
+              <h2>连接设置</h2>
+              <div class="button-row">
+                <button id="settings-refresh-button" class="ghost" type="button">刷新</button>
+                <button id="settings-test-button" class="ghost" type="button">测试连接</button>
+                <button id="clear-llm-button" class="ghost danger" type="button">清空 LLM Key</button>
+                <button id="clear-github-button" class="ghost danger" type="button">清空 GitHub Token</button>
+                <button id="clear-fofa-button" class="ghost danger" type="button">清空 FOFA Key</button>
+              </div>
+            </div>
+            <p id="settings-summary" class="note">正在读取设置…</p>
+            <form id="settings-form" class="grid-two">
+              <label>
+                LLM 提供商
+                <select name="providerId">
+                  <option value="openai">OpenAI / Compatible</option>
+                  <option value="compatible">OpenAI-Compatible Gateway</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="gemini">Gemini</option>
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="qwen">Qwen</option>
+                </select>
+              </label>
+              <label>
+                LLM Base URL
+                <input name="baseUrl" />
+              </label>
+              <label>
+                LLM 模型名
+                <input name="model" />
+              </label>
+              <label>
+                LLM API Key
+                <input name="apiKey" type="password" placeholder="留空则保留现有值" />
+              </label>
+              <label>
+                GitHub Token
+                <input name="githubToken" type="password" placeholder="留空则保留现有值" />
+              </label>
+              <label>
+                GitHub Owner 过滤
+                <input name="ownerFilter" />
+              </label>
+              <label>
+                FOFA 邮箱
+                <input name="fofaEmail" placeholder="仅存档，不自动调用" />
+              </label>
+              <label>
+                FOFA API Key
+                <input name="fofaApiKey" type="password" placeholder="仅存档，不自动调用" />
+              </label>
+              <label class="full-span">
+                GitHub 备注
+                <textarea name="githubNotes" rows="3"></textarea>
+              </label>
+              <label class="full-span">
+                FOFA 备注
+                <textarea name="fofaNotes" rows="3" placeholder="这里仅保存配置备注，不会自动触发联网检索。"></textarea>
+              </label>
+              <div class="form-footer full-span">
+                <span class="note">FOFA 配置目前只做设置存档与页面归档展示，不自动检索互联网资产。</span>
+                <button type="submit">保存设置</button>
+              </div>
+            </form>
+            <div id="connection-test-result" class="detail empty">连接测试结果会显示在这里。</div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <h2>项目记忆与团队规则</h2>
+              <button id="memory-refresh-button" class="ghost" type="button">刷新</button>
+            </div>
+            <div id="memory-view" class="detail empty">正在读取记忆…</div>
+            <form id="memory-form" class="stack">
+              <div class="grid-two">
+                <label>
+                  默认查询
+                  <input name="preferredQuery" value='topic:cms OR "headless cms" OR "content management system"' />
+                </label>
+                <label>
+                  默认阈值
+                  <input name="preferredMinAdoption" type="number" min="100" value="100" />
+                </label>
+              </div>
+              <label>
+                团队规则
+                <textarea name="rules" rows="8"></textarea>
+              </label>
+              <div class="form-footer">
+                <span class="note">这里会影响后续任务的默认查询和记忆行为。</span>
+                <button type="submit">保存项目记忆</button>
+              </div>
+            </form>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+    <script type="module" src="/app.js?v=20260423-multipage"></script>
+  </body>
+</html>

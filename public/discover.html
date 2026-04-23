@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>目标发现 - 代码审计批量辅助</title>
+    <link rel="stylesheet" href="/styles.css?v=20260423-multipage" />
+  </head>
+  <body data-page="discover">
+    <canvas id="particle-field" aria-hidden="true"></canvas>
+    <div class="page-grain" aria-hidden="true"></div>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="/index.html">
+          <strong>代码审计批量辅助</strong>
+          <span>Multi-Page Console</span>
+        </a>
+        <nav class="nav">
+          <a data-nav href="/index.html">总览</a>
+          <a data-nav href="/discover.html">目标发现</a>
+          <a data-nav href="/audit.html">审计中心</a>
+          <a data-nav href="/fingerprints.html">源码指纹</a>
+          <a data-nav href="/settings.html">设置中心</a>
+        </nav>
+        <div id="quick-status" class="sidebar-status"></div>
+      </aside>
+
+      <main class="main">
+        <header class="page-header">
+          <div>
+            <p class="eyebrow">Discovery</p>
+            <h1>目标发现</h1>
+            <p class="lede">先按 CMS 类型和行业缩小范围，再启动候选发现或导入本地仓库。</p>
+          </div>
+        </header>
+
+        <section class="panel">
+          <form id="task-form" class="stack">
+            <div class="source-switch">
+              <label class="source-card">
+                <input name="sourceType" type="radio" value="github" checked />
+                <div>
+                  <strong>GitHub 候选发现</strong>
+                  <span>先搜候选项目，再去审计中心手动选择目标。</span>
+                </div>
+              </label>
+              <label class="source-card">
+                <input name="sourceType" type="radio" value="local" />
+                <div>
+                  <strong>本地仓库导入</strong>
+                  <span>直接导入本地有权审计的仓库并进入后续流程。</span>
+                </div>
+              </label>
+            </div>
+
+            <div id="github-launch-fields" class="grid-two">
+              <label>
+                GitHub 查询
+                <input name="query" value='topic:cms OR "headless cms" OR "content management system"' />
+              </label>
+              <label>
+                最低存活量
+                <input name="minAdoption" type="number" min="100" value="100" />
+              </label>
+              <label>
+                CMS 类型
+                <select name="cmsType">
+                  <option value="all">全部</option>
+                  <option value="headless">Headless</option>
+                  <option value="blog">博客/内容发布</option>
+                  <option value="ecommerce">电商</option>
+                  <option value="enterprise">企业门户</option>
+                  <option value="education">教育/LMS</option>
+                  <option value="flatfile">Flat-file</option>
+                </select>
+              </label>
+              <label>
+                行业
+                <select name="industry">
+                  <option value="all">全部</option>
+                  <option value="education">教育</option>
+                  <option value="ecommerce">电商</option>
+                  <option value="media">媒体内容</option>
+                  <option value="enterprise">企业</option>
+                  <option value="government">政务公共</option>
+                  <option value="community">社区论坛</option>
+                </select>
+              </label>
+              <label class="checkbox-row">
+                <input name="useMemory" type="checkbox" checked />
+                启用项目记忆
+              </label>
+            </div>
+
+            <div id="local-launch-fields" class="hidden-panel">
+              <label>
+                本地仓库路径
+                <textarea name="localRepoPaths" rows="5" placeholder="每行一个绝对路径"></textarea>
+              </label>
+            </div>
+
+            <div class="panel-subsection">
+              <div class="panel-head">
+                <div>
+                  <h2>审计 Skill</h2>
+                  <p class="note">选择这次任务要启用的防御性审计能力。</p>
+                </div>
+                <div class="button-row">
+                  <button id="select-all-skills-button" class="ghost" type="button">全选</button>
+                  <button id="clear-skills-button" class="ghost" type="button">清空</button>
+                </div>
+              </div>
+              <div id="skill-picker" class="skill-grid"></div>
+            </div>
+
+            <div class="form-footer">
+              <p class="note">创建任务后，请前往“审计中心”选择目标并查看结果。</p>
+              <button id="task-submit-button" type="submit">启动任务</button>
+            </div>
+          </form>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+    <script type="module" src="/app.js?v=20260423-multipage"></script>
+  </body>
+</html>

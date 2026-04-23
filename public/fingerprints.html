@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>源码指纹 - 代码审计批量辅助</title>
+    <link rel="stylesheet" href="/styles.css?v=20260423-multipage" />
+  </head>
+  <body data-page="fingerprints">
+    <canvas id="particle-field" aria-hidden="true"></canvas>
+    <div class="page-grain" aria-hidden="true"></div>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="/index.html">
+          <strong>代码审计批量辅助</strong>
+          <span>Multi-Page Console</span>
+        </a>
+        <nav class="nav">
+          <a data-nav href="/index.html">总览</a>
+          <a data-nav href="/discover.html">目标发现</a>
+          <a data-nav href="/audit.html">审计中心</a>
+          <a data-nav href="/fingerprints.html">源码指纹</a>
+          <a data-nav href="/settings.html">设置中心</a>
+        </nav>
+        <div id="quick-status" class="sidebar-status"></div>
+      </aside>
+
+      <main class="main">
+        <header class="page-header">
+          <div>
+            <p class="eyebrow">Fingerprint</p>
+            <h1>源码指纹分析</h1>
+            <p class="lede">从已经下载到本地的源码镜像里提取 CMS、技术栈和路径特征，并支持导入你自己的资产清单做本地匹配。</p>
+          </div>
+        </header>
+
+        <section class="page-grid">
+          <article class="panel">
+            <div class="panel-head">
+              <h2>本地镜像项目</h2>
+              <button id="fingerprint-refresh-button" class="ghost" type="button">刷新</button>
+            </div>
+            <div class="callout warning">
+              不自动生成 FOFA 语句，也不自动联网搜索或下载互联网目标。这里仅做本地源码指纹提取与本地资产清单匹配。
+            </div>
+            <div id="fingerprint-projects" class="stack"></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <h2>分析结果</h2>
+            </div>
+            <div id="fingerprint-detail" class="detail empty">请选择一个本地镜像项目进行分析。</div>
+            <div class="panel-subsection">
+              <h3>本地资产清单匹配</h3>
+              <p class="note">把你自己导出的资产清单、域名列表或文本列表贴进来，系统会按本地源码指纹做匹配统计。</p>
+              <textarea id="asset-input" rows="8" placeholder="每行一条资产记录"></textarea>
+              <div class="button-row">
+                <button id="asset-match-button" type="button">开始匹配</button>
+              </div>
+              <div id="asset-match-result" class="detail empty">还没有匹配结果。</div>
+            </div>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+    <script type="module" src="/app.js?v=20260423-multipage"></script>
+  </body>
+</html>

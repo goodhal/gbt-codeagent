@@ -267,7 +267,17 @@ function renderFindings(findings, emptyMessage) {
     <div class="finding-list">
       ${findings
         .map(
-          (finding) => `
+          (finding) => {
+            const isGbtFinding = finding.skillId === "gbt-code-audit";
+            const extraInfo = isGbtFinding ? `
+              <p><strong>漏洞类型：</strong>${escapeHtml(finding.vulnType || "UNKNOWN")}</p>
+              <p><strong>CWE：</strong>${escapeHtml(finding.cwe || "CWE-000")}</p>
+              <p><strong>国标映射：</strong>${escapeHtml(finding.gbtMapping || "GB/T39412-2020 通用基线")}</p>
+              <p><strong>CVSS 评分：</strong>${escapeHtml(String(finding.cvssScore || 0.0))}</p>
+              <p><strong>编程语言：</strong>${escapeHtml(finding.language || "unknown")}</p>
+            ` : "";
+            
+            return `
             <div class="finding">
               <div class="finding-head">
                 <h4>${escapeHtml(finding.title)}</h4>
@@ -276,13 +286,15 @@ function renderFindings(findings, emptyMessage) {
                   <span class="badge ${escapeHtml(finding.source || "rule")}">${escapeHtml(finding.source || "rule")}</span>
                 </div>
               </div>
+              ${extraInfo}
               <p><strong>位置：</strong>${escapeHtml(finding.location || "n/a")}</p>
               <p><strong>影响：</strong>${escapeHtml(finding.impact || "")}</p>
               <p><strong>证据：</strong>${escapeHtml(finding.evidence || "")}</p>
               <p><strong>修复建议：</strong>${escapeHtml(finding.remediation || "")}</p>
               <p><strong>安全验证建议：</strong>${escapeHtml(finding.safeValidation || "")}</p>
             </div>
-          `
+          `;
+          }
         )
         .join("")}
     </div>

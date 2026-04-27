@@ -1,10 +1,12 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { resolveAuditSkills } from "../config/auditSkills.js";
+import { QuickScanService } from "../services/quickScanService.js";
 
 export class AuditAnalystAgent {
   constructor({ llmReviewer }) {
     this.llmReviewer = llmReviewer;
+    this.quickScanService = new QuickScanService();
   }
 
   async run({ projects, selectedSkillIds, llmConfig, onProgress }) {
@@ -94,6 +96,12 @@ async function buildHeuristicFindings(project, reviewProfile) {
   const files = await collectFiles(sourceRoot);
   const findings = [];
   const enabledSkills = new Set(reviewProfile.map((skill) => skill.id));
+
+  const gbtAuditEnabled = enabledSkills.has("gbt-code-audit");
+  if (gbtAuditEnabled) {
+    const quickScanFindings = await new QuickScanService().scanProject(sourceRoot);
+    findings.push(...quickScanFindings);
+  }
 
   for (const file of files) {
     const content = await fs.readFile(file, "utf8");
@@ -241,7 +249,7 @@ async function buildHeuristicFindings(project, reviewProfile) {
     }
   }
 
-  return prioritizeFindings(findings).slice(0, 8);
+  return prioritizeFindings(findings).slice(0, 12);
 }
 
 function createFinding(finding) {

@@ -28,6 +28,46 @@ const AUDIT_SKILLS = [
     name: "敏感信息",
     description: "关注公开前端变量、配置文件中的密钥和占位凭据。",
     reviewPrompt: "重点检查公开变量、配置文件、环境变量和初始化脚本里的敏感信息暴露。"
+  },
+  {
+    id: "gbt-code-audit",
+    name: "GB/T 国标代码安全审计",
+    description: "基于中国国家标准（GB/T 34943/34944/34946/39412）的代码安全审计，支持 Java、C/C++、C#、Python 多语言漏洞检测。",
+    reviewPrompt: "基于 GB/T 国标进行深度代码安全审计，重点关注命令注入、SQL注入、代码注入、路径遍历、硬编码密钥、弱加密算法、反序列化、SSRF、认证绕过、权限缺失等安全漏洞。审计时需遵循国标规则，提供准确的国标映射、CVSS评分和修复建议。",
+    gbtStandards: {
+      "GB/T34943-2017": "C/C++ 语言源代码漏洞测试规范",
+      "GB/T34944-2017": "Java 语言源代码漏洞测试规范",
+      "GB/T34946-2017": "C# 语言源代码漏洞测试规范",
+      "GB/T39412-2020": "网络安全技术 源代码漏洞检测规则"
+    },
+    supportedLanguages: ["java", "python", "cpp", "csharp", "go", "javascript", "typescript", "php", "ruby", "rust"],
+    vulnCategories: [
+      "COMMAND_INJECTION",
+      "SQL_INJECTION", 
+      "CODE_INJECTION",
+      "PATH_TRAVERSAL",
+      "XSS",
+      "XXE",
+      "DESERIALIZATION",
+      "SSRF",
+      "HARD_CODE_PASSWORD",
+      "HARD_CODE_SECRET",
+      "WEAK_CRYPTO",
+      "WEAK_HASH",
+      "PREDICTABLE_RANDOM",
+      "AUTH_BYPASS",
+      "INFO_LEAK",
+      "BUFFER_OVERFLOW",
+      "FORMAT_STRING",
+      "INTEGER_OVERFLOW",
+      "PROCESS_CONTROL",
+      "SESSION_FIXATION",
+      "COOKIE_MANIPULATION",
+      "MISSING_ACCESS_CONTROL",
+      "IMPROPER_EXCEPTION_HANDLING",
+      "WEAK_PASSWORD_POLICY",
+      "PLAINTEXT_TRANSMISSION"
+    ]
   }
 ];
 

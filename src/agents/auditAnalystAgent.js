@@ -2,6 +2,10 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { resolveAuditSkills } from "../config/auditSkills.js";
 import { QuickScanService } from "../services/quickScanService.js";
+import { ValidationService } from "../services/validationService.js";
+import { ExternalToolService } from "../services/externalToolService.js";
+
+const MAX_PARALLEL_PROJECTS = 2;
 
 export class AuditAnalystAgent {
   constructor({ llmReviewer }) {
@@ -12,8 +16,9 @@ export class AuditAnalystAgent {
   async run({ projects, selectedSkillIds, llmConfig, onProgress }) {
     const reviewProfile = resolveAuditSkills(selectedSkillIds);
     const results = [];
+    const isGbtAudit = reviewProfile.some(skill => skill.id === "gbt-code-audit");
 
-    for (const [index, project] of projects.entries()) {
+    async function processProject(project, index) {
       onProgress?.({
         stage: "heuristic",
         projectId: project.id,
@@ -24,46 +29,51 @@ export class AuditAnalystAgent {
       });
 
       const heuristicFindings = await buildHeuristicFindings(project, reviewProfile);
-      const llmReview = this.llmReviewer
-        ? await this.llmReviewer.reviewProject({
-            project,
-            selectedSkills: reviewProfile,
-            heuristicFindings,
-            llmConfig,
-            onProgress: (detail) =>
-              onProgress?.({
-                stage: "llm-review",
-                projectId: project.id,
-                projectName: project.name,
-                projectIndex: index + 1,
-                totalProjects: projects.length,
-                ...detail
-              })
-          })
-        : {
-            status: "skipped",
-            called: false,
-            skipReason: "reviewer-unavailable",
-            summary: "未配置 LLM 复核器。",
-            findings: [],
-            warnings: []
-          };
+
+      let llmAudit = {
+        status: "skipped",
+        called: false,
+        skipReason: "auditor-unavailable",
+        summary: "未配置 LLM 审计器。",
+        findings: [],
+        warnings: []
+      };
+
+      if (this.llmReviewer) {
+        llmAudit = await this.llmReviewer.auditProject({
+          project,
+          selectedSkills: reviewProfile,
+          llmConfig,
+          onProgress: (detail) =>
+            onProgress?.({
+              stage: "llm-audit",
+              projectId: project.id,
+              projectName: project.name,
+              projectIndex: index + 1,
+              totalProjects: projects.length,
+              ...detail
+            })
+        });
+
+        if (llmAudit.status === "skipped") {
+          onProgress?.({
+            stage: "llm-audit",
+            projectId: project.id,
+            projectName: project.name,
+            projectIndex: index + 1,
+            totalProjects: projects.length,
+            label: `LLM 审计已跳过：${llmAudit.summary}`,
+            detail: llmAudit.skipReason,
+            current: 0,
+            total: 0
+          });
+        }
+      }
 
       const mergedFindings = prioritizeFindings([
         ...heuristicFindings,
-        ...(Array.isArray(llmReview.findings) ? llmReview.findings : [])
+        ...(Array.isArray(llmAudit.findings) ? llmAudit.findings : [])
       ]);
-
-      results.push({
-        projectId: project.id,
-        projectName: project.name,
-        repoUrl: project.repoUrl,
-        localPath: project.localPath || "",
-        reviewProfile,
-        heuristicFindings,
-        llmReview,
-        findings: mergedFindings
-      });
 
       onProgress?.({
         stage: "project-complete",
@@ -72,36 +82,109 @@ export class AuditAnalystAgent {
         projectIndex: index + 1,
         totalProjects: projects.length,
         heuristicCount: heuristicFindings.length,
-        llmCount: llmReview?.findings?.length || 0,
+        llmCount: llmAudit?.findings?.length || 0,
         label: `已完成：${project.name}`
       });
+
+      return {
+        projectId: project.id,
+        projectName: project.name,
+        repoUrl: project.repoUrl,
+        localPath: project.localPath || "",
+        reviewProfile,
+        heuristicFindings,
+        llmAudit,
+        findings: mergedFindings
+      };
     }
+
+    for (let i = 0; i < projects.length; i += MAX_PARALLEL_PROJECTS) {
+      const projectGroup = projects.slice(i, i + MAX_PARALLEL_PROJECTS);
+      const groupResults = await Promise.all(
+        projectGroup.map((project, idx) => processProject.call(this, project, i + idx))
+      );
+      results.push(...groupResults);
+    }
+
+    // 验证所有发现（代码片段验证 + 行号修正）
+    onProgress?.({
+      stage: "validation",
+      label: "正在验证漏洞发现"
+    });
+
+    const allFindings = results.flatMap(r => r.findings);
+    const validationService = new ValidationService();
+    
+    // 按项目分组验证
+    const validatedResults = await Promise.all(results.map(async (result) => {
+      const sourceRoot = path.join(process.cwd(), "workspace", "downloads", result.projectId);
+      const { validated, hallucinations, corrected } = await validationService.validateFindings(
+        result.findings,
+        sourceRoot
+      );
+      
+      return {
+        ...result,
+        findings: validated,
+        validationStats: {
+          total: result.findings.length,
+          validated: validated.length,
+          hallucinations: hallucinations.length,
+          corrected: corrected.length
+        },
+        hallucinations
+      };
+    }));
+
+    // 重新计算统计信息
+    const totalValidated = validatedResults.reduce((sum, r) => sum + r.findings.length, 0);
+    const totalHallucinations = validatedResults.reduce((sum, r) => sum + (r.hallucinations?.length || 0), 0);
+    const totalCorrected = validatedResults.reduce((sum, r) => sum + (r.validationStats?.corrected || 0), 0);
 
     return {
       reviewedAt: new Date().toISOString(),
       policy: "defensive-only",
       skillsUsed: reviewProfile.map((skill) => ({ id: skill.id, name: skill.name })),
-      findingsCount: results.reduce((sum, item) => sum + item.findings.length, 0),
-      heuristicFindingsCount: results.reduce((sum, item) => sum + item.heuristicFindings.length, 0),
-      llmFindingsCount: results.reduce((sum, item) => sum + (item.llmReview?.findings?.length || 0), 0),
-      llmCallCount: results.reduce((sum, item) => sum + (item.llmReview?.called ? 1 : 0), 0),
-      llmSkippedCount: results.reduce((sum, item) => sum + (item.llmReview?.called ? 0 : 1), 0),
-      projects: results
+      findingsCount: totalValidated,
+      heuristicFindingsCount: validatedResults.reduce((sum, item) => sum + item.heuristicFindings.length, 0),
+      llmFindingsCount: validatedResults.reduce((sum, item) => sum + (item.llmAudit?.findings?.length || 0), 0),
+      llmCallCount: validatedResults.reduce((sum, item) => sum + (item.llmAudit?.called ? 1 : 0), 0),
+      llmSkippedCount: validatedResults.reduce((sum, item) => sum + (item.llmAudit?.called ? 0 : 1), 0),
+      validationStats: {
+        total: allFindings.length,
+        validated: totalValidated,
+        hallucinations: totalHallucinations,
+        corrected: totalCorrected
+      },
+      projects: validatedResults
     };
   }
 }
 
 async function buildHeuristicFindings(project, reviewProfile) {
   const sourceRoot = path.join(process.cwd(), "workspace", "downloads", project.id);
-  const files = await collectFiles(sourceRoot);
   const findings = [];
   const enabledSkills = new Set(reviewProfile.map((skill) => skill.id));
 
-  const gbtAuditEnabled = enabledSkills.has("gbt-code-audit");
-  if (gbtAuditEnabled) {
-    const quickScanFindings = await new QuickScanService().scanProject(sourceRoot);
-    findings.push(...quickScanFindings);
-  }
+  // 1. 快速扫描（所有审计模式都执行）
+  console.log(`[审计分析] 开始快速扫描项目: ${project.name}`);
+  const quickScanService = new QuickScanService();
+  const quickScanFindings = await quickScanService.scanProject(sourceRoot, (progress) => {
+    console.log(`[快速扫描进度] ${progress.processedFiles}/${progress.totalFiles} 文件，当前: ${progress.currentFile}`);
+  });
+  console.log(`[审计分析] 快速扫描完成，发现 ${quickScanFindings.length} 个问题`);
+  findings.push(...quickScanFindings);
+
+  // 2. 外部工具扫描（Gitleaks/Bandit/Semgrep）（所有审计模式都执行）
+  console.log(`[审计分析] 开始外部工具扫描`);
+  const externalToolService = new ExternalToolService();
+  const externalFindings = await externalToolService.scanAll(sourceRoot);
+  console.log(`[审计分析] 外部工具扫描完成，发现 ${externalFindings.length} 个问题`);
+  findings.push(...externalFindings);
+
+  // 收集文件用于规则检测
+  const files = await collectFiles(sourceRoot);
+  console.log(`[审计分析] 收集到 ${files.length} 个文件用于规则检测`);
 
   for (const file of files) {
     const content = await fs.readFile(file, "utf8");
@@ -249,7 +332,8 @@ async function buildHeuristicFindings(project, reviewProfile) {
     }
   }
 
-  return prioritizeFindings(findings).slice(0, 12);
+  // 返回所有快速扫描和规则检测发现的问题，按严重程度排序
+  return prioritizeFindings(findings);
 }
 
 function createFinding(finding) {

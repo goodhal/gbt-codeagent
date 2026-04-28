@@ -26,12 +26,14 @@ function buildHtml({ task, selectedProjects, auditResult }) {
   const projectSections = (auditResult.projects || [])
     .map((projectResult) => {
       const project = selectedMap.get(projectResult.projectId);
-      const llmState = describeLlmReview(projectResult.llmReview);
+      const llmResult = projectResult.llmAudit;
+      const llmState = describeLlmAudit(llmResult);
       const heuristicFindings = renderFindings(projectResult.heuristicFindings, "规则层本次没有保留到高置信度结果。");
-      const llmFindings = renderFindings(projectResult.llmReview?.findings || [], llmState.emptyMessage);
-      const llmWarnings = (projectResult.llmReview?.warnings || [])
+      const llmFindings = renderFindings(llmResult?.findings || [], llmState.emptyMessage);
+      const llmWarnings = (llmResult?.warnings || [])
         .map((warning) => `<li>${escapeHtml(warning)}</li>`)
         .join("");
+
 
       return `
         <section class="project card">
@@ -84,33 +86,33 @@ function buildHtml({ task, selectedProjects, auditResult }) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Audit Report ${escapeHtml(task.id)}</title>
   <style>
-    body{font-family:Segoe UI,PingFang SC,sans-serif;margin:0;background:#f6f1e8;color:#1f1c17}
+    body{font-family:Segoe UI,PingFang SC,sans-serif;margin:0;background:#f0f5ff;color:#1a1a1a}
     main{max-width:1120px;margin:0 auto;padding:32px 20px 64px}
-    .card{background:#fff;border:1px solid #e7ddd0;border-radius:24px;padding:22px;box-shadow:0 18px 40px rgba(0,0,0,.06);margin-bottom:20px}
-    .hero{background:linear-gradient(135deg,#fff8ef,#f4ede2)}
+    .card{background:#fff;border:1px solid #dbeafe;border-radius:24px;padding:22px;box-shadow:0 18px 40px rgba(59,130,246,.12);margin-bottom:20px}
+    .hero{background:linear-gradient(135deg,#eff6ff,#dbeafe)}
     .hero h1,.project h3,.finding h4,.sub-card h4{font-family:Georgia,Noto Serif SC,serif}
     .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:18px}
-    .metric{padding:14px;border-radius:16px;background:#fbf7f1;border:1px solid #eee1d3}
+    .metric{padding:14px;border-radius:16px;background:#f0f5ff;border:1px solid #bfdbfe}
     .project-head,.finding-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
     .project-meta{display:flex;gap:18px;text-align:right}
-    .sub-card{margin-top:16px;padding:16px;border-radius:18px;background:#fbf7f1;border:1px solid #eee1d3}
-    .finding{border-top:1px solid #eee2d4;padding-top:14px;margin-top:14px}
-    .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:#efe7db}
-    .badge.low{background:#d7efe9}
-    .badge.medium{background:#f6decf}
-    .badge.high{background:#f7cdcd}
-    .badge.rule{background:#ece7f8}
-    .badge.llm{background:#dce9ff}
-    .badge.status{background:#efe7db}
-    .badge.called{background:#d7efe9}
-    .badge.skipped{background:#f6decf}
-    .badge.failed{background:#f7cdcd}
-    .tag{display:inline-block;margin:0 8px 8px 0;padding:6px 10px;border-radius:999px;background:#efe7db}
-    .muted{color:#746c61}
-    .warning-list{color:#8a5b22}
+    .sub-card{margin-top:16px;padding:16px;border-radius:18px;background:#f0f5ff;border:1px solid #bfdbfe}
+    .finding{border-top:1px solid #dbeafe;padding-top:14px;margin-top:14px}
+    .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:#dbeafe}
+    .badge.low{background:#dbeafe}
+    .badge.medium{background:#bfdbfe}
+    .badge.high{background:#fecaca}
+    .badge.rule{background:#e0e7ff}
+    .badge.llm{background:#dbeafe}
+    .badge.status{background:#dbeafe}
+    .badge.called{background:#d1fae5}
+    .badge.skipped{background:#fed7aa}
+    .badge.failed{background:#fecaca}
+    .tag{display:inline-block;margin:0 8px 8px 0;padding:6px 10px;border-radius:999px;background:#dbeafe}
+    .muted{color:#667eea}
+    .warning-list{color:#b45309}
     .status-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
-    .callout{padding:14px 16px;border-radius:18px;border:1px solid #eadbc8;background:#fffaf4;margin-top:18px}
-    a{color:#0f766e}
+    .callout{padding:14px 16px;border-radius:18px;border:1px solid #bfdbfe;background:#eff6ff;margin-top:18px}
+    a{color:#2563eb}
     @media (max-width: 900px){.grid{grid-template-columns:1fr}.project-meta{display:grid;grid-template-columns:1fr 1fr;text-align:left}.project-head,.finding-head{display:block}}
   </style>
 </head>
@@ -195,35 +197,37 @@ function buildLlmOverview(task, auditResult) {
   };
 }
 
-function describeLlmReview(llmReview) {
-  if (!llmReview?.called) {
-    const reason = getLlmSkipReasonLabel(llmReview?.skipReason);
+function describeLlmAudit(llmAudit) {
+  if (!llmAudit?.called) {
+    const reason = getLlmSkipReasonLabel(llmAudit?.skipReason);
     return {
       statusText: "未调用",
       callText: reason.short,
       badgeClass: "skipped",
-      summary: llmReview?.summary || reason.long,
+      summary: llmAudit?.summary || reason.long,
       meta: "",
       emptyMessage: reason.empty
     };
   }
 
-  const status = llmReview.status || "completed";
+  const status = llmAudit.status || "completed";
   const statusText = status === "failed" ? "调用失败" : status === "partial" ? "部分完成" : "已完成";
   const metaParts = [];
 
-  if (llmReview.providerId || llmReview.model) {
-    metaParts.push(`模型：${llmReview.providerId || "unknown"} / ${llmReview.model || "unknown"}`);
+  if (llmAudit.providerId || llmAudit.model) {
+    metaParts.push(`模型：${llmAudit.providerId || "unknown"} / ${llmAudit.model || "unknown"}`);
   }
-  if (Number.isFinite(Number(llmReview.reviewedFiles)) || Number.isFinite(Number(llmReview.reviewedBatches))) {
-    metaParts.push(`复核文件 ${Number(llmReview.reviewedFiles || 0)} 个，批次 ${Number(llmReview.reviewedBatches || 0)} 个`);
+  const auditedFiles = llmAudit.auditedFiles;
+  const auditedBatches = llmAudit.auditedBatches;
+  if (Number.isFinite(Number(auditedFiles)) || Number.isFinite(Number(auditedBatches))) {
+    metaParts.push(`复核文件 ${Number(auditedFiles || 0)} 个，批次 ${Number(auditedBatches || 0)} 个`);
   }
 
   return {
     statusText,
     callText: "已调用",
     badgeClass: status === "failed" ? "failed" : "called",
-    summary: llmReview.summary || "LLM 已完成复核。",
+    summary: llmAudit.summary || "LLM 已完成复核。",
     meta: metaParts.join(" · "),
     emptyMessage: "LLM 本次没有额外保留到高置信度结果。"
   };
@@ -267,7 +271,7 @@ function renderFindings(findings, emptyMessage) {
     <div class="finding-list">
       ${findings
         .map(
-          (finding) => {
+          (finding, index) => {
             const isGbtFinding = finding.skillId === "gbt-code-audit";
             const extraInfo = isGbtFinding ? `
               <p><strong>漏洞类型：</strong>${escapeHtml(finding.vulnType || "UNKNOWN")}</p>
@@ -280,7 +284,7 @@ function renderFindings(findings, emptyMessage) {
             return `
             <div class="finding">
               <div class="finding-head">
-                <h4>${escapeHtml(finding.title)}</h4>
+                <h4>${index + 1}. ${escapeHtml(finding.title)}</h4>
                 <div>
                   <span class="badge ${escapeHtml(finding.severity)}">${escapeHtml(finding.severity)}</span>
                   <span class="badge ${escapeHtml(finding.source || "rule")}">${escapeHtml(finding.source || "rule")}</span>

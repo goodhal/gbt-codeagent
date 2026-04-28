@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { CODE_EXTENSIONS, extensionToLanguage } from "../utils/fileUtils.js";
 
 const IGNORED_SEGMENTS = [
   ".git",
@@ -15,28 +16,9 @@ const IGNORED_SEGMENTS = [
   "temp"
 ];
 
-const CODE_EXTENSIONS = new Set([
-  ".ts",
-  ".tsx",
-  ".js",
-  ".jsx",
-  ".mjs",
-  ".cjs",
-  ".json",
-  ".yml",
-  ".yaml",
-  ".env",
-  ".php",
-  ".py",
-  ".go",
-  ".java",
-  ".rb",
-  ".cs",
-  ".rs"
-]);
-
 const MAX_LOCAL_FILES = 400;
 const MAX_FILE_SIZE = 250_000;
+const MAX_PARALLEL_FILE_OPS = 10;
 
 export class LocalRepoScoutAgent {
   constructor({ downloadsDir }) {
@@ -44,46 +26,61 @@ export class LocalRepoScoutAgent {
   }
 
   async run({ localRepoPaths }) {
+    console.log(`[本地仓库扫描] 开始扫描本地仓库，路径数量：${localRepoPaths.length}`);
     const normalizedPaths = normalizeInputPaths(localRepoPaths);
+    console.log(`[本地仓库扫描] 标准化后的路径：${JSON.stringify(normalizedPaths)}`);
     const projects = [];
     const skippedPaths = [];
 
-    for (const localPath of normalizedPaths) {
-      const stats = await inspectLocalPath(localPath);
-      if (!stats) {
-        skippedPaths.push({
-          path: localPath,
-          reason: "路径不存在、不可访问，或不是目录。"
-        });
-        continue;
-      }
-
-      projects.push({
-        id: buildProjectId(localPath),
-        sourceType: "local",
-        name: path.basename(localPath),
-        owner: "local",
-        repoUrl: "",
-        localPath,
-        description: `本地仓库导入：${localPath}`,
-        language: stats.primaryLanguage,
-        defaultBranch: "local",
-        updatedAt: stats.updatedAt,
-        pushedAt: stats.updatedAt,
-        downloadArtifact: `${buildProjectId(localPath)}.json`,
-        adoptionSignals: {
-          stars: 0,
-          forks: 0,
-          estimatedLiveUsage: 0,
-          codeFiles: stats.codeFiles
+    const pathResults = await Promise.all(
+      normalizedPaths.map(async (localPath) => {
+        console.log(`[本地仓库扫描] 检查路径：${localPath}`);
+        const stats = await inspectLocalPath(localPath);
+        if (!stats) {
+          console.log(`[本地仓库扫描] 跳过路径：${localPath}，原因：路径不存在、不可访问，或不是目录。`);
+          return { skipped: true, path: localPath, reason: "路径不存在、不可访问，或不是目录。" };
         }
-      });
+        console.log(`[本地仓库扫描] 路径有效，代码文件数：${stats.codeFiles}，主要语言：${stats.primaryLanguage}`);
+        return {
+          skipped: false,
+          project: {
+            id: buildProjectId(localPath),
+            sourceType: "local",
+            name: path.basename(localPath),
+            owner: "local",
+            repoUrl: "",
+            localPath,
+            description: `本地仓库导入：${localPath}`,
+            language: stats.primaryLanguage,
+            defaultBranch: "local",
+            updatedAt: stats.updatedAt,
+            pushedAt: stats.updatedAt,
+            downloadArtifact: `${buildProjectId(localPath)}.json`,
+            adoptionSignals: {
+              stars: 0,
+              forks: 0,
+              estimatedLiveUsage: 0,
+              codeFiles: stats.codeFiles
+            }
+          }
+        };
+      })
+    );
+
+    for (const result of pathResults) {
+      if (result.skipped) {
+        skippedPaths.push({ path: result.path, reason: result.reason });
+      } else {
+        projects.push(result.project);
+      }
     }
 
     if (!projects.length) {
+      console.log(`[本地仓库扫描] 没有找到可导入的本地仓库`);
       throw new Error("没有找到可导入的本地仓库，请检查路径是否存在。");
     }
 
+    console.log(`[本地仓库扫描] 完成扫描，导入 ${projects.length} 个仓库，跳过 ${skippedPaths.length} 个路径`);
     return {
       sourceMode: "local-import",
       query: "local repository import",
@@ -95,8 +92,13 @@ export class LocalRepoScoutAgent {
   }
 
   async ensureProjectMirror(project) {
+    console.log(`[本地仓库镜像] 开始为项目生成镜像：${project.name}`);
     const sourceRoot = path.join(this.downloadsDir, project.id);
+    console.log(`[本地仓库镜像] 镜像路径：${sourceRoot}`);
+    
     const mirroredFiles = await mirrorLocalRepository(project.localPath, sourceRoot);
+    console.log(`[本地仓库镜像] 镜像完成，复制了 ${mirroredFiles.length} 个文件`);
+    
     const payload = {
       project,
       snapshotAt: new Date().toISOString(),
@@ -107,6 +109,7 @@ export class LocalRepoScoutAgent {
 
     await fs.mkdir(sourceRoot, { recursive: true });
     await fs.writeFile(path.join(this.downloadsDir, project.downloadArtifact), JSON.stringify(payload, null, 2), "utf8");
+    console.log(`[本地仓库镜像] 镜像文件已保存：${project.downloadArtifact}`);
     return payload;
   }
 }
@@ -133,13 +136,18 @@ async function mirrorLocalRepository(localPath, destinationRoot) {
   const files = await collectRelevantFiles(localPath, { limit: MAX_LOCAL_FILES });
   const mirroredFiles = [];
 
-  for (const sourceFile of files) {
-    const relative = path.relative(localPath, sourceFile);
-    const target = path.join(destinationRoot, relative);
-    await fs.mkdir(path.dirname(target), { recursive: true });
-    await fs.copyFile(sourceFile, target);
-    const stat = await fs.stat(sourceFile);
-    mirroredFiles.push({ path: relative.replaceAll("\\", "/"), size: stat.size });
+  for (let i = 0; i < files.length; i += MAX_PARALLEL_FILE_OPS) {
+    const fileChunk = files.slice(i, i + MAX_PARALLEL_FILE_OPS);
+    const copyPromises = fileChunk.map(async (sourceFile) => {
+      const relative = path.relative(localPath, sourceFile);
+      const target = path.join(destinationRoot, relative);
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.copyFile(sourceFile, target);
+      const stat = await fs.stat(sourceFile);
+      return { path: relative.replaceAll("\\", "/"), size: stat.size };
+    });
+    const chunkResults = await Promise.all(copyPromises);
+    mirroredFiles.push(...chunkResults);
   }
 
   return mirroredFiles;
@@ -195,26 +203,7 @@ function detectPrimaryLanguage(files) {
   return topLanguage;
 }
 
-function extensionToLanguage(ext) {
-  return {
-    ".ts": "TypeScript",
-    ".tsx": "TypeScript",
-    ".js": "JavaScript",
-    ".jsx": "JavaScript",
-    ".mjs": "JavaScript",
-    ".cjs": "JavaScript",
-    ".php": "PHP",
-    ".py": "Python",
-    ".go": "Go",
-    ".java": "Java",
-    ".rb": "Ruby",
-    ".cs": "C#",
-    ".rs": "Rust",
-    ".json": "JSON",
-    ".yaml": "YAML",
-    ".yml": "YAML"
-  }[ext] || "Unknown";
-}
+
 
 function normalizeInputPaths(localRepoPaths) {
   if (Array.isArray(localRepoPaths)) {

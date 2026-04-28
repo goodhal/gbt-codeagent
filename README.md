@@ -11,7 +11,7 @@
 - 对选中目标生成本地审计镜像，减少直接在线分析带来的不稳定性
 - 结合规则层与 LLM 复核，输出更清晰的审计说明
 - 通过前端完成连接配置、任务发起、进度跟踪、结果查看和报告下载
-- **基于中国国家标准（GB/T 34943/34944/34946/39412）的代码安全审计**
+- 基于中国国家标准（GB/T 34943/34944/34946/39412）的代码安全审计
 
 ## 核心能力
 
@@ -24,14 +24,11 @@
 - 审计 Skill
   内置访问控制、初始化与配置、上传与存储、查询与注入、敏感信息等防御性审计能力。
 
-- **GB/T 国标代码安全审计**
+- GB/T 国标代码安全审计
   基于中国国家标准的多语言漏洞检测，采用「快速扫描 + LLM 深度审计」双引擎。
 
 - HTML 报告导出
   输出结构化、可下载、适合留档的 HTML 审计报告。
-
-- **Markdown 报告导出**
-  输出符合国标格式的 Markdown 审计报告，包含封面、汇总、按国标分类统计。
 
 - 环境自检
   前端可配置主流 LLM API 与 GitHub Token，并在页面中直接测试连接。
@@ -49,7 +46,7 @@
 
 - **国标合规**：严格遵循中国国家标准（GB/T 34943/34944/34946/39412）
 - **双层检测**：快速扫描（正则表达式）+ LLM 深度审计（语义分析）
-- **多语言支持**：Java、Python、C/C++、C#、Go、JavaScript、TypeScript、PHP、Ruby、Rust
+- **多语言支持**：Java、Python、C/C++、C#、Go、JavaScript、TypeScript、PHP、Ruby、Rust、Kotlin、Swift、Scala、Perl、Lua、Shell（16 种语言）
 - **专业评分**：CVSS 三维评分系统（可达性、影响范围、利用复杂度）
 - **详细报告**：包含漏洞类型、CWE、国标映射、修复建议等完整信息
 
@@ -79,6 +76,26 @@
 > - [GBT_34944-2017.md](docs/gbt-audit/reference/GBT_34944-2017.md) - Java 专用
 > - [GBT_34946-2017.md](docs/gbt-audit/reference/GBT_34946-2017.md) - C# 专用
 > - [GBT_39412-2020.md](docs/gbt-audit/reference/GBT_39412-2020.md) - 通用基线（所有语言）
+
+### 审计文档
+
+完整的审计文档位于 [docs/](docs/) 目录：
+
+- **[SKILL.md](docs/skill.md)** - 主技能文档，包含审计原则、流程、质量标准
+- **[LLM 审计执行指南](docs/gbt-audit/workflow/audit_workflow.md)** - LLM 审计执行流程和验证机制
+- **[输出质量检查标准](docs/gbt-audit/workflow/quality_standards.md)** - 修复方案编写要求和验证机制
+- **[审计覆盖率检查工具](src/tools/auditCoverageChecker.js)** - 验证审计完整性的工具
+
+### 核心工具
+
+| 工具 | 描述 | 路径 |
+|------|------|------|
+| `QuickScanService` | 快速扫描服务（166 条规则，16 种语言） | `src/services/quickScanService.js` |
+| `ExternalToolService` | 外部工具集成（Gitleaks/Bandit/Semgrep） | `src/services/externalToolService.js` |
+| `ValidationService` | 自动验证服务（去重 + 验证 + 行号修正） | `src/services/validationService.js` |
+| `LLMFactory` | LLM 适配器工厂（OpenAI/Anthropic/Gemini） | `src/services/llmFactory.js` |
+| `AuditCoverageChecker` | 审计覆盖率检查工具 | `src/tools/auditCoverageChecker.js` |
+| `writeAuditHtmlReport` | HTML 报告生成 | `src/services/reportWriter.js` |
 
 ### CVSS 评分系统
 
@@ -115,34 +132,36 @@
 3. 手动选择需要审计的目标
 4. 系统生成本地审计镜像
 5. 执行规则层分析与 LLM 复核
-6. 下载最终 HTML 或 Markdown 报告
+6. 下载最终 HTML 报告
 
 ## 项目结构
 
-- `server.js`
-  HTTP 服务、任务编排、环境自检与报告输出入口
-
-- `public/`
-  前端页面、交互逻辑、样式与进度展示
-
-- `src/agents/`
-  候选发现、本地导入、审计分析三个核心智能体
-
-- `src/services/`
-  LLM 复核、报告生成、记忆存储、设置存储、快速扫描、CVSS评分等服务
-
-- `src/config/`
-  模型提供商配置与审计 Skill 配置（包含 GBT 国标审计技能）
-
-- `src/store/`
-  任务状态存储
-
-- `docs/gbt-audit/`
-  GBT 国标代码安全审计文档（工作流程、质量标准、漏洞知识库）
+```
+gbt-codeagent/
+├── server.js                    # HTTP 服务、任务编排、环境自检入口
+├── public/                      # 前端页面、交互逻辑、样式与进度展示
+├── src/
+│   ├── agents/                  # 候选发现、本地导入、审计分析智能体
+│   ├── config/                  # LLM 提供商配置与审计 Skill 配置
+│   ├── core/                    # 核心基础设施（熔断器、限流器、重试、状态管理、遥测）
+│   ├── knowledge/               # 知识库（框架识别、漏洞知识）
+│   ├── services/                # LLM 复核、报告生成、快速扫描、验证等服务
+│   ├── store/                   # 任务状态存储
+│   ├── tools/                   # 审计覆盖率检查等工具
+│   └── utils/                   # 文件工具、上下文管理
+├── docs/
+│   ├── gbt-audit/               # GBT 国标代码安全审计文档
+│   │   ├── reference/           # 国标参考文件
+│   │   ├── vulnerabilities/     # 漏洞知识库
+│   │   └── workflow/            # 审计工作流与质量标准
+│   └── screenshots/             # 页面截图
+└── test-samples/                # 测试样本文件
+```
 
 ## 本地运行
 
 ```bash
+npm install
 node server.js
 ```
 
@@ -177,6 +196,14 @@ Windows 一键启动：
 3. 启动审计流程
 4. 查看详细的审计报告（包含 CVSS 评分、国标映射、修复建议）
 
-## 说明
+## 技术栈
 
-仓库默认不提交本地运行产物、缓存、下载样本、报告文件和本地密钥配置。
+- **后端**：Node.js (ES Modules)
+- **前端**：原生 HTML/CSS/JavaScript
+- **LLM**：OpenAI / Anthropic / Gemini / Qwen / DeepSeek / 百度 / MiniMax / 豆包（通过统一适配器）
+- **外部工具**：Gitleaks / Bandit / Semgrep（可选集成）
+- **韧性**：熔断器 + 指数退避重试 + 令牌桶限流
+
+## 许可证
+
+见 [LICENSE](LICENSE) 文件。

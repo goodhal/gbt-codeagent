@@ -12,8 +12,10 @@
     <div class="app-shell">
       <aside class="sidebar">
         <a class="brand" href="/index.html">
-          <strong>代码审计批量辅助</strong>
-          <span>Multi-Page Console</span>
+          <img src="/logo.png" alt="中正测评" class="brand-logo" />
+          <div class="brand-text">
+            <strong>代码安全审计平台v1.0</strong>
+          </div>
         </a>
         <nav class="nav">
           <a data-nav href="/index.html">总览</a>
@@ -34,24 +36,30 @@
           </div>
         </header>
 
-        <section class="page-grid">
-          <article class="panel">
+        <section class="page-vertical">
+          <article class="panel task-list-panel">
             <div class="panel-head">
               <h2>任务列表</h2>
               <button id="refresh-button" class="ghost" type="button">刷新</button>
             </div>
-            <div id="task-list" class="stack"></div>
+            <div id="task-filter-tabs" class="filter-tabs">
+              <button class="filter-tab active" data-filter="all" type="button">全部</button>
+              <button class="filter-tab" data-filter="running,queued" type="button">进行中</button>
+              <button class="filter-tab" data-filter="completed" type="button">已完成</button>
+              <button class="filter-tab" data-filter="failed" type="button">失败</button>
+            </div>
+            <div id="task-list" class="task-grid"></div>
           </article>
 
           <article class="panel detail-panel">
             <h2>任务详情</h2>
-            <div id="task-detail" class="detail empty">请选择左侧任务。</div>
+            <div id="task-detail" class="detail empty">请选择上方任务。</div>
           </article>
         </section>
       </main>
     </div>
 
     <div id="toast" class="toast hidden"></div>
-    <script type="module" src="/app.js?v=20260423-multipage"></script>
+    <script type="module" src="/app.js"></script>
   </body>
 </html>

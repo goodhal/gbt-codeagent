@@ -24,7 +24,6 @@ const QUICK_SCAN_PATTERNS = {
   java: [
     { pattern: /Runtime\.getRuntime\(\)\.exec\s*\(/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
     { pattern: /ProcessBuilder\s*\(/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
-    { pattern: /ProcessBuilder\s*\(\s*command\s*\)/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
     { pattern: /ProcessImpl\.start/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
     { pattern: /String\s+sql\s*=\s*"/, vulnType: "SQL_INJECTION", cwe: "CWE-89", severity: "严重" },
     { pattern: /Statement\.execute/, vulnType: "SQL_INJECTION", cwe: "CWE-89", severity: "严重" },
@@ -39,7 +38,6 @@ const QUICK_SCAN_PATTERNS = {
     { pattern: /password\s*=\s*"[^"]{3,}"/, vulnType: "HARD_CODE_PASSWORD", cwe: "CWE-259", severity: "严重" },
     { pattern: /new\s+File\s*\(\s*/, vulnType: "PATH_TRAVERSAL", cwe: "CWE-22", severity: "高危" },
     { pattern: /FileInputStream\s*\(\s*/, vulnType: "PATH_TRAVERSAL", cwe: "CWE-22", severity: "高危" },
-    { pattern: /FileInputStream\s*\(\s*file\s*\)/, vulnType: "PATH_TRAVERSAL", cwe: "CWE-22", severity: "高危" },
     { pattern: /Files\.lines\s*\(\s*filePath\s*\)/, vulnType: "PATH_TRAVERSAL", cwe: "CWE-22", severity: "高危" },
     { pattern: /Files\.readAllBytes\s*\(/, vulnType: "PATH_TRAVERSAL", cwe: "CWE-22", severity: "高危" },
     { pattern: /StreamUtils\.copy\s*\(/, vulnType: "PATH_TRAVERSAL", cwe: "CWE-22", severity: "高危" },
@@ -684,8 +682,12 @@ export class QuickScanService {
   }
 
   async scanFile(filePath, projectRoot) {
+    const relativePath = path.relative(projectRoot, filePath).replaceAll("\\", "/");
+    console.log(`[快速扫描] 正在扫描文件: ${relativePath}`);
+    
     const language = this.detectLanguage(filePath);
     if (language === "unknown" || !this.patterns[language]) {
+      console.log(`[快速扫描] 跳过文件 (未知语言): ${relativePath}`);
       return [];
     }
 
@@ -693,12 +695,12 @@ export class QuickScanService {
       const content = await fs.readFile(filePath, "utf8");
       const findings = [];
       const lines = content.split("\n");
+      console.log(`[快速扫描] 读取文件成功: ${relativePath} (${lines.length} 行)`);
 
       for (const { pattern, vulnType, cwe, severity } of this.patterns[language]) {
         for (let lineNum = 0; lineNum < lines.length; lineNum++) {
           const line = lines[lineNum];
           if (pattern.test(line)) {
-            const relativePath = path.relative(projectRoot, filePath).replaceAll("\\", "/");
             const codeSnippet = this.extractCodeSnippet(lines, lineNum);
             const vulnId = this.getVulnId(vulnType, severity);
             const cvssDetails = this.calculateCVSSDetailed(vulnType, severity);
@@ -731,40 +733,73 @@ export class QuickScanService {
               impact: this.getImpactDescription(vulnType),
               remediation: this.getRemediation(vulnType),
               safeValidation: "建议人工复核代码上下文，确认是否存在实际安全风险",
-              codeSnippet
+              codeSnippet,
+              status: "误报" // 默认状态为"误报"，等待 LLM 审计判定
             });
+            console.log(`[快速扫描] 发现漏洞: ${vulnType} 在 ${relativePath}:${lineNum + 1}`);
           }
         }
       }
 
+      console.log(`[快速扫描] 完成扫描: ${relativePath} (发现 ${findings.length} 个问题)`);
       return findings;
     } catch (error) {
-      console.error(`扫描文件失败 ${filePath}:`, error);
+      console.error(`[快速扫描] 扫描文件失败 ${relativePath}:`, error.message);
       return [];
     }
   }
 
   async scanProject(projectRoot, onProgress) {
-    const findings = [];
-    let processedFiles = 0;
-    const totalFiles = await this.countFiles(projectRoot);
-
-    await this.walkDirectory(projectRoot, async (filePath) => {
-      const fileFindings = await this.scanFile(filePath, projectRoot);
-      findings.push(...fileFindings);
-      processedFiles++;
-
-      if (onProgress && processedFiles % 10 === 0) {
-        onProgress({
-          type: "quick-scan-progress",
-          processedFiles,
-          totalFiles,
-          currentFile: path.relative(projectRoot, filePath)
-        });
-      }
+    console.log(`[快速扫描] 开始扫描项目: ${projectRoot}`);
+    
+    const fileList = [];
+    await this.walkDirectory(projectRoot, (filePath) => {
+      fileList.push(filePath);
     });
 
-    return this.deduplicateFindings(findings);
+    const totalFiles = fileList.length;
+    console.log(`[快速扫描] 共发现 ${totalFiles} 个文件`);
+    
+    const findings = [];
+    let processedFiles = 0;
+    const concurrencyLimit = 10;
+    const batches = [];
+
+    for (let i = 0; i < fileList.length; i += concurrencyLimit) {
+      batches.push(fileList.slice(i, i + concurrencyLimit));
+    }
+
+    console.log(`[快速扫描] 将文件分成 ${batches.length} 个批次，每批 ${concurrencyLimit} 个文件`);
+
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+      const batch = batches[batchIndex];
+      console.log(`[快速扫描] 开始处理第 ${batchIndex + 1}/${batches.length} 批`);
+      
+      const batchPromises = batch.map(async (filePath) => {
+        const fileFindings = await this.scanFile(filePath, projectRoot);
+        processedFiles++;
+
+        if (onProgress && processedFiles % 10 === 0) {
+          onProgress({
+            type: "quick-scan-progress",
+            processedFiles,
+            totalFiles,
+            currentFile: path.relative(projectRoot, filePath)
+          });
+        }
+
+        return fileFindings;
+      });
+
+      const batchResults = await Promise.all(batchPromises);
+      const batchFindings = batchResults.flat();
+      findings.push(...batchFindings);
+      console.log(`[快速扫描] 完成第 ${batchIndex + 1}/${batches.length} 批，发现 ${batchFindings.length} 个问题`);
+    }
+
+    const dedupedFindings = this.deduplicateFindings(findings);
+    console.log(`[快速扫描] 完成扫描，共发现 ${findings.length} 个问题，去重后 ${dedupedFindings.length} 个问题`);
+    return dedupedFindings;
   }
 
   async walkDirectory(root, callback) {
@@ -774,7 +809,7 @@ export class QuickScanService {
       if (entry.isDirectory()) {
         await this.walkDirectory(fullPath, callback);
       } else if (entry.isFile()) {
-        await callback(fullPath);
+        callback(fullPath);
       }
     }
   }

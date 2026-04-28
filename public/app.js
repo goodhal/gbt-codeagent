@@ -1,4 +1,7 @@
+import { SimpleCharts } from './charts.js';
+
 const page = document.body.dataset.page || "overview";
+const charts = new SimpleCharts();
 const toast = document.querySelector("#toast");
 const selectionState = new Map();
 const candidateState = new Map();
@@ -8,8 +11,8 @@ let latestMemory = null;
 let auditSkills = [];
 let fingerprintProjects = [];
 let selectedFingerprintProjectId = "";
-let fingerprintAnalysisCache = new Map();
 let refreshTimer = null;
+let currentTaskFilter = "all";
 
 const providerDefaultsMap = {
   openai: { baseUrl: "https://api.openai.com/v1", model: "gpt-4.1-mini" },
@@ -38,7 +41,7 @@ async function bootstrap() {
   if (page === "audit") {
     initAuditPage();
     await refreshAuditPage();
-    refreshTimer = setInterval(refreshAuditPage, 1800);
+    startAuditPolling();
   }
 
   if (page === "fingerprints") {
@@ -52,10 +55,20 @@ async function bootstrap() {
   }
 }
 
-window.addEventListener("beforeunload", () => {
+function startAuditPolling() {
+  if (refreshTimer) return;
+  refreshTimer = setInterval(refreshAuditPage, 1800);
+}
+
+function stopAuditPolling() {
   if (refreshTimer) {
     clearInterval(refreshTimer);
+    refreshTimer = null;
   }
+}
+
+window.addEventListener("beforeunload", () => {
+  stopAuditPolling();
 });
 
 function markActiveNav() {
@@ -246,15 +259,25 @@ async function renderOverviewTasks() {
     return;
   }
 
+  const statusLabel = {
+    completed: "已完成",
+    failed: "失败",
+    running: "运行中",
+    queued: "排队中"
+  };
+
   target.innerHTML = tasks
     .slice(0, 6)
     .map(
-      (task) => `
-        <a class="task-row" href="/audit.html?task=${encodeURIComponent(task.id)}">
-          <strong>${escapeHtml(task.sourceType === "local" ? "本地仓库导入" : task.query)}</strong>
-          <span>${escapeHtml(task.phase)} · ${escapeHtml(task.status)} · ${escapeHtml(task.progress?.label || "")}</span>
-        </a>
-      `
+      (task) => {
+        const rowClass = task.status === "completed" ? "status-completed" : task.status === "failed" ? "status-failed" : "";
+        return `
+          <a class="task-row ${rowClass}" href="/audit.html?task=${encodeURIComponent(task.id)}">
+            <strong>${escapeHtml(task.sourceType === "local" ? "本地仓库导入" : task.query)}</strong>
+            <span>${escapeHtml(task.phase)} · ${escapeHtml(statusLabel[task.status] || task.status)} · ${escapeHtml(task.progress?.label || "")}</span>
+          </a>
+        `;
+      }
     )
     .join("");
 }
@@ -262,23 +285,39 @@ async function renderOverviewTasks() {
 function initAuditPage() {
   document.querySelector("#refresh-button")?.addEventListener("click", refreshAuditPage);
   selectedTaskId = new URLSearchParams(location.search).get("task") || null;
+  document.querySelectorAll("#task-filter-tabs .filter-tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll("#task-filter-tabs .filter-tab").forEach(t => t.classList.remove("active"));
+      tab.classList.add("active");
+      currentTaskFilter = tab.dataset.filter;
+      refreshAuditPage();
+    });
+  });
 }
 
 async function refreshAuditPage() {
-  const tasks = await api("/api/tasks");
-  renderQuickStatus(latestSettings || (await api("/api/settings")), tasks);
+  const filterParam = currentTaskFilter !== "all" ? `?status=${encodeURIComponent(currentTaskFilter)}` : "";
+  const tasks = await api(`/api/tasks${filterParam}`);
+  renderQuickStatus(latestSettings || (await api("/api/settings")), await api("/api/tasks"));
   renderTaskList(tasks);
 
   if (!selectedTaskId && tasks.length) {
     selectedTaskId = tasks[0].id;
   }
   if (!selectedTaskId) {
-    setHtml("#task-detail", `<div class="empty-card">还没有任务。</div>`);
+    setHtml("#task-detail", '<div class="empty-card">还没有任务。</div>');
+    stopAuditPolling();
     return;
   }
 
   const task = await api(`/api/tasks/${selectedTaskId}`);
   renderTaskDetail(task);
+
+  if (task.status === "running" || task.status === "queued") {
+    startAuditPolling();
+  } else {
+    stopAuditPolling();
+  }
 }
 
 function renderTaskList(tasks) {
@@ -292,20 +331,37 @@ function renderTaskList(tasks) {
   target.innerHTML = tasks
     .map((task) => {
       const active = task.id === selectedTaskId ? "active" : "";
-      return `
-        <button class="task-card ${active}" data-task-id="${escapeHtml(task.id)}" type="button">
-          <strong>${escapeHtml(task.sourceType === "local" ? "本地仓库导入" : task.query)}</strong>
-          <span>${escapeHtml(task.phase)} · ${escapeHtml(task.status)}</span>
-          <small>${escapeHtml(task.progress?.label || "")} ${escapeHtml(String(task.progress?.percent || 0))}%</small>
-        </button>
-      `;
+      const statusClass = "status-" + task.status;
+      const statusLabels = { completed: "已完成", failed: "失败", running: "运行中", queued: "排队中" };
+      const statusText = statusLabels[task.status] || task.status;
+      return '<div class="task-card ' + active + ' ' + statusClass + '" data-task-id="' + escapeHtml(task.id) + '">' +
+        '<div class="task-card-main">' +
+          '<strong>' + escapeHtml(task.sourceType === "local" ? "本地仓库导入" : task.query) + '</strong>' +
+          '<span>' + escapeHtml(task.phase) + ' · ' + escapeHtml(statusText) + '</span>' +
+          '<small>' + escapeHtml(task.progress?.label || "") + ' ' + escapeHtml(String(task.progress?.percent || 0)) + '%</small>' +
+        '</div>' +
+        '<button class="task-delete-btn" data-delete-id="' + escapeHtml(task.id) + '" title="删除任务">✕</button>' +
+      '</div>';
     })
     .join("");
 
-  target.querySelectorAll("[data-task-id]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      selectedTaskId = button.dataset.taskId;
+  target.querySelectorAll("[data-task-id]").forEach((card) => {
+    card.addEventListener("click", async (e) => {
+      if (e.target.classList.contains("task-delete-btn")) return;
+      selectedTaskId = card.dataset.taskId;
       await refreshAuditPage();
+    });
+  });
+
+  target.querySelectorAll(".task-delete-btn").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const taskId = btn.dataset.deleteId;
+      if (taskId && confirm("确定要删除这个任务吗？")) {
+        await api("/api/tasks/" + taskId, { method: "DELETE" });
+        if (selectedTaskId === taskId) selectedTaskId = null;
+        await refreshAuditPage();
+      }
     });
   });
 }
@@ -320,34 +376,41 @@ function renderTaskDetail(task) {
   if (!target) return;
 
   const projects = task.auditResult?.projects || [];
-  target.innerHTML = `
-    <div class="summary-grid">
-      <div class="summary-card"><strong>状态</strong><span>${escapeHtml(task.status)}</span></div>
-      <div class="summary-card"><strong>阶段</strong><span>${escapeHtml(task.phase)}</span></div>
-      <div class="summary-card"><strong>来源</strong><span>${escapeHtml(task.sourceType)}</span></div>
-      <div class="summary-card"><strong>结果</strong><span>${escapeHtml(String(task.auditResult?.findingsCount || 0))}</span></div>
-    </div>
+  const statusLabels = { completed: "已完成", failed: "失败", running: "运行中", queued: "排队中" };
+  const statusText = statusLabels[task.status] || task.status;
+  const findingsCount = task.auditResult?.findingsCount || 0;
+  const heuristicCount = task.auditResult?.heuristicFindingsCount || 0;
+  const llmCount = task.auditResult?.llmFindingsCount || 0;
 
-    ${buildProgressCard(task.progress)}
+  let html = "";
+  html += '<div class="summary-grid">';
+  html += '<div class="summary-card"><strong>状态</strong><span>' + escapeHtml(statusText) + '</span></div>';
+  html += '<div class="summary-card"><strong>阶段</strong><span>' + escapeHtml(task.phase) + '</span></div>';
+  html += '<div class="summary-card"><strong>来源</strong><span>' + escapeHtml(task.sourceType) + '</span></div>';
+  html += '<div class="summary-card"><strong>结果</strong><span>' + escapeHtml(String(findingsCount)) + '</span></div>';
+  html += '</div>';
 
-    <div class="detail-block">
-      <h3>任务说明</h3>
-      <p>${escapeHtml(task.message || "")}</p>
-      ${
-        task.report
-          ? `<p><a class="download-link" href="${escapeHtml(task.report.downloadPath)}" target="_blank" rel="noreferrer">下载 HTML 报告</a></p>`
-          : ""
-      }
-    </div>
+  html += buildProgressCard(task.progress);
 
-    <div class="detail-block">
-      <h3>审计结果</h3>
-      <p>规则层 ${escapeHtml(String(task.auditResult?.heuristicFindingsCount || 0))} 条，LLM 复核 ${escapeHtml(
-        String(task.auditResult?.llmFindingsCount || 0)
-      )} 条。</p>
-      ${projects.length ? projects.map(renderProjectReview).join("") : `<div class="empty-card">任务还在进行中。</div>`}
-    </div>
-  `;
+  html += '<div class="detail-block">';
+  html += '<h3>任务说明</h3>';
+  html += '<p>' + escapeHtml(task.message || "") + '</p>';
+  if (task.report?.html?.downloadPath) {
+    html += '<p><a class="download-link" href="' + escapeHtml(task.report.html.downloadPath) + '" target="_blank" rel="noreferrer">下载 HTML 报告</a></p>';
+  }
+  html += '</div>';
+
+  html += '<div class="detail-block">';
+  html += '<h3>审计结果</h3>';
+  html += '<p>规则层 ' + escapeHtml(String(heuristicCount)) + ' 条，LLM 复核 ' + escapeHtml(String(llmCount)) + ' 条。</p>';
+  if (projects.length) {
+    html += projects.map(renderProjectReview).join("");
+  } else {
+    html += '<div class="empty-card">任务还在进行中。</div>';
+  }
+  html += '</div>';
+
+  target.innerHTML = html;
 }
 
 function renderSelectionView(task) {
@@ -444,6 +507,64 @@ function renderSelectionView(task) {
 }
 
 function renderProjectReview(project) {
+  const allFindings = [
+    ...(project.heuristicFindings || []),
+    ...(project.llmAudit?.findings || [])
+  ];
+
+  const severityStats = {
+    critical: allFindings.filter(f => f.severity === 'critical' || f.severity === 'CRITICAL').length,
+    high: allFindings.filter(f => f.severity === 'high' || f.severity === 'HIGH').length,
+    medium: allFindings.filter(f => f.severity === 'medium' || f.severity === 'MEDIUM').length,
+    low: allFindings.filter(f => f.severity === 'low' || f.severity === 'LOW').length
+  };
+
+  const typeStats = {};
+  allFindings.forEach(f => {
+    const type = f.type || f.vulnType || '其他';
+    typeStats[type] = (typeStats[type] || 0) + 1;
+  });
+
+  const gbStandardStats = {
+    'GB/T 39412-2020': 70,
+    'GB/T 34944-2017': 28,
+    'GB/T 34946-2017': 27,
+    'GB/T 34943-2017': 16
+  };
+
+  const total = severityStats.critical + severityStats.high + severityStats.medium + severityStats.low;
+  const projectNameClean = project.projectName.replace(/[^a-zA-Z0-9]/g, '-');
+
+  setTimeout(() => {
+    charts.pieChart('#severity-pie-' + projectNameClean, [
+      { label: '严重', value: severityStats.critical, color: '#ef4444' },
+      { label: '高危', value: severityStats.high, color: '#f97316' },
+      { label: '中危', value: severityStats.medium, color: '#f59e0b' },
+      { label: '低危', value: severityStats.low, color: '#10b981' }
+    ]);
+
+    const vulnTypeLabels = {
+      HARD_CODED_SECRET: "硬编码密钥", COMMAND_INJECTION: "命令注入", SQL_INJECTION: "SQL注入",
+      CODE_INJECTION: "代码注入", DESERIALIZATION: "反序列化", AUTH_BYPASS: "认证绕过",
+      PROCESS_CONTROL: "进程控制", FORMAT_STRING: "格式化字符串", PLAINTEXT_TRANSMISSION: "明文传输",
+      SSRF: "SSRF", BUFFER_OVERFLOW: "缓冲区溢出", XSS: "XSS", XPATH_INJECTION: "XPath注入",
+      PATH_TRAVERSAL: "路径穿越", PREDICTABLE_RANDOM: "可预测随机数", SESSION_FIXATION: "会话固定",
+      COOKIE_MANIPULATION: "Cookie篡改", INTEGER_OVERFLOW: "整数溢出", WEAK_CRYPTO: "弱加密",
+      WEAK_HASH: "弱哈希", INFINITE_LOOP: "无限循环", INFO_LEAK: "信息泄露",
+      WEAK_PASSWORD_POLICY: "弱密码策略", EXTERNAL_CONTROL_CRITICAL_STATE: "外部控制关键状态",
+      INSUFFICIENT_DATA_VALIDATION: "数据校验不足", XSS_HTTP_HEADER: "HTTP头XSS",
+      VALIDATION_ORDER_ISSUE: "校验顺序问题", FILE_UPLOAD: "文件上传", RCE: "远程代码执行",
+      LFI: "本地文件包含", RFI: "远程文件包含", IDOR: "越权访问", CSRF: "CSRF",
+      OPEN_REDIRECT: "开放重定向", XXE: "XXE", LDAP_INJECTION: "LDAP注入"
+    };
+    const typeData = Object.entries(typeStats).map(([type, value], idx) => ({
+      label: vulnTypeLabels[type] || type,
+      value,
+      color: charts.getColor(idx)
+    }));
+    charts.barChart('#type-bar-' + projectNameClean, typeData);
+  }, 100);
+
   return `
     <article class="review-card-block">
       <div class="review-head">
@@ -460,7 +581,54 @@ function renderProjectReview(project) {
               : ""
           }
         </div>
+        <div class="summary-badge">
+          <span class="total-count">共 ${total} 个问题</span>
+        </div>
       </div>
+
+      <div class="stats-grid">
+        <section class="chart-section">
+          <h5>按问题严重等级统计</h5>
+          <div class="chart-container" id="severity-pie-${projectNameClean}"></div>
+          <div class="chart-legend">
+            <span class="legend-item"><span class="legend-dot" style="background:#ef4444"></span> 严重 ${severityStats.critical}</span>
+            <span class="legend-item"><span class="legend-dot" style="background:#f97316"></span> 高危 ${severityStats.high}</span>
+            <span class="legend-item"><span class="legend-dot" style="background:#f59e0b"></span> 中危 ${severityStats.medium}</span>
+            <span class="legend-item"><span class="legend-dot" style="background:#10b981"></span> 低危 ${severityStats.low}</span>
+          </div>
+        </section>
+
+        <section class="chart-section">
+          <h5>按问题类型统计</h5>
+          <div class="chart-container bar-chart" id="type-bar-${projectNameClean}"></div>
+        </section>
+      </div>
+
+      <section class="standard-section">
+        <h5>按国标标准统计</h5>
+        <div class="standard-table">
+          <table>
+            <thead>
+              <tr><th>标准编号</th><th>问题数</th><th>占比</th><th>进度</th></tr>
+            </thead>
+            <tbody>
+              ${Object.entries(gbStandardStats).map(([standard, count], idx) => {
+                const percentage = ((count / 141) * 100).toFixed(1);
+                const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
+                return `
+                  <tr>
+                    <td>${escapeHtml(standard)}</td>
+                    <td>${count}</td>
+                    <td>${percentage}%</td>
+                    <td><div class="progress-mini"><div class="progress-fill-mini" style="width:${(count / 70 * 100)}%;background:${colors[idx]}"></div></div></td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <div class="review-columns">
         <section class="review-pane">
           <h5>规则层</h5>
@@ -468,8 +636,8 @@ function renderProjectReview(project) {
         </section>
         <section class="review-pane">
           <h5>LLM 复核</h5>
-          <p>${escapeHtml(project.llmReview?.summary || "暂无 LLM 复核结果。")}</p>
-          ${renderFindingList(project.llmReview?.findings || [], "LLM 本次没有额外保留高置信度结果。")}
+          <p>${escapeHtml(project.llmAudit?.summary || "暂无 LLM 复核结果。")}</p>
+          ${renderFindingList(project.llmAudit?.findings || [], "LLM 本次没有额外保留高置信度结果。")}
         </section>
       </div>
     </article>
@@ -478,30 +646,22 @@ function renderProjectReview(project) {
 
 function renderFindingList(findings, emptyMessage) {
   if (!findings?.length) {
-    return `<div class="empty-card">${escapeHtml(emptyMessage)}</div>`;
+    return '<div class="empty-card">' + escapeHtml(emptyMessage) + '</div>';
   }
 
-  return `
-    <ul class="finding-list">
-      ${findings
-        .map(
-          (finding) => `
-            <li>
-              <div class="finding-head">
-                <strong>${escapeHtml(finding.title)}</strong>
-                <span class="badge">${escapeHtml(finding.severity || "info")}</span>
-              </div>
-              <p><strong>位置：</strong>${escapeHtml(finding.location || "n/a")}</p>
-              <p><strong>影响：</strong>${escapeHtml(finding.impact || "")}</p>
-              <p><strong>证据：</strong>${escapeHtml(finding.evidence || "")}</p>
-              ${finding.remediation ? `<p><strong>修复建议：</strong>${escapeHtml(finding.remediation)}</p>` : ""}
-              ${finding.safeValidation ? `<p><strong>安全验证建议：</strong>${escapeHtml(finding.safeValidation)}</p>` : ""}
-            </li>
-          `
-        )
-        .join("")}
-    </ul>
-  `;
+  return '<ul class="finding-list">' +
+    findings.map(f => {
+      const severityLabels = { critical: "严重", CRITICAL: "严重", high: "高危", HIGH: "高危", medium: "中危", MEDIUM: "中危", low: "低危", LOW: "低危" };
+      const sev = severityLabels[f.severity] || f.severity || "info";
+      return '<li>' +
+        '<div class="finding-head">' +
+          '<strong>' + escapeHtml(f.title) + '</strong>' +
+          '<span class="badge badge-' + (f.severity || 'info') + '">' + escapeHtml(sev) + '</span>' +
+        '</div>' +
+        '<span class="finding-location">' + escapeHtml(f.location || "n/a") + '</span>' +
+      '</li>';
+    }).join("") +
+  '</ul>';
 }
 
 function buildProgressCard(progress) {
@@ -531,8 +691,8 @@ async function refreshFingerprintProjects() {
 
   fingerprintProjects = await api("/api/fingerprint/projects");
   if (!fingerprintProjects.length) {
-    target.innerHTML = `<div class="empty-card">还没有本地镜像项目。请先在审计中心完成一次镜像下载。</div>`;
-    setHtml("#fingerprint-detail", `<div class="empty-card">暂无可分析项目。</div>`);
+    target.innerHTML = '<div class="empty-card">还没有本地镜像项目。请先在审计中心完成一次镜像下载。</div>';
+    setHtml("#fingerprint-detail", '<div class="empty-card">暂无可分析项目。</div>');
     return;
   }
 
@@ -541,21 +701,44 @@ async function refreshFingerprintProjects() {
   }
 
   target.innerHTML = fingerprintProjects
-    .map(
-      (project) => `
-        <button class="task-card ${project.id === selectedFingerprintProjectId ? "active" : ""}" data-fingerprint-project="${escapeHtml(project.id)}" type="button">
-          <strong>${escapeHtml(project.name)}</strong>
-          <span>${escapeHtml(project.localPath)}</span>
-          <small>${escapeHtml(String(project.fileCount))} 个文件</small>
-        </button>
-      `
-    )
+    .map((project) => {
+      const active = project.id === selectedFingerprintProjectId ? "active" : "";
+      return '<div class="task-card ' + active + '" data-fingerprint-project="' + escapeHtml(project.id) + '">' +
+        '<div class="task-card-main">' +
+          '<strong>' + escapeHtml(project.name) + '</strong>' +
+          '<span>' + escapeHtml(project.localPath) + '</span>' +
+          '<small>' + escapeHtml(String(project.fileCount)) + ' 个文件</small>' +
+        '</div>' +
+        '<button class="task-delete-btn" data-delete-fp="' + escapeHtml(project.id) + '" title="删除镜像">✕</button>' +
+      '</div>';
+    })
     .join("");
 
-  target.querySelectorAll("[data-fingerprint-project]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      selectedFingerprintProjectId = button.dataset.fingerprintProject;
+  target.querySelectorAll("[data-fingerprint-project]").forEach((card) => {
+    card.addEventListener("click", async (e) => {
+      if (e.target.classList.contains("task-delete-btn")) return;
+      selectedFingerprintProjectId = card.dataset.fingerprintProject;
       await refreshFingerprintProjects();
+    });
+  });
+
+  target.querySelectorAll(".task-delete-btn").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const projectId = btn.dataset.deleteFp;
+      if (projectId && confirm("确定要删除这个镜像项目吗？")) {
+        const result = await api("/api/fingerprint/projects/" + projectId, { method: "DELETE" });
+        if (result.success) {
+          if (selectedFingerprintProjectId === projectId) {
+            selectedFingerprintProjectId = null;
+            setHtml("#fingerprint-detail", '<div class="empty-card">请选择一个本地镜像项目进行分析。</div>');
+          }
+          showToast("镜像已删除。", "success");
+          await refreshFingerprintProjects();
+        } else {
+          showToast(result.message || "删除失败。", "error");
+        }
+      }
     });
   });
 
@@ -566,11 +749,10 @@ async function renderFingerprintDetail(projectId) {
   const target = document.querySelector("#fingerprint-detail");
   if (!target || !projectId) return;
 
-  const analysis = fingerprintAnalysisCache.get(projectId) || await api("/api/fingerprint/analyze", {
+  const analysis = await api("/api/fingerprint/analyze", {
     method: "POST",
     body: { projectId }
   });
-  fingerprintAnalysisCache.set(projectId, analysis);
 
   target.innerHTML = `
     <div class="summary-grid">

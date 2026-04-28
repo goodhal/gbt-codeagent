@@ -1,4 +1,4 @@
-﻿import http from "node:http";
+import http from "node:http";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,6 +14,7 @@ import { createFingerprintService } from "./src/services/fingerprintService.js";
 import { writeAuditHtmlReport } from "./src/services/reportWriter.js";
 import { createSettingsStore } from "./src/services/settingsStore.js";
 import { createTaskStore } from "./src/store/taskStore.js";
+import { recordRequest, getPerformanceMetrics, getCache, setCache, withCache, measurePerformance } from "./src/core/performance.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,7 +32,7 @@ const scoutAgent = new FrameworkScoutAgent({
 const localScoutAgent = new LocalRepoScoutAgent({ downloadsDir });
 const llmReviewer = new DefensiveLlmReviewer();
 const auditAgent = new AuditAnalystAgent({ llmReviewer });
-const tasks = createTaskStore();
+const tasks = createTaskStore({ workspaceDir: path.join(__dirname, "workspace") });
 const memoryStore = createMemoryStore({ filePath: memoryFile });
 const fingerprintService = createFingerprintService({ downloadsDir });
 
@@ -39,27 +40,40 @@ await fs.mkdir(downloadsDir, { recursive: true });
 await fs.mkdir(reportsDir, { recursive: true });
 
 const server = http.createServer(async (req, res) => {
+  const start = performance.now();
+  const url = new URL(req.url, `http://${req.headers.host}`);
   try {
-    const url = new URL(req.url, `http://${req.headers.host}`);
+    console.log(`[请求] ${req.method} ${url.pathname}`);
 
     if (req.method === "GET" && url.pathname === "/api/health") {
       const settings = await settingsStore.read();
       const environment = await buildEnvironmentReport({ rootDir: __dirname, downloadsDir, settings });
+      recordRequest(url.pathname, performance.now() - start, true);
       return sendJson(res, 200, { status: "ok", now: new Date().toISOString(), safeMode: true, environment });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/performance") {
+      recordRequest(url.pathname, performance.now() - start, true);
+      return sendJson(res, 200, getPerformanceMetrics());
     }
 
     if (req.method === "GET" && url.pathname === "/api/environment") {
       const settings = await settingsStore.read();
       const environment = await buildEnvironmentReport({ rootDir: __dirname, downloadsDir, settings });
+      recordRequest(url.pathname, performance.now() - start, true);
       return sendJson(res, 200, environment);
     }
 
     if (req.method === "GET" && url.pathname === "/api/settings") {
-      return sendJson(res, 200, sanitizeSettings(await settingsStore.read()));
+      const result = sanitizeSettings(await settingsStore.read());
+      recordRequest(url.pathname, performance.now() - start, true);
+      return sendJson(res, 200, result);
     }
 
     if (req.method === "GET" && url.pathname === "/api/audit-skills") {
-      return sendJson(res, 200, getAuditSkillCatalog());
+      const skills = getAuditSkillCatalog();
+      recordRequest(url.pathname, performance.now() - start, true);
+      return sendJson(res, 200, skills);
     }
 
     if (req.method === "POST" && url.pathname === "/api/settings") {
@@ -116,20 +130,57 @@ const server = http.createServer(async (req, res) => {
       }));
     }
 
+    if (req.method === "DELETE" && /\/api\/fingerprint\/projects\/[^/]+$/.test(url.pathname)) {
+      const [, , , , projectId] = url.pathname.split("/");
+      if (!projectId) {
+        return sendJson(res, 400, { error: "Project ID is required" });
+      }
+      
+      const result = await fingerprintService.deleteProject(projectId);
+      if (!result.success) {
+        return sendJson(res, 400, { error: result.message });
+      }
+      
+      return sendJson(res, 200, result);
+    }
+
     if (req.method === "POST" && url.pathname === "/api/memory") {
       const body = await readJson(req);
       return sendJson(res, 200, await memoryStore.write({ preferences: body.preferences || {}, rules: Array.isArray(body.rules) ? body.rules : undefined }));
     }
 
     if (req.method === "POST" && url.pathname === "/api/tasks") {
+      console.log("[任务创建] 开始创建任务");
       const body = await readJson(req);
-      const memory = await memoryStore.read();
-      const created = tasks.createTask(applyMemoryDefaults(body, memory));
-      if (created.useMemory) {
-        tasks.updateTask(created.id, { memorySnapshot: buildMemorySnapshot(memory) });
+      console.log("[任务创建] 请求体:", JSON.stringify(body, null, 2));
+      
+      try {
+        const memory = await memoryStore.read();
+        console.log("[任务创建] 读取内存成功");
+        
+        const defaults = applyMemoryDefaults(body, memory);
+        console.log("[任务创建] 应用默认值成功:", JSON.stringify(defaults, null, 2));
+        
+        const created = await tasks.createTask(defaults);
+        console.log("[任务创建] 创建任务成功:", created.id);
+        
+        if (created.useMemory) {
+          await tasks.updateTask(created.id, { memorySnapshot: buildMemorySnapshot(memory) });
+          console.log("[任务创建] 更新内存快照成功");
+        }
+        
+        runScout(created.id).catch((error) => {
+          console.error("[任务创建] 运行scout失败:", error);
+          tasks.failTask(created.id, error instanceof Error ? error.message : String(error));
+        });
+        
+        const task = tasks.getTask(created.id);
+        console.log("[任务创建] 返回任务:", task.id);
+        return sendJson(res, 202, task);
+      } catch (taskError) {
+        console.error("[任务创建] 错误:", taskError);
+        return sendJson(res, 500, { error: "任务创建失败", detail: taskError instanceof Error ? taskError.message : String(taskError), stack: taskError instanceof Error ? taskError.stack : undefined });
       }
-      runScout(created.id).catch((error) => tasks.failTask(created.id, error instanceof Error ? error.message : String(error)));
-      return sendJson(res, 202, tasks.getTask(created.id));
     }
 
     if (req.method === "POST" && /\/api\/tasks\/[^/]+\/audit$/.test(url.pathname)) {
@@ -147,16 +198,64 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 202, tasks.getTask(taskId));
     }
 
+    if (req.method === "POST" && /\/api\/tasks\/[^/]+\/resume$/.test(url.pathname)) {
+      const [, , , taskId] = url.pathname.split("/");
+      const task = await tasks.resumeTask(taskId);
+      if (!task) {
+        return sendJson(res, 404, { error: "Task not found" });
+      }
+      
+      // 根据当前阶段继续执行
+      if (task.phase === "framework-scout" || task.phase === "scout") {
+        runScout(taskId).catch((error) => tasks.failTask(taskId, error instanceof Error ? error.message : String(error)));
+      } else if (task.phase === "audit" || task.phase === "audit-analyst") {
+        runAudit(taskId, task.selectedProjectIds).catch((error) => tasks.failTask(taskId, error instanceof Error ? error.message : String(error)));
+      }
+      
+      return sendJson(res, 202, task);
+    }
+
+    if (req.method === "DELETE" && /\/api\/tasks\/[^/]+$/.test(url.pathname)) {
+      const [, , , taskId] = url.pathname.split("/");
+      const task = tasks.getTask(taskId);
+      if (!task) {
+        return sendJson(res, 404, { error: "Task not found" });
+      }
+      
+      // 从内存中移除任务
+      tasks.deleteTask(taskId);
+      
+      // 清理任务文件
+      const tasksDir = path.join(__dirname, "workspace", "tasks");
+      try {
+        const taskFile = path.join(tasksDir, `${taskId}.json`);
+        await fs.unlink(taskFile);
+      } catch (error) {
+        // 文件不存在时忽略
+      }
+      
+      return sendJson(res, 200, { status: "ok", message: "Task deleted" });
+    }
+
     if (req.method === "GET" && url.pathname === "/api/tasks") {
-      return sendJson(res, 200, tasks.listTasks());
+      let result = tasks.listTasks();
+      const statusFilter = url.searchParams.get("status");
+      if (statusFilter) {
+        const statuses = statusFilter.split(",");
+        result = result.filter(t => statuses.includes(t.status));
+      }
+      recordRequest(url.pathname, performance.now() - start, true);
+      return sendJson(res, 200, result);
     }
 
     if (req.method === "GET" && url.pathname.startsWith("/api/tasks/")) {
       const id = url.pathname.split("/")[3];
       const task = tasks.getTask(id);
       if (!task) {
+        recordRequest(url.pathname, performance.now() - start, false);
         return sendJson(res, 404, { error: "Task not found" });
       }
+      recordRequest(url.pathname, performance.now() - start, true);
       return sendJson(res, 200, task);
     }
 
@@ -175,7 +274,12 @@ const server = http.createServer(async (req, res) => {
 
     return sendJson(res, 404, { error: "Not found" });
   } catch (error) {
-    return sendJson(res, 500, { error: "Internal server error", detail: error instanceof Error ? error.message : String(error) });
+    console.error("[服务器错误]", error);
+    return sendJson(res, 500, { 
+      error: "Internal server error", 
+      detail: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    });
   }
 });
 
@@ -268,6 +372,7 @@ async function runAudit(taskId, selectedProjectIds) {
 
   const settings = await settingsStore.read();
   const llmConfig = resolveLlmConfig(process.env, settings.llm);
+  console.log(`[审计流程] LLM配置 - 提供商: ${llmConfig.providerId}, 模型: ${llmConfig.model}, 端点: ${llmConfig.baseUrl}, API Key配置: ${Boolean(llmConfig.apiKey)}`);
   const auditResult = await auditAgent.run({
     projects: selectedProjects,
     selectedSkillIds: task.selectedSkillIds,
@@ -276,7 +381,7 @@ async function runAudit(taskId, selectedProjectIds) {
   });
   updateTaskProgress(taskId, {
     stage: "report",
-    label: "正在生成 HTML 报告",
+    label: "正在生成审计报告",
     detail: "",
     percent: 98,
     current: selectedProjects.length,
@@ -285,10 +390,13 @@ async function runAudit(taskId, selectedProjectIds) {
   const finalTaskSnapshot = {
     ...tasks.getTask(taskId),
     phase: "completed",
-    message: "审计完成，可下载 HTML 报告。",
+    message: "审计完成，可下载审计报告。",
     selectedProjectIds
   };
-  const report = await writeAuditHtmlReport({ reportsDir, task: finalTaskSnapshot, selectedProjects, auditResult });
+  
+  // 生成 HTML 报告
+  const htmlReport = await writeAuditHtmlReport({ reportsDir, task: finalTaskSnapshot, selectedProjects, auditResult });
+  
   const memorySummary = buildMemorySummary(finalTaskSnapshot, { projects: selectedProjects }, auditResult);
   if (task.useMemory) {
     await memoryStore.appendRunSummary(memorySummary);
@@ -296,10 +404,12 @@ async function runAudit(taskId, selectedProjectIds) {
 
   tasks.completeTask(taskId, {
     phase: "completed",
-    message: "审计完成，可下载 HTML 报告。",
+    message: "审计完成，可下载审计报告。",
     selectedProjectIds,
     auditResult,
-    report,
+    report: {
+      html: htmlReport
+    },
     memorySummary,
     progress: {
       stage: "completed",
@@ -354,6 +464,20 @@ function buildAuditProgress(detail, totalProjects) {
       detail: detail.currentPath || `${detail.reviewedFiles || 0} / ${detail.totalFiles || 0} 个文件`,
       percent: Math.min(95, Math.round(68 + projectOffset + batchProgress * (24 / safeProjects))),
       current: detail.currentBatch || detail.reviewedBatches || 0,
+      total: detail.totalBatches || 0
+    };
+  }
+
+  if (detail.stage === "llm-audit") {
+    const totalBatches = Math.max(detail.totalBatches || 1, 1);
+    const batchProgress = detail.currentBatch ? Math.min(detail.currentBatch / totalBatches, 1) : 0;
+    const projectOffset = (Math.max((detail.projectIndex || 1) - 1, 0) / safeProjects) * 24;
+    return {
+      stage: "llm-audit",
+      label: detail.label || `正在进行 LLM 独立审计：${detail.projectName || ""}`,
+      detail: detail.currentPath || `${detail.auditedFiles || 0} / ${detail.totalFiles || 0} 个文件`,
+      percent: Math.min(95, Math.round(68 + projectOffset + batchProgress * (24 / safeProjects))),
+      current: detail.currentBatch || detail.auditedBatches || 0,
       total: detail.totalBatches || 0
     };
   }
@@ -456,12 +580,13 @@ async function testLlmConnection(llm) {
   try {
     let url = llm.baseUrl;
     let options = { headers: {} };
-    if (llm.compatibility === "openai") {
+    const compatibility = llm.compatibility || llm.defaults?.compatibility || "openai";
+    if (compatibility === "openai") {
       url = `${stripTrailingSlash(llm.baseUrl)}/models`;
       options.headers = { Authorization: `Bearer ${llm.apiKey}` };
-    } else if (llm.compatibility === "gemini") {
+    } else if (compatibility === "gemini") {
       url = `${stripTrailingSlash(llm.baseUrl)}/v1beta/models?key=${encodeURIComponent(llm.apiKey)}`;
-    } else if (llm.compatibility === "anthropic") {
+    } else if (compatibility === "anthropic") {
       url = `${stripTrailingSlash(llm.baseUrl)}/v1/models`;
       options.headers = { "x-api-key": llm.apiKey, "anthropic-version": "2023-06-01" };
     }
@@ -480,53 +605,66 @@ function stripTrailingSlash(value) {
 function applyMemoryDefaults(body, memory) {
   const useMemory = body.useMemory !== false;
   const sourceType = body.sourceType === "local" ? "local" : "github";
-  const selectedSkillIds = Array.isArray(body.selectedSkillIds) ? body.selectedSkillIds : [];
-  const localRepoPaths = Array.isArray(body.localRepoPaths)
+  let selectedSkillIds = Array.isArray(body.selectedSkillIds) ? body.selectedSkillIds : [];
+  
+  // 如果提供了selectedSkills，将其转换为selectedSkillIds
+  if (Array.isArray(body.selectedSkills)) {
+    selectedSkillIds = body.selectedSkills;
+  }
+  
+  let localRepoPaths = Array.isArray(body.localRepoPaths)
     ? body.localRepoPaths
     : String(body.localRepoPaths || "")
         .split(/\r?\n|,/)
         .map((item) => item.trim())
         .filter(Boolean);
 
-    if (sourceType === "local") {
-      return {
-        ...body,
-        sourceType,
-        selectedSkillIds,
-        localRepoPaths,
-        useMemory,
-        query: "local repository import",
-        cmsType: "all",
-        industry: "all",
-        minAdoption: 0
-      };
+  if (sourceType === "local") {
+    // 如果提供了localPath，将其添加到localRepoPaths中
+    if (body.localPath) {
+      localRepoPaths.push(body.localPath);
+      // 去重
+      localRepoPaths = [...new Set(localRepoPaths)];
     }
+    
+    return {
+      ...body,
+      sourceType,
+      selectedSkillIds,
+      localRepoPaths,
+      useMemory,
+      query: "local repository import",
+      cmsType: "all",
+      industry: "all",
+      minAdoption: 0
+    };
+  }
 
   if (!useMemory) {
     return {
       ...body,
       sourceType,
-        selectedSkillIds,
-        localRepoPaths: [],
-        useMemory: false,
-        query: body.query || 'topic:cms OR "headless cms" OR "content management system"',
-        cmsType: body.cmsType || "all",
-        industry: body.industry || "all",
-        minAdoption: Number(body.minAdoption || 100)
-      };
-    }
+      selectedSkillIds,
+      localRepoPaths: [],
+      useMemory: false,
+      query: body.query || 'topic:cms OR "headless cms" OR "content management system"',
+      cmsType: body.cmsType || "all",
+      industry: body.industry || "all",
+      minAdoption: Number(body.minAdoption || 100)
+    };
+  }
   return {
     ...body,
     sourceType,
-      selectedSkillIds,
-      localRepoPaths: [],
-      useMemory,
-      query: body.query || memory.preferences.preferredQuery,
-      cmsType: body.cmsType || "all",
-      industry: body.industry || "all",
-      minAdoption: Number(body.minAdoption || memory.preferences.preferredMinAdoption || 100)
-    };
-  }
+    selectedSkillIds,
+    localRepoPaths: [],
+    useMemory,
+    query: body.query || memory.preferences?.preferredQuery || 'topic:cms OR "headless cms" OR "content management system"',
+    cmsType: body.cmsType || "all",
+    industry: body.industry || "all",
+    minAdoption: Number(body.minAdoption || memory.preferences?.preferredMinAdoption || 100)
+  };
+}
 
 function buildMemorySnapshot(memory) {
   return { rules: memory.rules, preferences: memory.preferences, learnedPatterns: memory.learnedPatterns.slice(0, 5) };
@@ -554,18 +692,22 @@ async function readJson(req) {
 }
 
 async function serveFile(res, filePath) {
+  const start = performance.now();
   try {
+    console.log(`Serving file: ${filePath}`);
     const content = await fs.readFile(filePath);
     const ext = path.extname(filePath).toLowerCase();
     const type = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".json": "application/json; charset=utf-8", ".md": "text/markdown; charset=utf-8" }[ext] || "application/octet-stream";
+    const cacheControl = "no-store, max-age=0";
     res.writeHead(200, {
       "Content-Type": type,
-      "Cache-Control": "no-store, max-age=0",
-      Pragma: "no-cache",
-      Expires: "0"
+      "Cache-Control": cacheControl
     });
     res.end(content);
-  } catch {
+    recordRequest("/static", performance.now() - start, true);
+  } catch (error) {
+    console.error(`File serve error: ${filePath}`, error.message);
+    recordRequest("/static", performance.now() - start, false);
     sendJson(res, 404, { error: "File not found" });
   }
 }
@@ -580,6 +722,6 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload, null, 2));
 }
 
-const port = process.env.PORT || 3000;
-server.listen(port, () => console.log(`Safe audit agents listening on http://localhost:${port}`));
+const port = process.env.PORT || 3001;
+server.listen(port, '0.0.0.0', () => console.log(`Safe audit agents listening on http://0.0.0.0:${port}`));
 

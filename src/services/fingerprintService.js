@@ -139,6 +139,40 @@ export function createFingerprintService({ downloadsDir }) {
           ? `已在导入资产清单中匹配到 ${matches.length} 条疑似同技术栈记录。`
           : "导入的资产清单里暂时没有匹配到明显同技术栈记录。"
       };
+    },
+
+    async deleteProject(projectId) {
+      try {
+        const projects = await this.listProjects();
+        const project = projects.find(p => p.id === projectId);
+        
+        if (!project) {
+          return { success: false, message: "Project not found" };
+        }
+        
+        // 检查项目路径是否存在
+        const projectPath = path.join(downloadsDir, project.name);
+        try {
+          await fs.access(projectPath);
+        } catch {
+          return { success: false, message: "Project directory not found" };
+        }
+        
+        // 删除项目目录
+        await fs.rm(projectPath, { recursive: true, force: true });
+        
+        return { 
+          success: true, 
+          message: "Project deleted successfully",
+          projectId 
+        };
+      } catch (error) {
+        console.error("Error deleting project:", error);
+        return { 
+          success: false, 
+          message: error instanceof Error ? error.message : "Failed to delete project"
+        };
+      }
     }
   };
 }

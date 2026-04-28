@@ -1,14 +1,26 @@
 node_modules/
+package-lock.json
 
-# Local runtime data
 workspace/
 
-# Local secrets and machine-specific files
 .env
 .env.*
+*.local
+
 *.log
 *.pid
+*.seed
+audit_report_*
 
-# OS/editor noise
+.claude/
+.trae/
+
 .DS_Store
 Thumbs.db
+desktop.ini
+
+*.swp
+*.swo
+*~
+.vscode/
+.idea/

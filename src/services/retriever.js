@@ -1,4 +1,5 @@
-import { EmbeddingsService, VectorStore } from "./embeddings.js";
+import { EmbeddingsService } from "./embeddings.js";
+import { VectorStore } from "./vectorStore.js";
 import { CodeChunk, CodeSplitter } from "./splitter.js";
 
 class RetrievalResult {
@@ -74,7 +75,7 @@ class RetrievalResult {
 
 class CodeRetriever {
   constructor(options = {}) {
-    this.embeddingsService = options.embeddingsService || new EmbeddingsService();
+    this.embeddingsService = options.embeddingsService || globalEmbeddingsService;
     this.vectorStore = new VectorStore(this.embeddingsService.provider.dimension);
     this.splitter = new CodeSplitter({
       maxChunkSize: options.maxChunkSize || 1000,
@@ -82,6 +83,14 @@ class CodeRetriever {
     });
     this.chunks = new Map();
     this.metadata = new Map();
+    this._initialized = false;
+  }
+
+  async initialize() {
+    if (this._initialized) return this;
+    await this.embeddingsService.initialize();
+    this._initialized = true;
+    return this;
   }
 
   async indexFile(filePath, content, language = null) {

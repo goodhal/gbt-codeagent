@@ -1,0 +1,5283 @@
+{
+  "version": "1.0",
+  "projectId": "com-mosvf5pn",
+  "createdAt": "2026-05-05T17:06:21.600Z",
+  "nodes": [
+    {
+      "id": "com.best.hello.config.LoginHandlerInterceptor",
+      "language": "java",
+      "type": "class",
+      "name": "LoginHandlerInterceptor",
+      "package": "com.best.hello.config",
+      "superClasses": [
+        {
+          "name": "HandlerInterceptor",
+          "packageName": "",
+          "isInterface": true,
+          "fullName": "HandlerInterceptor"
+        }
+      ],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "session",
+          "type": "Object",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "false",
+          "type": "return",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "true",
+          "type": "return",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "preHandle",
+          "returnType": "boolean",
+          "params": [
+            {
+              "type": "HttpServletRequest",
+              "name": "request"
+            },
+            {
+              "type": "HttpServletResponse",
+              "name": "response"
+            },
+            {
+              "type": "Object",
+              "name": "handler"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "LoginHandlerInterceptor",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\config\\LoginHandlerInterceptor.java",
+      "startLine": 8,
+      "endLine": 18,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.config.MvcConfig",
+      "language": "java",
+      "type": "class",
+      "name": "MvcConfig",
+      "package": "com.best.hello.config",
+      "superClasses": [
+        {
+          "name": "WebMvcConfigurer",
+          "packageName": "",
+          "isInterface": true,
+          "fullName": "WebMvcConfigurer"
+        }
+      ],
+      "subClasses": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "addViewControllers",
+          "returnType": "void",
+          "params": [
+            {
+              "type": "ViewControllerRegistry",
+              "name": "registry"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "MvcConfig",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "addInterceptors",
+          "returnType": "void",
+          "params": [
+            {
+              "type": "InterceptorRegistry",
+              "name": "registry"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "MvcConfig",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\config\\MvcConfig.java",
+      "startLine": 9,
+      "endLine": 43,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.Admin",
+      "language": "java",
+      "type": "class",
+      "name": "Admin",
+      "package": "com.best.hello.controller",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "sysInfo",
+          "returnType": "String",
+          "params": [],
+          "modifiers": [
+            "public"
+          ],
+          "className": "Admin",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\Admin.java",
+      "startLine": 19,
+      "endLine": 34,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.BAC",
+      "language": "java",
+      "type": "class",
+      "name": "BAC",
+      "package": "com.best.hello.controller",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "userMapper",
+          "type": "UserMapper",
+          "modifiers": [
+            "private"
+          ],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": true,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "loginUser",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "vul",
+          "returnType": "List<User>",
+          "params": [
+            {
+              "type": "String",
+              "name": "name"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "BAC",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "safe",
+          "returnType": "Object",
+          "params": [
+            {
+              "type": "String",
+              "name": "name"
+            },
+            {
+              "type": "HttpSession",
+              "name": "session"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "BAC",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\BAC.java",
+      "startLine": 20,
+      "endLine": 30,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.ComponentsVul.FastjsonVul",
+      "language": "java",
+      "type": "class",
+      "name": "FastjsonVul",
+      "package": "com.best.hello.controller.ComponentsVul",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "jsonToObject",
+          "type": "JSONObject",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "vul",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "any",
+              "name": "@RequestBody String content"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "FastjsonVul",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\ComponentsVul\\FastjsonVul.java",
+      "startLine": 21,
+      "endLine": 40,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.ComponentsVul.JacksonVul",
+      "language": "java",
+      "type": "class",
+      "name": "JacksonVul",
+      "package": "com.best.hello.controller.ComponentsVul",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "mapper",
+          "type": "ObjectMapper",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "o",
+          "type": "Object",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "payload",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "mapper",
+          "type": "ObjectMapper",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "obj",
+          "type": "Object",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "vul",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "any",
+              "name": "@RequestBody String content"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "JacksonVul",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "main",
+          "returnType": "void",
+          "params": [
+            {
+              "type": "any",
+              "name": "String[] args"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "JacksonVul",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\ComponentsVul\\JacksonVul.java",
+      "startLine": 12,
+      "endLine": 29,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.ComponentsVul.Log4jVul",
+      "language": "java",
+      "type": "class",
+      "name": "Log4jVul",
+      "package": "com.best.hello.controller.ComponentsVul",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "logger",
+          "type": "Logger",
+          "modifiers": [
+            "private",
+            "static",
+            "final"
+          ],
+          "isStatic": true,
+          "isFinal": true,
+          "isPrivate": true,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "vul",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "any",
+              "name": "@RequestParam(\"q\""
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "Log4jVul",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\ComponentsVul\\Log4jVul.java",
+      "startLine": 12,
+      "endLine": 27,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.ComponentsVul.ShiroVul",
+      "language": "java",
+      "type": "class",
+      "name": "ShiroVul",
+      "package": "com.best.hello.controller.ComponentsVul",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "key",
+          "type": "byte[]",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "getShiroKey",
+          "returnType": "void",
+          "params": [
+            {
+              "type": "HttpServletResponse",
+              "name": "resp"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "ShiroVul",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\ComponentsVul\\ShiroVul.java",
+      "startLine": 13,
+      "endLine": 22,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.ComponentsVul.XStreamVul",
+      "language": "java",
+      "type": "class",
+      "name": "XStreamVul",
+      "package": "com.best.hello.controller.ComponentsVul",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "xs",
+          "type": "XStream",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "xs",
+          "type": "XStream",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "xs",
+          "type": "XStream",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "vul",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "any",
+              "name": "@RequestBody String content"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "XStreamVul",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "safe",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "any",
+              "name": "@RequestBody String content"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "XStreamVul",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "main",
+          "returnType": "void",
+          "params": [
+            {
+              "type": "any",
+              "name": "String[] args"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "XStreamVul",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\ComponentsVul\\XStreamVul.java",
+      "startLine": 18,
+      "endLine": 43,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.CORS",
+      "language": "java",
+      "type": "class",
+      "name": "CORS",
+      "package": "com.best.hello.controller",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "origin",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "corsVul",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "HttpServletRequest",
+              "name": "request"
+            },
+            {
+              "type": "HttpServletResponse",
+              "name": "response"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "CORS",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "corsSafe",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "HttpServletRequest",
+              "name": "request"
+            },
+            {
+              "type": "HttpServletResponse",
+              "name": "response"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "CORS",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\CORS.java",
+      "startLine": 16,
+      "endLine": 31,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.CSRF",
+      "language": "java",
+      "type": "class",
+      "name": "CSRF",
+      "package": "com.best.hello.controller",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [],
+      "methods": [],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\CSRF.java",
+      "startLine": 10,
+      "endLine": 12,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.Deserialize.ObjectInputStream",
+      "language": "java",
+      "type": "class",
+      "name": "ObjectInputStream",
+      "package": "com.best.hello.controller.Deserialize",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "obj",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "fos",
+          "type": "FileOutputStream",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "os",
+          "type": "ObjectOutputStream",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "fis",
+          "type": "FileInputStream",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "ois",
+          "type": "java.io.ObjectInputStream",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "obj2",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "obj2",
+          "type": "return",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "decoder",
+          "type": "BASE64Decoder",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "bytes",
+          "type": "byte[]",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "stream",
+          "type": "ByteArrayInputStream",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "in",
+          "type": "java.io.ObjectInputStream",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "decoder",
+          "type": "BASE64Decoder",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "bytes",
+          "type": "byte[]",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "stream",
+          "type": "ByteArrayInputStream",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "ois",
+          "type": "ValidatingObjectInputStream",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "test",
+          "returnType": "String",
+          "params": [],
+          "modifiers": [
+            "public"
+          ],
+          "className": "ObjectInputStream",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "readObject",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "base64"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "ObjectInputStream",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "safe",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "base64"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "ObjectInputStream",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\Deserialize\\ObjectInputStream.java",
+      "startLine": 32,
+      "endLine": 58,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.Deserialize.XMLDecoderVul",
+      "language": "java",
+      "type": "class",
+      "name": "XMLDecoderVul",
+      "package": "com.best.hello.controller.Deserialize",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "xmlEncoder",
+          "type": "XMLEncoder",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "path",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "file",
+          "type": "File",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "fis",
+          "type": "FileInputStream",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "bis",
+          "type": "BufferedInputStream",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "xmlDecoder",
+          "type": "XMLDecoder",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "main",
+          "returnType": "void",
+          "params": [
+            {
+              "type": "any",
+              "name": "String[] args"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "XMLDecoderVul",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "vul",
+          "returnType": "void",
+          "params": [],
+          "modifiers": [
+            "public"
+          ],
+          "className": "XMLDecoderVul",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\Deserialize\\XMLDecoderVul.java",
+      "startLine": 19,
+      "endLine": 36,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.Deserialize.YamlVul",
+      "language": "java",
+      "type": "class",
+      "name": "YamlVul",
+      "package": "com.best.hello.controller.Deserialize",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "y",
+          "type": "Yaml",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "yaml",
+          "returnType": "void",
+          "params": [
+            {
+              "type": "String",
+              "name": "content"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "YamlVul",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\Deserialize\\YamlVul.java",
+      "startLine": 13,
+      "endLine": 22,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.DoS",
+      "language": "java",
+      "type": "class",
+      "name": "DoS",
+      "package": "com.best.hello.controller",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "match",
+          "type": "boolean",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "match",
+          "type": "boolean",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "vul",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "content"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "DoS",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "safe",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "content"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "DoS",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\DoS.java",
+      "startLine": 13,
+      "endLine": 35,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.JNDI",
+      "language": "java",
+      "type": "class",
+      "name": "JNDI",
+      "package": "com.best.hello.controller",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "ctx",
+          "type": "Context",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "vul",
+          "returnType": "void",
+          "params": [
+            {
+              "type": "String",
+              "name": "content"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "JNDI",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\JNDI.java",
+      "startLine": 18,
+      "endLine": 34,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.Login",
+      "language": "java",
+      "type": "class",
+      "name": "Login",
+      "package": "com.best.hello.controller",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "user",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "pass",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "login",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "any",
+              "name": "@RequestParam(\"username\""
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "Login",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "logout",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "HttpSession",
+              "name": "session"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "Login",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "captcha",
+          "returnType": "void",
+          "params": [
+            {
+              "type": "HttpServletRequest",
+              "name": "request"
+            },
+            {
+              "type": "HttpServletResponse",
+              "name": "response"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "Login",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\Login.java",
+      "startLine": 16,
+      "endLine": 30,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.RCE.GroovyVul",
+      "language": "java",
+      "type": "class",
+      "name": "GroovyVul",
+      "package": "com.best.hello.controller.RCE",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "shell",
+          "type": "GroovyShell",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "vul",
+          "returnType": "void",
+          "params": [
+            {
+              "type": "String",
+              "name": "cmd"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "GroovyVul",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\RCE\\GroovyVul.java",
+      "startLine": 13,
+      "endLine": 24,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.RCE.LoadJsVul",
+      "language": "java",
+      "type": "class",
+      "name": "LoadJsVul",
+      "package": "com.best.hello.controller.RCE",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "engine",
+          "type": "ScriptEngine",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "bindings",
+          "type": "Bindings",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "payload",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "jsEngine",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "url"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "LoadJsVul",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\RCE\\LoadJsVul.java",
+      "startLine": 19,
+      "endLine": 41,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.RCE.ProcessBuilderVul",
+      "language": "java",
+      "type": "class",
+      "name": "ProcessBuilderVul",
+      "package": "com.best.hello.controller.RCE",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "cmdList",
+          "type": "String[]",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "sb",
+          "type": "StringBuilder",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "line",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "pb",
+          "type": "ProcessBuilder",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "process",
+          "type": "Process",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "fis",
+          "type": "InputStream",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "isr",
+          "type": "InputStreamReader",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "br",
+          "type": "BufferedReader",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "cmdList",
+          "type": "String[]",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "sb",
+          "type": "StringBuilder",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "line",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "pb",
+          "type": "java.lang.ProcessBuilder",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "process",
+          "type": "Process",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "fis",
+          "type": "InputStream",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "isr",
+          "type": "InputStreamReader",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "br",
+          "type": "BufferedReader",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "vul",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "filepath"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "ProcessBuilderVul",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "processbuilderSafe",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "filepath"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "ProcessBuilderVul",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\RCE\\ProcessBuilderVul.java",
+      "startLine": 17,
+      "endLine": 49,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.RCE.ProcessImplVul",
+      "language": "java",
+      "type": "class",
+      "name": "ProcessImplVul",
+      "package": "com.best.hello.controller.RCE",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "clazz",
+          "type": "Class",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "method",
+          "type": "Method",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "e",
+          "type": "Process",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "bs",
+          "type": "byte[]",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "readSize",
+          "type": "int",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "infoStream",
+          "type": "ByteArrayOutputStream",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "vul",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "cmd"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "ProcessImplVul",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\RCE\\ProcessImplVul.java",
+      "startLine": 15,
+      "endLine": 32,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.RCE.RuntimeVul",
+      "language": "java",
+      "type": "class",
+      "name": "RuntimeVul",
+      "package": "com.best.hello.controller.RCE",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "sb",
+          "type": "StringBuilder",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "line",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "proc",
+          "type": "Process",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "fis",
+          "type": "InputStream",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "isr",
+          "type": "InputStreamReader",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "br",
+          "type": "BufferedReader",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "rt",
+          "type": "Runtime",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "vul",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "cmd"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "RuntimeVul",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "main",
+          "returnType": "void",
+          "params": [
+            {
+              "type": "any",
+              "name": "String[] args"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "RuntimeVul",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\RCE\\RuntimeVul.java",
+      "startLine": 16,
+      "endLine": 36,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.Redirect",
+      "language": "java",
+      "type": "class",
+      "name": "Redirect",
+      "package": "com.best.hello.controller",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "vul",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "url"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "Redirect",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "vul2",
+          "returnType": "ModelAndView",
+          "params": [
+            {
+              "type": "String",
+              "name": "url"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "Redirect",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "vul3",
+          "returnType": "void",
+          "params": [
+            {
+              "type": "String",
+              "name": "url"
+            },
+            {
+              "type": "HttpServletResponse",
+              "name": "response"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "Redirect",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "safe",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "url"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "Redirect",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\Redirect.java",
+      "startLine": 26,
+      "endLine": 34,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.RMI.Client",
+      "language": "java",
+      "type": "class",
+      "name": "Client",
+      "package": "com.best.hello.controller.RMI",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "Client",
+          "returnType": "private",
+          "params": [],
+          "modifiers": [],
+          "className": "Client",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\RMI\\Client.java",
+      "startLine": 3,
+      "endLine": 6,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.RMI.RegistryVul",
+      "language": "java",
+      "type": "class",
+      "name": "RegistryVul",
+      "package": "com.best.hello.controller.RMI",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "registry",
+          "type": "Registry",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "rmi",
+          "returnType": "String",
+          "params": [],
+          "modifiers": [
+            "public"
+          ],
+          "className": "RegistryVul",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\RMI\\RegistryVul.java",
+      "startLine": 14,
+      "endLine": 27,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.SpEL",
+      "language": "java",
+      "type": "class",
+      "name": "SpEL",
+      "package": "com.best.hello.controller",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "parser",
+          "type": "ExpressionParser",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "evaluationContext",
+          "type": "EvaluationContext",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "result",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "result",
+          "type": "return",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "null",
+          "type": "return",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "spelVul",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "ex"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "SpEL",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "spelSafe",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "ex"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "SpEL",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\SpEL.java",
+      "startLine": 30,
+      "endLine": 46,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.SQLI.Hibernate",
+      "language": "java",
+      "type": "class",
+      "name": "Hibernate",
+      "package": "com.best.hello.controller.SQLI",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [],
+      "methods": [],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\SQLI\\Hibernate.java",
+      "startLine": 3,
+      "endLine": 4,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.SQLI.JDBC",
+      "language": "java",
+      "type": "class",
+      "name": "JDBC",
+      "package": "com.best.hello.controller.SQLI",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "db_url",
+          "type": "String",
+          "modifiers": [
+            "private"
+          ],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": true,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "db_user",
+          "type": "String",
+          "modifiers": [
+            "private"
+          ],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": true,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "db_pass",
+          "type": "String",
+          "modifiers": [
+            "private"
+          ],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": true,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "result",
+          "type": "StringBuilder",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "conn",
+          "type": "Connection",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "stmt",
+          "type": "Statement",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "sql",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "rs",
+          "type": "ResultSet",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "res_name",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "res_pass",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "info",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "result",
+          "type": "StringBuilder",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "conn",
+          "type": "Connection",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "sql",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "st",
+          "type": "PreparedStatement",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "rs",
+          "type": "ResultSet",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "res_name",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "res_pass",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "info",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "result",
+          "type": "StringBuilder",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "conn",
+          "type": "Connection",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "sql",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "st",
+          "type": "PreparedStatement",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "rs",
+          "type": "ResultSet",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "res_name",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "res_pass",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "info",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "result",
+          "type": "StringBuilder",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "conn",
+          "type": "Connection",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "stmt",
+          "type": "Statement",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "sql",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "rs",
+          "type": "ResultSet",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "res_name",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "res_pass",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "info",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "result",
+          "type": "StringBuilder",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "oracleCodec",
+          "type": "Codec<Character>",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "conn",
+          "type": "Connection",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "stmt",
+          "type": "Statement",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "sql",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "rs",
+          "type": "ResultSet",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "res_name",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "res_pass",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "info",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "vul1",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "id"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "JDBC",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "vul2",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "id"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "JDBC",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "safe1",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "id"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "JDBC",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "safe2",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "id"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "JDBC",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "safe3",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "id"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "JDBC",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\SQLI\\JDBC.java",
+      "startLine": 30,
+      "endLine": 64,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.SQLI.MyBatis",
+      "language": "java",
+      "type": "class",
+      "name": "MyBatis",
+      "package": "com.best.hello.controller.SQLI",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "userMapper",
+          "type": "UserMapper",
+          "modifiers": [
+            "private"
+          ],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": true,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "queryById",
+          "returnType": "List<User>",
+          "params": [
+            {
+              "type": "any",
+              "name": "@PathVariable String id"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "MyBatis",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "search",
+          "returnType": "List<User>",
+          "params": [
+            {
+              "type": "any",
+              "name": "@RequestParam(\"q\""
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "MyBatis",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "orderBy",
+          "returnType": "List<User>",
+          "params": [
+            {
+              "type": "String",
+              "name": "field"
+            },
+            {
+              "type": "String",
+              "name": "sort"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "MyBatis",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "order2",
+          "returnType": "List<User>",
+          "params": [
+            {
+              "type": "String",
+              "name": "field"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "MyBatis",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "queryByUser",
+          "returnType": "List<User>",
+          "params": [
+            {
+              "type": "String",
+              "name": "user"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "MyBatis",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "list",
+          "returnType": "List<User>",
+          "params": [],
+          "modifiers": [
+            "public"
+          ],
+          "className": "MyBatis",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "queryById",
+          "returnType": "List<User>",
+          "params": [
+            {
+              "type": "any",
+              "name": "@PathVariable Integer id"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "MyBatis",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "orderBySafe",
+          "returnType": "List<User>",
+          "params": [
+            {
+              "type": "String",
+              "name": "field"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "MyBatis",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\SQLI\\MyBatis.java",
+      "startLine": 17,
+      "endLine": 27,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.SSRF",
+      "language": "java",
+      "type": "class",
+      "name": "SSRF",
+      "package": "com.best.hello.controller",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "URLConnection",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "url"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "SSRF",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "URLConnectionSafe",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "url"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "SSRF",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "HTTPURLConnection",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "url"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "SSRF",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\SSRF.java",
+      "startLine": 28,
+      "endLine": 39,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.SSTI",
+      "language": "java",
+      "type": "class",
+      "name": "SSTI",
+      "package": "com.best.hello.controller",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "thymeleaf",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "any",
+              "name": "@RequestParam String lang"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "SSTI",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "getDocument",
+          "returnType": "void",
+          "params": [
+            {
+              "type": "any",
+              "name": "@PathVariable String document"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "SSTI",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "getDocument",
+          "returnType": "void",
+          "params": [
+            {
+              "type": "any",
+              "name": "@PathVariable String document"
+            },
+            {
+              "type": "HttpServletResponse",
+              "name": "response"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "SSTI",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\SSTI.java",
+      "startLine": 25,
+      "endLine": 34,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.Traversal",
+      "language": "java",
+      "type": "class",
+      "name": "Traversal",
+      "package": "com.best.hello.controller",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "filePath",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "file",
+          "type": "File",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "fis",
+          "type": "InputStream",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "buffer",
+          "type": "byte[]",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "toClient",
+          "type": "OutputStream",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "filePath",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "download",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "filename"
+            },
+            {
+              "type": "HttpServletRequest",
+              "name": "request"
+            },
+            {
+              "type": "HttpServletResponse",
+              "name": "response"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "Traversal",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "download_safe",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "filename"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "Traversal",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\Traversal.java",
+      "startLine": 22,
+      "endLine": 52,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.Unauth",
+      "language": "java",
+      "type": "class",
+      "name": "Unauth",
+      "package": "com.best.hello.controller",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "vul",
+          "returnType": "String",
+          "params": [],
+          "modifiers": [
+            "public"
+          ],
+          "className": "Unauth",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\Unauth.java",
+      "startLine": 13,
+      "endLine": 19,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.Upload",
+      "language": "java",
+      "type": "class",
+      "name": "Upload",
+      "package": "com.best.hello.controller",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "UPLOADED_FOLDER",
+          "type": "String",
+          "modifiers": [
+            "private",
+            "static",
+            "final"
+          ],
+          "isStatic": true,
+          "isFinal": true,
+          "isPrivate": true,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "bytes",
+          "type": "byte[]",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "dir",
+          "type": "Path",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "path",
+          "type": "Path",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "bytes",
+          "type": "byte[]",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "fileName",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "path",
+          "type": "Path",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "Suffix",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "SuffixSafe",
+          "type": "String[]",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "flag",
+          "type": "boolean",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "uploadStatus",
+          "returnType": "String",
+          "params": [],
+          "modifiers": [
+            "public"
+          ],
+          "className": "Upload",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "singleFileUpload",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "any",
+              "name": "@RequestParam(\"file\""
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "Upload",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "singleFileUploadSafe",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "any",
+              "name": "@RequestParam(\"file\""
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "Upload",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\Upload.java",
+      "startLine": 19,
+      "endLine": 27,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.XFF",
+      "language": "java",
+      "type": "class",
+      "name": "XFF",
+      "package": "com.best.hello.controller",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "ip",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "ip2",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "ip1",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "ip3",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "ip1",
+          "type": "return",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "ip3",
+          "type": "return",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "remote",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "HttpServletRequest",
+              "name": "request"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "XFF",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "vul",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "HttpServletRequest",
+              "name": "request"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "XFF",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "ip",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "HttpServletRequest",
+              "name": "request"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "XFF",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\XFF.java",
+      "startLine": 18,
+      "endLine": 27,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.XSS.XSS",
+      "language": "java",
+      "type": "class",
+      "name": "XSS",
+      "package": "com.best.hello.controller.XSS",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "content",
+          "type": "return",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "reflect",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "content"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "XSS",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "safe1",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "content"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "XSS",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "safe2",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "content"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "XSS",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "safe3",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "content"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "XSS",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "safe4",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "content"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "XSS",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\XSS\\XSS.java",
+      "startLine": 26,
+      "endLine": 33,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.XXE.Student",
+      "language": "java",
+      "type": "class",
+      "name": "Student",
+      "package": "com.best.hello.controller.XXE",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "name",
+          "type": "String",
+          "modifiers": [
+            "private"
+          ],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": true,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "name",
+          "type": "return",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "getName",
+          "returnType": "String",
+          "params": [],
+          "modifiers": [
+            "public"
+          ],
+          "className": "Student",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "setName",
+          "returnType": "void",
+          "params": [
+            {
+              "type": "String",
+              "name": "name"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "Student",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "toString",
+          "returnType": "String",
+          "params": [],
+          "modifiers": [
+            "public"
+          ],
+          "className": "Student",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\XXE\\Student.java",
+      "startLine": 11,
+      "endLine": 17,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.XXE.XXE",
+      "language": "java",
+      "type": "class",
+      "name": "XXE",
+      "package": "com.best.hello.controller.XXE",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "xmlReader",
+          "type": "XMLReader",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "XMLReader",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "any",
+              "name": "@RequestBody String content"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "XXE",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "handleCustomer",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "any",
+              "name": "@RequestBody Customer customer"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "XXE",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\XXE\\XXE.java",
+      "startLine": 46,
+      "endLine": 66,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.controller.XXE.Customer",
+      "language": "java",
+      "type": "interface",
+      "name": "Customer",
+      "package": "com.best.hello.controller.XXE",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "sax",
+          "type": "SAXReader",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "saxbuilder",
+          "type": "SAXBuilder",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "factory",
+          "type": "DocumentBuilderFactory",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "builder",
+          "type": "DocumentBuilder",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "sr",
+          "type": "StringReader",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "is",
+          "type": "InputSource",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "document",
+          "type": "Document",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "nodeList",
+          "type": "NodeList",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "element",
+          "type": "Element",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "context",
+          "type": "JAXBContext",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "unmarshaller",
+          "type": "Unmarshaller",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "xif",
+          "type": "XMLInputFactory",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "xsr",
+          "type": "XMLStreamReader",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "o",
+          "type": "Object",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "getFirstname",
+          "returnType": "String",
+          "params": [],
+          "modifiers": [],
+          "className": "Customer",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "getLastname",
+          "returnType": "String",
+          "params": [],
+          "modifiers": [],
+          "className": "Customer",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "SAXReader",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "any",
+              "name": "@RequestBody String content"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "Customer",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "SAXBuilder",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "any",
+              "name": "@RequestBody String content"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "Customer",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "DocumentBuilder",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "any",
+              "name": "@RequestBody String content"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "Customer",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "Unmarshaller",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "any",
+              "name": "@RequestBody String content"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "Customer",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "check",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "any",
+              "name": "@RequestBody String content"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "Customer",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\controller\\XXE\\XXE.java",
+      "startLine": 81,
+      "endLine": 87,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.entity.User",
+      "language": "java",
+      "type": "class",
+      "name": "User",
+      "package": "com.best.hello.entity",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "id",
+          "type": "Integer",
+          "modifiers": [
+            "private"
+          ],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": true,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "user",
+          "type": "String",
+          "modifiers": [
+            "private"
+          ],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": true,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "pass",
+          "type": "String",
+          "modifiers": [
+            "private"
+          ],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": true,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "id",
+          "type": "return",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "user",
+          "type": "return",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "pass",
+          "type": "return",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "getId",
+          "returnType": "Integer",
+          "params": [],
+          "modifiers": [
+            "public"
+          ],
+          "className": "User",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "getUser",
+          "returnType": "String",
+          "params": [],
+          "modifiers": [
+            "public"
+          ],
+          "className": "User",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "getPass",
+          "returnType": "String",
+          "params": [],
+          "modifiers": [
+            "public"
+          ],
+          "className": "User",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "setUser",
+          "returnType": "void",
+          "params": [
+            {
+              "type": "String",
+              "name": "user"
+            }
+          ],
+          "modifiers": [
+            "public"
+          ],
+          "className": "User",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\entity\\User.java",
+      "startLine": 8,
+      "endLine": 16,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.HelloApplication",
+      "language": "java",
+      "type": "class",
+      "name": "HelloApplication",
+      "package": "com.best.hello",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "main",
+          "returnType": "void",
+          "params": [
+            {
+              "type": "any",
+              "name": "String[] args"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "HelloApplication",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\HelloApplication.java",
+      "startLine": 8,
+      "endLine": 13,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.mapper.UserMapper",
+      "language": "java",
+      "type": "interface",
+      "name": "UserMapper",
+      "package": "com.best.hello.mapper",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "orderBy",
+          "returnType": "List<User>",
+          "params": [
+            {
+              "type": "String",
+              "name": "field"
+            },
+            {
+              "type": "String",
+              "name": "sort"
+            }
+          ],
+          "modifiers": [],
+          "className": "UserMapper",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "orderBySafe",
+          "returnType": "List<User>",
+          "params": [
+            {
+              "type": "String",
+              "name": "field"
+            }
+          ],
+          "modifiers": [],
+          "className": "UserMapper",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "queryByUser",
+          "returnType": "List<User>",
+          "params": [
+            {
+              "type": "any",
+              "name": "@Param(\"user\""
+            }
+          ],
+          "modifiers": [],
+          "className": "UserMapper",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "queryById1",
+          "returnType": "List<User>",
+          "params": [
+            {
+              "type": "any",
+              "name": "@Param(\"id\""
+            }
+          ],
+          "modifiers": [],
+          "className": "UserMapper",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "queryById2",
+          "returnType": "List<User>",
+          "params": [
+            {
+              "type": "any",
+              "name": "@Param(\"id\""
+            }
+          ],
+          "modifiers": [],
+          "className": "UserMapper",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "orderBy2",
+          "returnType": "List<User>",
+          "params": [
+            {
+              "type": "any",
+              "name": "@Param(\"field\""
+            }
+          ],
+          "modifiers": [],
+          "className": "UserMapper",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "list",
+          "returnType": "List<User>",
+          "params": [],
+          "modifiers": [],
+          "className": "UserMapper",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "search",
+          "returnType": "List<User>",
+          "params": [
+            {
+              "type": "String",
+              "name": "q"
+            }
+          ],
+          "modifiers": [],
+          "className": "UserMapper",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\mapper\\UserMapper.java",
+      "startLine": 10,
+      "endLine": 45,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.Swagger2",
+      "language": "java",
+      "type": "class",
+      "name": "Swagger2",
+      "package": "com.best.hello",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "createRestApi",
+          "returnType": "Docket",
+          "params": [],
+          "modifiers": [
+            "public"
+          ],
+          "className": "Swagger2",
+          "isStatic": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "apiInfo",
+          "returnType": "ApiInfo",
+          "params": [],
+          "modifiers": [
+            "private"
+          ],
+          "className": "Swagger2",
+          "isStatic": false,
+          "isPrivate": true,
+          "isProtected": false,
+          "isPublic": false,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\Swagger2.java",
+      "startLine": 22,
+      "endLine": 34,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.util.Http",
+      "language": "java",
+      "type": "class",
+      "name": "Http",
+      "package": "com.best.hello.util",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "u",
+          "type": "URL",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "conn",
+          "type": "HttpURLConnection",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "reader",
+          "type": "BufferedReader",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "content",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "html",
+          "type": "StringBuilder",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "u",
+          "type": "URL",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "conn",
+          "type": "URLConnection",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "reader",
+          "type": "BufferedReader",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "content",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "html",
+          "type": "StringBuffer",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "HTTPURLConnection",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "url"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "Http",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "URLConnection",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "url"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "Http",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\util\\Http.java",
+      "startLine": 9,
+      "endLine": 27,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.util.Security",
+      "language": "java",
+      "type": "class",
+      "name": "Security",
+      "package": "com.best.hello.util",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "reg",
+          "type": "Pattern",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "match",
+          "type": "Matcher",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "a",
+          "type": "boolean",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "a",
+          "type": "return",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "url_list",
+          "type": "List<String>",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "uri",
+          "type": "URI",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "host",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "content",
+          "type": "return",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "black",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "black_list",
+          "type": "String[]",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "true",
+          "type": "return",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "false",
+          "type": "return",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "black",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "black_list",
+          "type": "String[]",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "true",
+          "type": "return",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "false",
+          "type": "return",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "black",
+          "type": "String",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "isIntranet",
+          "returnType": "boolean",
+          "params": [
+            {
+              "type": "String",
+              "name": "url"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "Security",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "isHttp",
+          "returnType": "boolean",
+          "params": [
+            {
+              "type": "String",
+              "name": "url"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "Security",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "isWhite",
+          "returnType": "boolean",
+          "params": [
+            {
+              "type": "String",
+              "name": "url"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "Security",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "filterXss",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "content"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "Security",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "checkSql",
+          "returnType": "boolean",
+          "params": [
+            {
+              "type": "String",
+              "name": "content"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "Security",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "checkTraversal",
+          "returnType": "boolean",
+          "params": [
+            {
+              "type": "String",
+              "name": "content"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "Security",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "checkOs",
+          "returnType": "boolean",
+          "params": [
+            {
+              "type": "String",
+              "name": "content"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "Security",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        },
+        {
+          "name": "checkXXE",
+          "returnType": "boolean",
+          "params": [
+            {
+              "type": "String",
+              "name": "content"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "Security",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\util\\Security.java",
+      "startLine": 17,
+      "endLine": 29,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    },
+    {
+      "id": "com.best.hello.util.util",
+      "language": "java",
+      "type": "class",
+      "name": "util",
+      "package": "com.best.hello.util",
+      "superClasses": [],
+      "subClasses": [],
+      "fields": [
+        {
+          "name": "input",
+          "type": "FileInputStream",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "content",
+          "type": "byte[]",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        },
+        {
+          "name": "realBytes",
+          "type": "int",
+          "modifiers": [],
+          "isStatic": false,
+          "isFinal": false,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": false
+        }
+      ],
+      "methods": [
+        {
+          "name": "readContent",
+          "returnType": "String",
+          "params": [
+            {
+              "type": "String",
+              "name": "file"
+            }
+          ],
+          "modifiers": [
+            "public",
+            "static"
+          ],
+          "className": "util",
+          "isStatic": true,
+          "isPrivate": false,
+          "isProtected": false,
+          "isPublic": true,
+          "isAbstract": false,
+          "isFinal": false
+        }
+      ],
+      "methodParams": [],
+      "filePath": "E:\\code\\gbt-codeagent\\workspace\\downloads\\com-mosvf5pn\\com\\best\\hello\\util\\util.java",
+      "startLine": 6,
+      "endLine": 15,
+      "sourceCode": "",
+      "modifiers": [
+        "public"
+      ]
+    }
+  ]
+}

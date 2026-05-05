@@ -2,13 +2,14 @@ import { promises as fs } from "node:fs";
 import path from "path";
 import { inferFenceLanguage } from "../utils/fileUtils.js";
 import { jsonrepair } from "jsonrepair";
-import { withRetry, CircuitBreaker, CircuitBreakerConfig, createReActAuditor } from "../core/index.js";
+import { withRetry, CircuitBreaker, CircuitBreakerConfig, createReActAuditor, PromptCacheManager } from "../core/index.js";
 import { createLocalToolExecutor } from "../tools/localToolExecutor.js";
 import { buildReActSystemPrompt, buildReActInitialPrompt } from "../core/reactPrompts.js";
 import { ragService } from "./ragService.js";
 import { streamService } from "./streamService.js";
 import { estimateTokens, countTokensTiktoken, getModelMaxTokens, PromptCompressor, IncrementalSummary, ContextConfig } from "../utils/contextManager.js";
 import { fetchWithTimeout, globalLLMFactory } from "./llmFactory.js";
+import { CodeRetriever } from "./retriever.js";
 
 const MAX_BATCHES = 16;
 const MAX_FILES_PER_BATCH = 4;
@@ -24,6 +25,22 @@ const llmCircuitBreaker = new CircuitBreaker("llm-service", {
 
 const incrementalSummary = new IncrementalSummary();
 const promptCompressor = new PromptCompressor();
+const promptCacheManager = new PromptCacheManager();
+
+// 初始化 RAG 服务
+async function initializeRAG() {
+  try {
+    await ragService.initialize({
+      vectorPersistPath: path.join(process.cwd(), 'data', 'rag_vectors.json')
+    });
+    console.log('[LLM审计] RAG 服务初始化完成');
+  } catch (error) {
+    console.warn('[LLM审计] RAG 服务初始化失败，将使用关键词搜索:', error);
+  }
+}
+
+// 在模块加载时初始化 RAG
+initializeRAG();
 
 const THREE_LAYER_AUDIT = `
 【三层审计分工 - 各自职责明确】
@@ -374,6 +391,7 @@ export class DefensiveLlmReviewer {
     const languages = [...new Set(batches.flatMap(b => b.map(f => f.language)).filter(Boolean))];
     const vulnerabilityTypes = [...new Set(heuristicFindings.map(f => f.vulnType).filter(Boolean))];
     const auditKnowledge = await loadAuditKnowledge({ languages, vulnerabilityTypes });
+    const systemPrompt = await buildSystemPrompt(selectedSkills, auditKnowledge, languages);
     const validBatches = batches.slice(0, MAX_BATCHES);
 
     onProgress?.({
@@ -401,7 +419,7 @@ export class DefensiveLlmReviewer {
         const responseText = await withRetry(() => llmCircuitBreaker.call(() =>
           requestStructuredReview({
             llmConfig,
-            systemPrompt: buildSystemPrompt(selectedSkills, auditKnowledge),
+            systemPrompt,
             userPrompt: buildUserPrompt({ project, selectedSkills, heuristicFindings, batch })
           })
         ), { maxAttempts: 2, baseDelay: 1000 });
@@ -502,6 +520,25 @@ export class DefensiveLlmReviewer {
       };
     }
 
+    // 初始化代码检索器，建立项目代码索引
+    let codeRetriever = null;
+    try {
+      codeRetriever = new CodeRetriever({ maxChunkSize: 800, overlap: 50 });
+      await codeRetriever.initialize();
+      console.log(`[LLM审计] 开始索引项目代码: ${files.length} 个文件`);
+      for (const file of files.slice(0, 100)) {
+        try {
+          const content = await fs.readFile(file.path, "utf8");
+          await codeRetriever.indexFile(file.path, content, file.language);
+        } catch (e) {
+        }
+      }
+      console.log(`[LLM审计] 代码索引完成，已索引 ${codeRetriever.chunks.size} 个代码块`);
+    } catch (error) {
+      console.warn(`[LLM审计] 代码索引失败: ${error.message}`);
+      codeRetriever = null;
+    }
+
     // 对于独立审计，我们处理所有文件，而不仅仅是排名靠前的文件
     const batches = buildBatches(files);
     const findings = [];
@@ -512,6 +549,7 @@ export class DefensiveLlmReviewer {
 
     const languages = [...new Set(batches.flatMap(b => b.map(f => f.language)).filter(Boolean))];
     const auditKnowledge = await loadAuditKnowledge({ languages, vulnerabilityTypes: [] });
+    const systemPrompt = await buildSystemPrompt(selectedSkills, auditKnowledge, languages);
     const validBatches = batches.slice(0, MAX_BATCHES);
 
     onProgress?.({
@@ -522,6 +560,27 @@ export class DefensiveLlmReviewer {
       auditedBatches: 0,
       label: `正在准备 LLM 审计：${project.name}`
     });
+
+    async function getCodeContextForBatch(batch, skillContext = "") {
+      if (!codeRetriever || codeRetriever.chunks.size === 0) {
+        return "";
+      }
+
+      try {
+        const query = skillContext || "安全漏洞 注入 认证 授权 敏感数据";
+        const results = await codeRetriever.hybridRetrieve(query, { k: 3, semanticWeight: 0.6, keywordWeight: 0.4 });
+
+        if (results.length === 0) return "";
+
+        const contextParts = ["\n\n【相关代码上下文】"];
+        for (const result of results.slice(0, 2)) {
+          contextParts.push(result.toContextString());
+        }
+        return contextParts.join("\n");
+      } catch (error) {
+        return "";
+      }
+    }
 
     async function processAuditBatch(batch, batchIndex) {
       onProgress?.({
@@ -535,12 +594,15 @@ export class DefensiveLlmReviewer {
         label: `正在并行 LLM 审计：第 ${batchIndex + 1} / ${validBatches.length} 批`
       });
 
+      const skillContext = selectedSkills.map(s => s.name).join(" ");
+      const codeContext = await getCodeContextForBatch(batch, skillContext);
+
       try {
         const responseText = await withRetry(() => llmCircuitBreaker.call(() =>
           requestStructuredReview({
             llmConfig,
-            systemPrompt: buildSystemPrompt(selectedSkills, auditKnowledge),
-            userPrompt: buildUserPrompt({ project, selectedSkills, heuristicFindings: [], batch })
+            systemPrompt,
+            userPrompt: buildUserPrompt({ project, selectedSkills, heuristicFindings: [], batch, codeContext })
           })
         ), { maxAttempts: 2, baseDelay: 1000 });
 
@@ -752,6 +814,13 @@ async function requestStructuredReview({ llmConfig, systemPrompt, userPrompt }) 
     }
   }
 
+  // 检查 Prompt Cache 是否可用
+  const providerLower = llmConfig.providerId?.toLowerCase() || '';
+  const usePromptCache = promptCacheManager.supportsCaching(model, providerLower);
+  if (usePromptCache) {
+    console.log(`[LLM审计] 使用 Prompt Cache: ${providerLower}/${model}`);
+  }
+
   if (compatibility === "anthropic") {
     console.log(`[LLM审计] 使用 Anthropic 兼容模式`);
     let response;
@@ -901,7 +970,7 @@ async function requestStructuredReview({ llmConfig, systemPrompt, userPrompt }) 
   return content;
 }
 
-function buildSystemPrompt(selectedSkills, auditKnowledge = {}) {
+async function buildSystemPrompt(selectedSkills, auditKnowledge = {}, languages = []) {
   const gbtSkill = selectedSkills.find(skill => skill.id === "gbt-code-audit");
   const isGbtAudit = gbtSkill !== undefined;
 
@@ -914,6 +983,19 @@ function buildSystemPrompt(selectedSkills, auditKnowledge = {}) {
     CORE_SECURITY_PRINCIPLES,
     FILE_VALIDATION_RULES
   ];
+
+  // 添加 RAG 知识参考
+  try {
+    const knowledgeContext = await ragService.buildAuditContext({
+      language: languages?.[0],
+      fileCount: 3
+    });
+    if (knowledgeContext) {
+      prompt.push("", knowledgeContext);
+    }
+  } catch (error) {
+    console.warn('[LLM审计] 获取 RAG 知识失败:', error);
+  }
 
   if (isGbtAudit) {
     prompt.push(
@@ -998,7 +1080,7 @@ function buildSystemPrompt(selectedSkills, auditKnowledge = {}) {
   return prompt.join("\n");
 }
 
-function buildUserPrompt({ project, selectedSkills, heuristicFindings, batch }) {
+function buildUserPrompt({ project, selectedSkills, heuristicFindings, batch, codeContext = "" }) {
   const gbtSkill = selectedSkills.find(skill => skill.id === "gbt-code-audit");
   const isGbtAudit = gbtSkill !== undefined;
 
@@ -1007,6 +1089,10 @@ function buildUserPrompt({ project, selectedSkills, heuristicFindings, batch }) 
     `审计镜像路径：${project.localPath || path.join("workspace", "downloads", project.id)}`,
     `来源模式：${project.sourceType}`
   ];
+
+  if (codeContext) {
+    prompt.push(codeContext);
+  }
 
   if (isGbtAudit) {
     prompt = prompt.concat([
@@ -1058,16 +1144,28 @@ function buildUserPrompt({ project, selectedSkills, heuristicFindings, batch }) 
       '```'
     );
   } else {
-    const heuristicSummary = heuristicFindings.slice(0, 8).map((finding) => `- ${finding.title} @ ${finding.location}`).join("\n") || "- 当前规则层未提供额外提示";
     const skills = selectedSkills.map((skill) => `${skill.id}: ${skill.description}`).join("\n");
-    
+
+    const hasHeuristicContext = heuristicFindings && heuristicFindings.length > 0;
+    const heuristicSummary = hasHeuristicContext
+      ? heuristicFindings.slice(0, 10).map((finding) => `- ${finding.title} @ ${finding.location} (${finding.vulnType || 'unknown'})`).join("\n")
+      : "";
+
     prompt = prompt.concat([
       "",
       `已启用 Skill：\n${skills}`,
-      `规则层提示：\n${heuristicSummary}`,
-      "请审阅下面的本地源码片段，输出不超过 3 条高置信度结果。",
+      hasHeuristicContext ? `规则层发现（仅供参考，LLM应独立验证）：\n${heuristicSummary}` : "规则层未提供额外提示，LLM应独立进行全面审计。",
+      "",
+      "【重要】LLM 自主审计要求：",
+      "- 不要受规则层发现的限制，独立发现所有安全问题",
+      "- 可以发现任何类型的安全漏洞，不限于上述Skill列表",
+      "- 包括但不限于：注入漏洞、XSS、CSRF、SSRF、路径遍历、敏感信息泄露、",
+      "  认证绕过、访问控制、加密问题、反序列化、API安全、配置错误等",
+      "- 输出所有发现的高置信度问题，不要限制数量",
+      "- 每个漏洞都必须独立验证行号",
+      "",
       "严格返回如下 JSON：",
-      '{ "findings": [ { "title": "", "severity": "low|medium|high", "confidence": 0.0, "location": "", "skillId": "", "evidence": "", "impact": "", "remediation": "", "safeValidation": "" } ] }'
+      '{ "findings": [ { "title": "", "severity": "low|medium|high|critical", "confidence": 0.0, "location": "", "skillId": "", "vulnType": "VULN_TYPE", "cwe": "CWE-XXX", "evidence": "", "impact": "", "remediation": "", "safeValidation": "" } ] }'
     ]);
   }
 

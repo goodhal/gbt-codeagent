@@ -91,7 +91,7 @@ export class ExternalToolService {
     }
 
     try {
-      await execAsync(tool.checkCommand);
+      await execAsync(tool.checkCommand, { timeout: 5000 });
       return true;
     } catch (error) {
       return false;

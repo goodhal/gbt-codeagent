@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "path";
 import { fileURLToPath } from "node:url";
 import { getRulesEngine } from '../analyzers/rulesEngine.js';
+import { KnowledgeCategory } from './frameworks.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 

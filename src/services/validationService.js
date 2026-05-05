@@ -1,5 +1,14 @@
 import { promises as fs } from "node:fs";
-import path from "node:path";
+import path from "path";
+import { globalVulnValidator, VulnType } from "./sandbox.js";
+
+const VULN_TYPE_TO_SANDBOX = {
+  'COMMAND_INJECTION': VulnType.COMMAND_INJECTION,
+  'CODE_INJECTION': VulnType.COMMAND_INJECTION,
+  'SQL_INJECTION': VulnType.SQL_INJECTION,
+  'PATH_TRAVERSAL': VulnType.PATH_TRAVERSAL,
+  'PATH_TRAV': VulnType.PATH_TRAVERSAL
+};
 
 /**
  * 漏洞验证服务
@@ -270,13 +279,21 @@ export class ValidationService {
         status: "有效",
         validatedCode: result.actualCode
       };
-      
+
       if (result.correctedLine) {
         updatedFinding.line = result.correctedLine;
         updatedFinding.location = `${finding.file}:${result.correctedLine}`;
         updatedFinding.correctedFrom = result.originalLine;
       }
-      
+
+      const sandboxResult = await this.validateWithSandbox(updatedFinding, lines);
+      if (sandboxResult) {
+        updatedFinding.sandboxValidation = sandboxResult;
+        if (sandboxResult.exploitable) {
+          updatedFinding.confirmedExploitable = true;
+        }
+      }
+
       return {
         finding: updatedFinding,
         valid: true,
@@ -325,5 +342,46 @@ export class ValidationService {
       
       return finding;
     });
+  }
+
+  async validateWithSandbox(finding, lines) {
+    const vulnType = finding.vulnType;
+    const sandboxVulnType = VULN_TYPE_TO_SANDBOX[vulnType];
+
+    if (!sandboxVulnType) {
+      return null;
+    }
+
+    if (!globalVulnValidator || !globalVulnValidator.isAvailable) {
+      return {
+        checked: true,
+        available: false,
+        message: "沙箱不可用"
+      };
+    }
+
+    try {
+      const line = finding.line || parseInt(finding.location?.split(':')[1], 10) || 1;
+      const codeContext = lines.slice(Math.max(0, line - 5), Math.min(lines.length, line + 5)).join('\n');
+
+      const result = await globalVulnValidator.validate(
+        { vulnType: sandboxVulnType, location: finding.location, evidence: finding.evidence },
+        codeContext
+      );
+
+      return {
+        checked: true,
+        available: true,
+        exploitable: result.success && result.exploitable,
+        message: result.message || (result.success ? "验证成功" : "验证失败"),
+        details: result.payload
+      };
+    } catch (error) {
+      return {
+        checked: true,
+        available: true,
+        error: error.message
+      };
+    }
   }
 }

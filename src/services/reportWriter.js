@@ -110,6 +110,9 @@ function buildHtml({ task, selectedProjects, auditResult }) {
     .tag{display:inline-block;margin:0 8px 8px 0;padding:6px 10px;border-radius:999px;background:#dbeafe}
     .muted{color:#667eea}
     .warning-list{color:#b45309}
+    .ast-context{margin-top:12px;padding:12px;border-radius:12px;background:#f0fdf4;border:1px solid #86efac;font-size:13px}
+    .ast-context p{margin:4px 0}
+    .code-context{margin:8px 0;padding:10px;border-radius:8px;background:#1a1a1a;color:#10b981;font-size:12px;overflow-x:auto;white-space:pre}
     .status-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
     .callout{padding:14px 16px;border-radius:18px;border:1px solid #bfdbfe;background:#eff6ff;margin-top:18px}
     a{color:#2563eb}
@@ -280,7 +283,27 @@ function renderFindings(findings, emptyMessage) {
               <p><strong>CVSS 评分：</strong>${escapeHtml(String(finding.cvssScore || 0.0))}</p>
               <p><strong>编程语言：</strong>${escapeHtml(finding.language || "unknown")}</p>
             ` : "";
-            
+
+            const confidenceInfo = finding.confidence ? `
+              <p><strong>置信度：</strong>${escapeHtml(String((finding.confidence * 100).toFixed(0)))}%</p>
+            ` : "";
+
+            const astContextInfo = finding.astContext ? `
+              <div class="ast-context">
+                <p><strong>--- AST 深度分析 ---</strong></p>
+                <p><strong>危险sink：</strong>${escapeHtml(finding.astContext.sink || "n/a")} (${escapeHtml(finding.astContext.sinkSeverity || "n/a")})</p>
+                <p><strong>风险描述：</strong>${escapeHtml(finding.astContext.sinkDesc || "n/a")}</p>
+                <p><strong>用户输入检测：</strong>${finding.astContext.hasUserInput ? "✓ 有" : "✗ 无"}</p>
+                <p><strong>输入验证：</strong>${finding.astContext.hasValidation ? "✓ 有" : "✗ 无"}</p>
+                <p><strong>编码处理：</strong>${finding.astContext.hasEncoding ? "✓ 有" : "✗ 无"}</p>
+                ${finding.astContext.contextLines ? `
+                  <p><strong>代码上下文：</strong></p>
+                  <pre class="code-context">${finding.astContext.contextLines.map(l => `${String(l.lineNum).padStart(4)} | ${escapeHtml(l.content)}`).join('\n')}</pre>
+                ` : ""}
+                ${finding.astContext.recommendation ? `<p><strong>深度建议：</strong>${escapeHtml(finding.astContext.recommendation)}</p>` : ""}
+              </div>
+            ` : "";
+
             return `
             <div class="finding">
               <div class="finding-head">
@@ -291,11 +314,13 @@ function renderFindings(findings, emptyMessage) {
                 </div>
               </div>
               ${extraInfo}
+              ${confidenceInfo}
               <p><strong>位置：</strong>${escapeHtml(finding.location || "n/a")}</p>
               <p><strong>影响：</strong>${escapeHtml(finding.impact || "")}</p>
               <p><strong>证据：</strong>${escapeHtml(finding.evidence || "")}</p>
               <p><strong>修复建议：</strong>${escapeHtml(finding.remediation || "")}</p>
               <p><strong>安全验证建议：</strong>${escapeHtml(finding.safeValidation || "")}</p>
+              ${astContextInfo}
             </div>
           `;
           }

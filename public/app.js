@@ -378,14 +378,23 @@ function renderTaskList(tasks) {
     .map((task) => {
       const active = task.id === selectedTaskId ? "active" : "";
       const statusClass = "status-" + task.status;
-      const statusLabels = { completed: "已完成", failed: "失败", running: "运行中", queued: "排队中" };
+      const statusLabels = { completed: "已完成", failed: "失败", running: "运行中", queued: "排队中", paused: "已暂停", cancelled: "已取消" };
       const statusText = statusLabels[task.status] || task.status;
+      const canPause = task.status === "running";
+      const canResume = task.status === "paused";
+      const canStop = task.status === "running" || task.status === "queued";
+      const actionButtons = `
+        ${canPause ? '<button class="task-pause-btn" data-pause-id="' + escapeHtml(task.id) + '" title="暂停任务">⏸</button>' : ''}
+        ${canResume ? '<button class="task-resume-btn" data-resume-id="' + escapeHtml(task.id) + '" title="恢复任务">▶</button>' : ''}
+        ${canStop ? '<button class="task-stop-btn" data-stop-id="' + escapeHtml(task.id) + '" title="取消任务">⏹</button>' : ''}
+      `;
       return '<div class="task-card ' + active + ' ' + statusClass + '" data-task-id="' + escapeHtml(task.id) + '">' +
         '<div class="task-card-main">' +
           '<strong>' + escapeHtml(task.sourceType === "local" ? "本地仓库导入" : task.query) + '</strong>' +
           '<span>' + escapeHtml(task.phase) + ' · ' + escapeHtml(statusText) + '</span>' +
           '<small>' + escapeHtml(task.progress?.label || "") + ' ' + escapeHtml(String(task.progress?.percent || 0)) + '%</small>' +
         '</div>' +
+        '<div class="task-card-actions">' + actionButtons + '</div>' +
         '<button class="task-delete-btn" data-delete-id="' + escapeHtml(task.id) + '" title="删除任务">✕</button>' +
       '</div>';
     })
@@ -393,9 +402,43 @@ function renderTaskList(tasks) {
 
   target.querySelectorAll("[data-task-id]").forEach((card) => {
     card.addEventListener("click", async (e) => {
-      if (e.target.classList.contains("task-delete-btn")) return;
+      if (e.target.classList.contains("task-delete-btn") || e.target.classList.contains("task-pause-btn") ||
+          e.target.classList.contains("task-resume-btn") || e.target.classList.contains("task-stop-btn")) return;
       selectedTaskId = card.dataset.taskId;
       await refreshAuditPage();
+    });
+  });
+
+  target.querySelectorAll(".task-pause-btn").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const taskId = btn.dataset.pauseId;
+      if (taskId && confirm("确定要暂停这个任务吗？")) {
+        await api("/api/tasks/" + taskId + "/pause", { method: "POST" });
+        await refreshAuditPage();
+      }
+    });
+  });
+
+  target.querySelectorAll(".task-resume-btn").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const taskId = btn.dataset.resumeId;
+      if (taskId && confirm("确定要恢复这个任务吗？")) {
+        await api("/api/tasks/" + taskId + "/resume", { method: "POST" });
+        await refreshAuditPage();
+      }
+    });
+  });
+
+  target.querySelectorAll(".task-stop-btn").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const taskId = btn.dataset.stopId;
+      if (taskId && confirm("确定要取消这个任务吗？取消后无法恢复。")) {
+        await api("/api/tasks/" + taskId + "/stop", { method: "POST" });
+        await refreshAuditPage();
+      }
     });
   });
 
@@ -422,13 +465,17 @@ function renderTaskDetail(task) {
   if (!target) return;
 
   const projects = task.auditResult?.projects || [];
-  const statusLabels = { completed: "已完成", failed: "失败", running: "运行中", queued: "排队中" };
+  const statusLabels = { completed: "已完成", failed: "失败", running: "运行中", queued: "排队中", paused: "已暂停", cancelled: "已取消" };
   const statusText = statusLabels[task.status] || task.status;
   const findingsCount = task.auditResult?.findingsCount || 0;
   const heuristicCount = task.auditResult?.heuristicFindingsCount || 0;
   const llmCount = task.auditResult?.llmFindingsCount || 0;
   const reactCount = projects.reduce((sum, p) => sum + (p.reactAudit?.issues?.length || p.reactResult?.issues?.length || 0), 0);
   const useReAct = task.useReAct === true;
+  const canPause = task.status === "running";
+  const canResume = task.status === "paused";
+  const canStop = task.status === "running" || task.status === "queued";
+  const canRestart = task.status === "completed" || task.status === "failed";
 
   let html = "";
   html += '<div class="summary-grid">';
@@ -438,15 +485,30 @@ function renderTaskDetail(task) {
   html += '<div class="summary-card"><strong>结果</strong><span>' + escapeHtml(String(findingsCount)) + '</span></div>';
   html += '</div>';
 
+  if (canPause || canResume || canStop || canRestart) {
+    html += '<div class="detail-block">';
+    html += '<div class="task-action-buttons">';
+    if (canPause) html += '<button class="btn-pause" data-pause-id="' + escapeHtml(task.id) + '">⏸ 暂停</button>';
+    if (canResume) html += '<button class="btn-resume" data-resume-id="' + escapeHtml(task.id) + '">▶ 恢复</button>';
+    if (canStop) html += '<button class="btn-stop" data-stop-id="' + escapeHtml(task.id) + '">⏹ 取消</button>';
+    if (canRestart) html += '<button class="btn-restart" data-restart-id="' + escapeHtml(task.id) + '">🔄 重新审计</button>';
+    html += '</div>';
+    html += '</div>';
+  }
+
   html += buildProgressCard(task.progress);
 
   html += '<div class="detail-block">';
   html += '<h3>任务说明</h3>';
   html += '<p>' + escapeHtml(task.message || "") + '</p>';
-  if (task.report?.html?.downloadPath) {
-    html += '<p><a class="download-link" href="' + escapeHtml(task.report.html.downloadPath) + '" target="_blank" rel="noreferrer">下载 HTML 报告</a></p>';
-  }
   html += '</div>';
+
+  if (task.report?.html?.downloadPath) {
+    html += '<div class="detail-block">';
+    html += '<h3>审计报告</h3>';
+    html += '<p><a class="download-link" href="' + escapeHtml(task.report.html.downloadPath) + '" target="_blank" rel="noreferrer">📄 下载 HTML 报告</a></p>';
+    html += '</div>';
+  }
 
   html += '<div class="detail-block">';
   html += '<h3>审计结果</h3>';
@@ -459,6 +521,52 @@ function renderTaskDetail(task) {
   html += '</div>';
 
   target.innerHTML = html;
+
+  target.querySelectorAll(".btn-pause").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const taskId = btn.dataset.pauseId;
+      if (taskId && confirm("确定要暂停这个任务吗？")) {
+        await api("/api/tasks/" + taskId + "/pause", { method: "POST" });
+        await refreshAuditPage();
+      }
+    });
+  });
+
+  target.querySelectorAll(".btn-resume").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const taskId = btn.dataset.resumeId;
+      if (taskId && confirm("确定要恢复这个任务吗？")) {
+        await api("/api/tasks/" + taskId + "/resume", { method: "POST" });
+        await refreshAuditPage();
+      }
+    });
+  });
+
+  target.querySelectorAll(".btn-stop").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const taskId = btn.dataset.stopId;
+      if (taskId && confirm("确定要取消这个任务吗？取消后无法恢复。")) {
+        await api("/api/tasks/" + taskId + "/stop", { method: "POST" });
+        await refreshAuditPage();
+      }
+    });
+  });
+
+  target.querySelectorAll(".btn-restart").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const taskId = btn.dataset.restartId;
+      if (taskId && confirm("确定要重新审计吗？这将创建一个新的审计任务。")) {
+        try {
+          const newTask = await api("/api/tasks/" + taskId + "/restart", { method: "POST" });
+          showToast("重新审计任务已创建", "success");
+          selectedTaskId = newTask.id;
+          await refreshAuditPage();
+        } catch (error) {
+          showToast("创建重新审计任务失败: " + (error.message || "未知错误"), "error");
+        }
+      }
+    });
+  });
 }
 
 function renderSelectionView(task) {

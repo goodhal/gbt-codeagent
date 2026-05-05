@@ -105,6 +105,7 @@ class CircuitBreaker {
 
   _onSuccess() {
     if (this.state === CircuitState.HALF_OPEN) {
+      this.stats.recordSuccess();
       if (this.stats.consecutiveSuccesses >= this.config.successThreshold) {
         this.state = CircuitState.CLOSED;
         this.stats.reset();

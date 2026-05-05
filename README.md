@@ -45,6 +45,18 @@
 - 项目记忆
   保存常用查询、阈值和团队规则，减少重复配置。
 
+- 状态持久化与断点恢复
+  审计任务状态自动保存，支持暂停/恢复，长时审计更可靠。
+
+- 代码检索增强 LLM 审计
+  LLM 审计前自动索引代码，混合检索（语义+关键词）提供上下文增强。
+
+- 沙箱验证
+  自动验证发现的漏洞，降低误报率。
+
+- AST 深度分析
+  抽象语法树分析，提供漏洞上下文深度理解。
+
 ## GB/T 国标代码安全审计
 
 ### 功能介绍
@@ -101,13 +113,17 @@
 |------|------|------|
 | `QuickScanService` | 快速扫描服务（166 条规则，16 种语言） | `src/services/quickScanService.js` |
 | `ExternalToolService` | 外部工具集成（Gitleaks/Bandit/Semgrep） | `src/services/externalToolService.js` |
-| `ValidationService` | 自动验证服务（去重 + 验证 + 行号修正） | `src/services/validationService.js` |
-| `DefensiveLlmReviewer` | LLM 深度审计服务（语义分析 + 漏洞验证） | `src/services/llmReviewService.js` |
+| `ValidationService` | 自动验证服务（去重 + 验证 + 行号修正 + 沙箱验证） | `src/services/validationService.js` |
+| `DefensiveLlmReviewer` | LLM 深度审计服务（语义分析 + 漏洞验证 + 代码检索增强） | `src/services/llmReviewService.js` |
 | `LLMFactory` | LLM 适配器工厂（OpenAI/Anthropic/Gemini） | `src/services/llmFactory.js` |
 | `AuditCoverageChecker` | 审计覆盖率检查工具 | `src/tools/auditCoverageChecker.js` |
 | `writeAuditHtmlReport` | HTML 报告生成 | `src/services/reportWriter.js` |
 | `VectorStore` | 向量数据库服务（代码语义检索） | `src/services/vectorStore.js` |
 | `EmbeddingsService` | 嵌入服务（代码向量化） | `src/services/embeddings.js` |
+| `CodeRetriever` | 代码检索服务（代码索引 + 混合检索） | `src/services/retriever.js` |
+| `StatePersistence` | 状态持久化（检查点 + 断点恢复） | `src/core/stateManager.js` |
+| `CircuitBreaker` | 熔断器（熔断机制 + 自动恢复） | `src/core/circuitBreaker.js` |
+| `ASTEnhancer` | AST 深度分析增强 | `src/services/astEnhancer.js` |
 
 ### CVSS 评分系统
 
@@ -248,7 +264,9 @@ node server.js
 - **前端**：原生 HTML/CSS/JavaScript
 - **LLM**：OpenAI / Anthropic / Gemini / Qwen / DeepSeek / 百度 / MiniMax / 豆包（通过统一适配器）
 - **外部工具**：Gitleaks / Bandit / Semgrep（可选集成）
-- **韧性**：熔断器 + 指数退避重试 + 令牌桶限流
+- **韧性**：熔断器 + 指数退避重试 + 令牌桶限流 + 状态持久化
+- **AST 分析**：抽象语法树构建 + 查询 + 增强
+- **向量检索**：代码语义检索 + 关键词检索混合
 
 ## 许可证
 

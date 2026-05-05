@@ -26,7 +26,7 @@ export { Sandbox } from './sandbox.js';
  * AST工具模块统一入口
  */
 
-export { ASTBuilderService, QueryEngine, SearchHandler, ASTPersistenceManager, RemoteRepositoryManager } from '../utils/index.js';
+export { ASTBuilderService, QueryEngine, SearchHandler, ASTPersistenceManager } from '../utils/index.js';
 
 /**
  * 分析器模块统一入口

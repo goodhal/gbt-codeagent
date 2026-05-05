@@ -151,36 +151,55 @@ export function createTaskStore({ workspaceDir } = {}) {
       if (!task) {
         return null;
       }
-      // 重置任务状态为运行中
+      if (task.status !== "paused") {
+        return null;
+      }
       task.status = "running";
       task.error = null;
       task.updatedAt = new Date().toISOString();
-      
-      // 根据当前阶段设置进度
-      if (task.phase === "target-selection") {
-        task.progress = {
-          stage: "target-selection",
-          label: "继续选择目标",
-          detail: `${task.selectedProjectIds.length} 个目标已选择`,
-          percent: 50,
-          current: task.selectedProjectIds.length,
-          total: task.scoutResult?.projects?.length || 0
-        };
-      } else if (task.phase === "audit") {
-        const auditResult = task.auditResult;
-        if (auditResult && auditResult.projects) {
-          const completedProjects = auditResult.projects.filter(p => p.findings?.length > 0).length;
-          task.progress = {
-            stage: "audit",
-            label: "继续审计",
-            detail: `${completedProjects} / ${auditResult.projects.length} 个项目已完成`,
-            percent: Math.round((completedProjects / auditResult.projects.length) * 100),
-            current: completedProjects,
-            total: auditResult.projects.length
-          };
-        }
+
+      // 保持原有进度，只更新状态为 running
+      await persistTask(task);
+      return task;
+    },
+
+    async pauseTask(id) {
+      const task = tasks.get(id);
+      if (!task) {
+        return null;
       }
-      
+      if (task.status !== "running") {
+        return null;
+      }
+      task.status = "paused";
+      task.updatedAt = new Date().toISOString();
+      task.message = "任务已暂停";
+
+      await persistTask(task);
+      return task;
+    },
+
+    async stopTask(id) {
+      const task = tasks.get(id);
+      if (!task) {
+        return null;
+      }
+      if (task.status === "completed" || task.status === "failed" || task.status === "cancelled") {
+        return null;
+      }
+      task.status = "cancelled";
+      task.phase = "cancelled";
+      task.updatedAt = new Date().toISOString();
+      task.message = "任务已取消";
+      task.progress = {
+        stage: "cancelled",
+        label: "任务已取消",
+        detail: "",
+        percent: 0,
+        current: 0,
+        total: 0
+      };
+
       await persistTask(task);
       return task;
     },

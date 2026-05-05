@@ -246,19 +246,84 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && /\/api\/tasks\/[^/]+\/resume$/.test(url.pathname)) {
       const [, , , taskId] = url.pathname.split("/");
+      console.log(`[恢复请求] 收到恢复任务请求: ${taskId}`);
       const task = await tasks.resumeTask(taskId);
+      console.log(`[恢复请求] resumeTask 返回: ${task ? `status=${task.status}, phase=${task.phase}` : 'null'}`);
       if (!task) {
         return sendJson(res, 404, { error: "Task not found" });
       }
-      
+
       // 根据当前阶段继续执行
       if (task.phase === "framework-scout" || task.phase === "scout") {
         runScout(taskId).catch((error) => tasks.failTask(taskId, error instanceof Error ? error.message : String(error)));
       } else if (task.phase === "audit" || task.phase === "audit-analyst") {
+        console.log(`[恢复请求] 调用 runAudit，selectedProjectIds=${JSON.stringify(task.selectedProjectIds)}`);
         runAudit(taskId, task.selectedProjectIds).catch((error) => tasks.failTask(taskId, error instanceof Error ? error.message : String(error)));
       }
-      
+
       return sendJson(res, 202, task);
+    }
+
+    if (req.method === "POST" && /\/api\/tasks\/[^/]+\/restart$/.test(url.pathname)) {
+      const [, , , taskId] = url.pathname.split("/");
+      const originalTask = tasks.getTask(taskId);
+      if (!originalTask) {
+        return sendJson(res, 404, { error: "Task not found" });
+      }
+      if (originalTask.status !== "completed" && originalTask.status !== "failed" && originalTask.status !== "cancelled") {
+        return sendJson(res, 400, { error: "Only completed/failed/cancelled tasks can be restarted" });
+      }
+
+      const restartData = {
+        sourceType: originalTask.sourceType,
+        selectedSkillIds: originalTask.selectedSkillIds || [],
+        useMemory: originalTask.useMemory !== false,
+        useReAct: originalTask.useReAct || false,
+        reactConfig: originalTask.reactConfig || {}
+      };
+
+      const newTask = await tasks.createTask(restartData);
+      tasks.updateTask(newTask.id, {
+        scoutResult: originalTask.scoutResult,
+        selectedProjectIds: originalTask.selectedProjectIds || [],
+        memorySnapshot: originalTask.memorySnapshot,
+        memorySummary: originalTask.memorySummary,
+        phase: "audit",
+        status: "queued",
+        message: "重新审计任务已创建",
+        progress: {
+          stage: "audit",
+          label: "等待开始",
+          detail: "",
+          percent: 0,
+          current: 0,
+          total: originalTask.selectedProjectIds?.length || 0
+        }
+      });
+
+      runAudit(newTask.id, newTask.selectedProjectIds).catch((error) =>
+        tasks.failTask(newTask.id, error instanceof Error ? error.message : String(error))
+      );
+
+      return sendJson(res, 202, tasks.getTask(newTask.id));
+    }
+
+    if (req.method === "POST" && /\/api\/tasks\/[^/]+\/pause$/.test(url.pathname)) {
+      const [, , , taskId] = url.pathname.split("/");
+      const task = await tasks.pauseTask(taskId);
+      if (!task) {
+        return sendJson(res, 404, { error: "Task not found or cannot be paused" });
+      }
+      return sendJson(res, 200, task);
+    }
+
+    if (req.method === "POST" && /\/api\/tasks\/[^/]+\/stop$/.test(url.pathname)) {
+      const [, , , taskId] = url.pathname.split("/");
+      const task = await tasks.stopTask(taskId);
+      if (!task) {
+        return sendJson(res, 404, { error: "Task not found or already completed" });
+      }
+      return sendJson(res, 200, task);
     }
 
     if (req.method === "DELETE" && /\/api\/tasks\/[^/]+\/report$/.test(url.pathname)) {
@@ -451,30 +516,59 @@ async function runAudit(taskId, selectedProjectIds) {
       throw new Error("No targets selected for audit.");
     }
 
-    tasks.updateTask(taskId, {
-      status: "running",
-      phase: "audit-analyst",
-      message: "正在下载审计镜像并审计你选中的目标…",
-      selectedProjectIds,
-      progress: {
-        stage: "mirror",
-        label: "正在准备审计镜像",
-        detail: "",
-        percent: 24,
-        current: 0,
-        total: selectedProjects.length
-      }
-    });
+    // 检查是否已有审计结果（从暂停恢复的情况）
+    const existingAuditResult = task.auditResult;
+    console.log(`[审计流程] existingAuditResult:`, existingAuditResult ? `projects=${existingAuditResult.projects?.length}` : 'null');
+    
+    // 调试：打印 existingAuditResult 的详细结构
+    if (existingAuditResult) {
+      console.log(`[审计流程] existingAuditResult.projects 结构:`);
+      existingAuditResult.projects?.forEach((p, i) => {
+        console.log(`  [${i}] projectId=${p.projectId}, findings.length=${p.findings?.length || 0}, heuristicFindings.length=${p.heuristicFindings?.length || 0}`);
+      });
+    }
+    
+    const completedProjectIds = existingAuditResult?.projects?.map(p => p.projectId) || [];
+    const remainingProjects = selectedProjects.filter(p => !completedProjectIds.includes(p.id));
+    
+    console.log(`[审计流程] 任务 ${taskId} - 已完成项目: ${completedProjectIds.length}, completedProjectIds=${JSON.stringify(completedProjectIds)}`);
+    console.log(`[审计流程] 任务 ${taskId} - 剩余项目: ${remainingProjects.length}, remainingProjects=${JSON.stringify(remainingProjects.map(p => p.id))}`);
 
-    for (const [projectIndex, project] of selectedProjects.entries()) {
+    // 如果是从暂停恢复，保持当前进度，只更新状态为 running
+    if (existingAuditResult && completedProjectIds.length > 0) {
+      console.log(`[审计流程] 任务 ${taskId} 从暂停点恢复，继续审计剩余项目`);
+      tasks.updateTask(taskId, {
+        status: "running",
+        message: "正在继续审计..."
+      });
+    } else {
+      // 完全从头开始
+      tasks.updateTask(taskId, {
+        status: "running",
+        phase: "audit-analyst",
+        message: "正在下载审计镜像并审计你选中的目标…",
+        selectedProjectIds,
+        progress: {
+          stage: "mirror",
+          label: "正在准备审计镜像",
+          detail: "",
+          percent: 24,
+          current: 0,
+          total: selectedProjects.length
+        }
+      });
+    }
+
+    // 只对剩余项目确保镜像
+    for (const [projectIndex, project] of remainingProjects.entries()) {
       if (project.sourceType === "local" || project.sourceType === "git-url" || project.sourceType === "zip-upload") {
         updateTaskProgress(taskId, {
           stage: "mirror",
           label: `正在生成本地镜像：${project.name}`,
           detail: "",
-          percent: calculateMirrorPercent(projectIndex + 1, selectedProjects.length, 1, 1),
+          percent: calculateMirrorPercent(projectIndex + 1, remainingProjects.length, 1, 1),
           current: projectIndex + 1,
-          total: selectedProjects.length
+          total: remainingProjects.length
         });
         await localScoutAgent.ensureProjectMirror(project);
       } else {
@@ -484,7 +578,7 @@ async function runAudit(taskId, selectedProjectIds) {
               stage: "mirror",
               label: `正在下载审计镜像：${project.name}`,
               detail: detail.currentPath || "",
-              percent: calculateMirrorPercent(projectIndex + 1, selectedProjects.length, detail.processed || 0, detail.total || 1),
+              percent: calculateMirrorPercent(projectIndex + 1, remainingProjects.length, detail.processed || 0, detail.total || 1),
               current: detail.processed || 0,
               total: detail.total || 0
             })
@@ -496,14 +590,67 @@ async function runAudit(taskId, selectedProjectIds) {
     const llmConfig = resolveLlmConfig(process.env, settings.llm);
     console.log(`[审计流程] LLM配置 - 提供商: ${llmConfig.providerId}, 模型: ${llmConfig.model}, 端点: ${llmConfig.baseUrl}, API Key配置: ${Boolean(llmConfig.apiKey)}`);
     console.log(`[审计流程] ReAct模式: ${task.useReAct ? '启用' : '禁用'}, 最大步数: ${task.reactConfig?.maxSteps || 15}`);
-    const auditResult = await auditAgent.run({
-      projects: selectedProjects,
-      selectedSkillIds: task.selectedSkillIds,
-      llmConfig,
-      useReAct: task.useReAct || false,
-      reactConfig: task.reactConfig || {},
-      onProgress: (detail) => updateTaskProgress(taskId, buildAuditProgress(detail, selectedProjects.length))
-    });
+    
+    let auditResult;
+    if (remainingProjects.length > 0) {
+      // 只对剩余项目进行审计
+      const newAuditResult = await auditAgent.run({
+        taskId,
+        projects: remainingProjects,
+        selectedSkillIds: task.selectedSkillIds,
+        llmConfig,
+        useReAct: task.useReAct || false,
+        reactConfig: task.reactConfig || {},
+        tasks,
+        onProgress: (detail) => {
+          // 调整进度，加入已完成的项目
+          const adjustedDetail = {
+            ...detail,
+            current: (detail.current || 0) + completedProjectIds.length,
+            total: selectedProjects.length,
+            projectIndex: (detail.projectIndex || 0) + completedProjectIds.length
+          };
+          updateTaskProgress(taskId, buildAuditProgress(adjustedDetail, selectedProjects.length));
+        },
+        shouldCancel: () => {
+          const currentTask = tasks.getTask(taskId);
+          // 如果任务被暂停或取消，停止审计
+          return currentTask?.status === 'cancelled' || currentTask?.status === 'paused';
+        }
+      });
+      
+      // 合并已有结果和新结果
+      if (existingAuditResult) {
+        auditResult = {
+          ...existingAuditResult,
+          projects: [
+            ...(existingAuditResult.projects || []),
+            ...newAuditResult.projects
+          ]
+        };
+      } else {
+        auditResult = newAuditResult;
+      }
+
+      // 立即检查任务状态，如果是暂停或取消，保存当前进度并停止
+      const currentTaskAfterRun = tasks.getTask(taskId);
+      if (currentTaskAfterRun?.status === 'paused' || currentTaskAfterRun?.status === 'cancelled') {
+        console.log(`[审计流程] 任务 ${taskId} 被暂停/取消，保存当前进度并停止`);
+        console.log(`[审计流程] 暂停时已有 ${auditResult?.projects?.length || 0} 个项目的结果`);
+        tasks.updateTask(taskId, {
+          auditResult,
+          progress: {
+            ...currentTaskAfterRun.progress,
+            stage: currentTaskAfterRun.status === 'paused' ? "paused" : "cancelled",
+            label: currentTaskAfterRun.status === 'paused' ? "审计已暂停" : "任务已取消"
+          }
+        });
+        return;
+      }
+    } else {
+      auditResult = existingAuditResult;
+    }
+
     updateTaskProgress(taskId, {
       stage: "report",
       label: "正在生成审计报告",

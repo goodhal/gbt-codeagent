@@ -391,6 +391,62 @@ button.danger {
   border: 1px solid #e5e7eb;
 }
 
+.review-pane.full-width {
+  grid-column: 1 / -1;
+}
+
+.react-steps {
+  margin-top: 12px;
+}
+
+.react-step {
+  padding: 12px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.react-step-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.react-step-num {
+  font-weight: 600;
+  color: #3b82f6;
+}
+
+.react-step-tool {
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 0.85em;
+}
+
+.react-step-thought,
+.react-step-args,
+.react-step-obs {
+  font-size: 0.9em;
+  line-height: 1.5;
+  margin-top: 4px;
+}
+
+.react-step-thought strong,
+.react-step-args strong,
+.react-step-obs strong {
+  color: #64748b;
+}
+
+.react-step-obs {
+  color: #475569;
+  max-height: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .review-head,
 .finding-head {
   display: flex;

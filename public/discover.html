@@ -106,7 +106,33 @@
                 <input name="useMemory" type="checkbox" checked />
                 启用项目记忆
               </label>
+              <label class="checkbox-row">
+                <input name="useReAct" type="checkbox" id="useReActToggle" />
+                启用 ReAct 深度推理审计
+              </label>
             </div>
+
+            <details id="react-config-details" class="hidden-panel">
+              <summary>ReAct 高级配置</summary>
+              <div class="grid-two react-config-fields">
+                <label>
+                  最大推理步数
+                  <input name="reactMaxSteps" type="number" min="3" max="50" value="15" />
+                </label>
+                <label>
+                  推理温度
+                  <input name="reactTemperature" type="number" min="0" max="1" step="0.1" value="0.1" />
+                </label>
+                <label>
+                  最大重试次数
+                  <input name="reactMaxRetries" type="number" min="0" max="5" value="3" />
+                </label>
+                <label class="checkbox-row">
+                  <input name="reactVerbose" type="checkbox" />
+                  详细输出模式
+                </label>
+              </div>
+            </details>
 
             <div id="git-url-fields" class="hidden-panel">
               <label>

@@ -1,5 +1,6 @@
 import { RulesEngine, StaticAnalyzer, TaintAnalyzer, PatternAnalyzer, CompositeAnalyzer } from '../analyzers/index.js';
 import { getGlobalVectorStore, createSemanticSearchEngine } from './vectorStore.js';
+import { ASTBuilderService } from '../utils/astBuilder.js';
 
 class CodeAnalysisTool {
   constructor(llmService) {
@@ -8,6 +9,8 @@ class CodeAnalysisTool {
     this._rulesEngine = null;
     this._vectorStore = null;
     this._searchEngine = null;
+    this._astBuilder = null;
+    this._currentProjectId = null;
   }
 
   async initialize(options = {}) {
@@ -28,7 +31,72 @@ class CodeAnalysisTool {
       this._searchEngine = createSemanticSearchEngine(this._vectorStore, options.embedder);
     }
 
+    this._astBuilder = new ASTBuilderService({
+      cacheEnabled: options.enableAstCache !== false,
+      cacheDir: options.astCacheDir || './cache',
+      rebuildOnStartup: options.rebuildAstOnStartup || false
+    });
+
     return this;
+  }
+
+  async initializeAST(projectId, sourcePath, options = {}) {
+    if (!this._astBuilder) {
+      this._astBuilder = new ASTBuilderService({
+        cacheEnabled: options.enableAstCache !== false,
+        cacheDir: options.astCacheDir || './cache'
+      });
+    }
+    
+    this._currentProjectId = projectId;
+    const astIndex = await this._astBuilder.initialize(projectId, sourcePath, options);
+    return astIndex;
+  }
+
+  searchClass(className) {
+    if (!this._astBuilder || !this._astBuilder.isInitialized()) {
+      return { success: false, error: 'AST Builder not initialized', data: [] };
+    }
+    return this._astBuilder.searchClass(className);
+  }
+
+  searchMethod(className, methodName) {
+    if (!this._astBuilder || !this._astBuilder.isInitialized()) {
+      return { success: false, error: 'AST Builder not initialized', data: [] };
+    }
+    return this._astBuilder.searchMethod(className, methodName);
+  }
+
+  searchField(className, fieldName) {
+    if (!this._astBuilder || !this._astBuilder.isInitialized()) {
+      return { success: false, error: 'AST Builder not initialized', data: [] };
+    }
+    return this._astBuilder.searchField(className, fieldName);
+  }
+
+  searchCode(options) {
+    if (!this._astBuilder || !this._astBuilder.isInitialized()) {
+      return { success: false, error: 'AST Builder not initialized', data: [] };
+    }
+    return this._astBuilder.search(options);
+  }
+
+  getClassHierarchy(className, type = 'super') {
+    if (!this._astBuilder || !this._astBuilder.isInitialized()) {
+      return { success: false, error: 'AST Builder not initialized', data: [] };
+    }
+    return this._astBuilder.getClassHierarchy(className, type);
+  }
+
+  getASTStats() {
+    if (!this._astBuilder || !this._astBuilder.isInitialized()) {
+      return { success: false, error: 'AST Builder not initialized', data: null };
+    }
+    return this._astBuilder.getStats();
+  }
+
+  isASTInitialized() {
+    return this._astBuilder && this._astBuilder.isInitialized();
   }
 
   async analyze(code, filePath = "unknown", language = "python", options = {}) {

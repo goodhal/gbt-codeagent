@@ -1,20 +1,12 @@
 import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { CODE_EXTENSIONS, extensionToLanguage } from "../utils/fileUtils.js";
-
-const IGNORED_SEGMENTS = [
-  ".git",
-  "node_modules",
-  "dist",
-  "build",
-  "coverage",
-  ".next",
-  ".nuxt",
-  "vendor",
-  "tmp",
-  "temp"
-];
+import {
+  normalizeProjectInfo,
+  IGNORED_SEGMENTS,
+  collectRelevantFiles,
+  detectPrimaryLanguageFromFiles
+} from "../utils/scoutCommon.js";
 
 const MAX_LOCAL_FILES = 400;
 const MAX_FILE_SIZE = 250_000;
@@ -43,26 +35,25 @@ export class LocalRepoScoutAgent {
         console.log(`[本地仓库扫描] 路径有效，代码文件数：${stats.codeFiles}，主要语言：${stats.primaryLanguage}`);
         return {
           skipped: false,
-          project: {
+          project: normalizeProjectInfo({
             id: buildProjectId(localPath),
             sourceType: "local",
             name: path.basename(localPath),
             owner: "local",
-            repoUrl: "",
+            html_url: "",
             localPath,
             description: `本地仓库导入：${localPath}`,
             language: stats.primaryLanguage,
-            defaultBranch: "local",
-            updatedAt: stats.updatedAt,
-            pushedAt: stats.updatedAt,
+            default_branch: "local",
+            updated_at: stats.updatedAt,
+            pushed_at: stats.updatedAt,
             downloadArtifact: `${buildProjectId(localPath)}.json`,
-            adoptionSignals: {
-              stars: 0,
-              forks: 0,
-              estimatedLiveUsage: 0,
+            stargazers_count: 0,
+            forks_count: 0,
+            stats: {
               codeFiles: stats.codeFiles
             }
-          }
+          })
         };
       })
     );
@@ -128,11 +119,11 @@ async function inspectLocalPath(localPath) {
   try {
     const stat = await fs.stat(localPath);
     if (!stat.isDirectory()) return null;
-    const files = await collectRelevantFiles(localPath, { limit: 120 });
+    const files = await collectRelevantFiles(localPath, { limit: 120, maxFileSize: MAX_FILE_SIZE });
     return {
       updatedAt: stat.mtime.toISOString(),
       codeFiles: files.length,
-      primaryLanguage: detectPrimaryLanguage(files)
+      primaryLanguage: detectPrimaryLanguageFromFiles(files)
     };
   } catch {
     return null;
@@ -143,7 +134,7 @@ async function mirrorLocalRepository(localPath, destinationRoot) {
   await fs.rm(destinationRoot, { recursive: true, force: true });
   await fs.mkdir(destinationRoot, { recursive: true });
 
-  const files = await collectRelevantFiles(localPath, { limit: MAX_LOCAL_FILES });
+  const files = await collectRelevantFiles(localPath, { limit: MAX_LOCAL_FILES, maxFileSize: MAX_FILE_SIZE });
   const mirroredFiles = [];
 
   for (let i = 0; i < files.length; i += MAX_PARALLEL_FILE_OPS) {
@@ -161,56 +152,6 @@ async function mirrorLocalRepository(localPath, destinationRoot) {
   }
 
   return mirroredFiles;
-}
-
-async function collectRelevantFiles(root, { limit }) {
-  const output = [];
-  await walk(root, output, limit);
-  return output;
-}
-
-async function walk(currentPath, output, limit) {
-  if (output.length >= limit) return;
-
-  const entries = await fs.readdir(currentPath, { withFileTypes: true });
-  for (const entry of entries) {
-    if (output.length >= limit) return;
-    if (IGNORED_SEGMENTS.includes(entry.name)) continue;
-
-    const target = path.join(currentPath, entry.name);
-    if (entry.isDirectory()) {
-      await walk(target, output, limit);
-      continue;
-    }
-
-    if (!entry.isFile()) continue;
-    if (!isRelevantSourceFile(target)) continue;
-
-    const stat = await fs.stat(target);
-    if (stat.size > MAX_FILE_SIZE) continue;
-    output.push(target);
-  }
-}
-
-function isRelevantSourceFile(filePath) {
-  const lowered = filePath.toLowerCase();
-  if (IGNORED_SEGMENTS.some((segment) => lowered.includes(`\\${segment.toLowerCase()}\\`) || lowered.includes(`/${segment.toLowerCase()}/`))) {
-    return false;
-  }
-
-  return CODE_EXTENSIONS.has(path.extname(filePath).toLowerCase());
-}
-
-function detectPrimaryLanguage(files) {
-  const counts = new Map();
-
-  for (const file of files) {
-    const language = extensionToLanguage(path.extname(file).toLowerCase());
-    counts.set(language, (counts.get(language) || 0) + 1);
-  }
-
-  const [topLanguage] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0] || ["Unknown"];
-  return topLanguage;
 }
 
 

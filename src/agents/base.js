@@ -19,50 +19,6 @@ const AgentStatus = {
   STOPPED: "stopped"
 };
 
-class AgentConfig {
-  constructor({
-    name,
-    agentType,
-    pattern = AgentPattern.REACT,
-    model = null,
-    temperature = 0.1,
-    maxTokens = 8192,
-    maxIterations = 20,
-    timeoutSeconds = 600,
-    tools = [],
-    systemPrompt = null,
-    metadata = {}
-  }) {
-    this.name = name;
-    this.agentType = agentType;
-    this.pattern = pattern;
-    this.model = model;
-    this.temperature = temperature;
-    this.maxTokens = maxTokens;
-    this.maxIterations = maxIterations;
-    this.timeoutSeconds = timeoutSeconds;
-    this.tools = tools;
-    this.systemPrompt = systemPrompt;
-    this.metadata = metadata;
-  }
-
-  toJSON() {
-    return {
-      name: this.name,
-      agentType: this.agentType,
-      pattern: this.pattern,
-      model: this.model,
-      temperature: this.temperature,
-      maxTokens: this.maxTokens,
-      maxIterations: this.maxIterations,
-      timeoutSeconds: this.timeoutSeconds,
-      tools: this.tools,
-      systemPrompt: this.systemPrompt,
-      metadata: this.metadata
-    };
-  }
-}
-
 class TaskHandoff {
   constructor({
     fromAgent,
@@ -481,7 +437,6 @@ export {
   AgentType,
   AgentPattern,
   AgentStatus,
-  AgentConfig,
   TaskHandoff,
   AgentResult,
   BaseAgent,

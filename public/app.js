@@ -142,6 +142,14 @@ function initDiscoverPage() {
     input.addEventListener("change", () => syncSourceMode(githubFields, gitUrlFields, zipUploadFields, localFields));
   });
 
+  const useReActToggle = document.querySelector("#useReActToggle");
+  const reactConfigDetails = document.querySelector("#react-config-details");
+  useReActToggle?.addEventListener("change", () => {
+    if (reactConfigDetails) {
+      reactConfigDetails.classList.toggle("hidden-panel", !useReActToggle.checked);
+    }
+  });
+
   // 监听文件选择变化
   const zipFileInput = form?.elements.zipFiles;
   if (zipFileInput) {
@@ -173,6 +181,17 @@ function initDiscoverPage() {
       selectedSkillIds,
       useMemory: form.elements.useMemory?.checked
     };
+
+    const useReAct = form.elements.useReAct?.checked === true;
+    if (useReAct) {
+      payload.useReAct = true;
+      payload.reactConfig = {
+        maxSteps: Number(form.elements.reactMaxSteps?.value || 15),
+        temperature: Number(form.elements.reactTemperature?.value || 0.1),
+        maxRetries: Number(form.elements.reactMaxRetries?.value || 3),
+        verbose: form.elements.reactVerbose?.checked === true
+      };
+    }
 
     if (sourceType === "local") {
       payload.localRepoPaths = String(form.elements.localRepoPaths.value || "")
@@ -408,6 +427,8 @@ function renderTaskDetail(task) {
   const findingsCount = task.auditResult?.findingsCount || 0;
   const heuristicCount = task.auditResult?.heuristicFindingsCount || 0;
   const llmCount = task.auditResult?.llmFindingsCount || 0;
+  const reactCount = projects.reduce((sum, p) => sum + (p.reactAudit?.issues?.length || p.reactResult?.issues?.length || 0), 0);
+  const useReAct = task.useReAct === true;
 
   let html = "";
   html += '<div class="summary-grid">';
@@ -429,7 +450,7 @@ function renderTaskDetail(task) {
 
   html += '<div class="detail-block">';
   html += '<h3>审计结果</h3>';
-  html += '<p>规则层 ' + escapeHtml(String(heuristicCount)) + ' 条，LLM 复核 ' + escapeHtml(String(llmCount)) + ' 条。</p>';
+  html += '<p>规则层 ' + escapeHtml(String(heuristicCount)) + ' 条，LLM 复核 ' + escapeHtml(String(llmCount)) + ' 条' + (useReAct ? '，ReAct推理 ' + escapeHtml(String(reactCount)) + ' 条' : '') + '。</p>';
   if (projects.length) {
     html += projects.map(renderProjectReview).join("");
   } else {
@@ -534,9 +555,11 @@ function renderSelectionView(task) {
 }
 
 function renderProjectReview(project) {
+  const reactResult = project.reactAudit || project.reactResult;
   const allFindings = [
     ...(project.heuristicFindings || []),
-    ...(project.llmAudit?.findings || [])
+    ...(project.llmAudit?.findings || []),
+    ...(reactResult?.issues || [])
   ];
 
   const severityStats = {
@@ -675,6 +698,16 @@ function renderProjectReview(project) {
           ${renderFindingList(project.llmAudit?.findings || [], "LLM 本次没有额外保留高置信度结果。")}
         </section>
       </div>
+      ${reactResult ? `
+      <div class="review-columns">
+        <section class="review-pane full-width">
+          <h5>ReAct 深度推理审计</h5>
+          <p>${escapeHtml(reactResult.summary || reactResult.finalAnswer || "ReAct 审计完成。")}</p>
+          ${reactResult.steps?.length ? renderReActSteps(reactResult.steps) : ""}
+          ${renderFindingList(reactResult.issues || [], "ReAct 本次没有发现额外问题。")}
+        </section>
+      </div>
+      ` : ""}
     </article>
   `;
 }
@@ -697,6 +730,39 @@ function renderFindingList(findings, emptyMessage) {
       '</li>';
     }).join("") +
   '</ul>';
+}
+
+function renderReActSteps(steps) {
+  if (!steps?.length) return "";
+
+  const toolLabels = {
+    'local_file_content': '读取文件',
+    'local_file_info': '文件信息',
+    'local_search_code': '搜索代码',
+    'local_list_directory': '列出目录',
+    'local_context_analysis': '上下文分析',
+    'local_glob_search': '全局搜索',
+    'local_trace_calls': '追踪调用',
+    'local_check_dependency': '检查依赖',
+    'local_analyze_data_flow': '分析数据流'
+  };
+
+  return '<div class="react-steps">' +
+    steps.map((step, idx) => {
+      const toolLabel = toolLabels[step.action] || step.action || '思考';
+      const thoughtPreview = step.thought?.length > 100 ? step.thought.substring(0, 100) + '...' : step.thought;
+      const obsPreview = step.observation?.length > 150 ? step.observation.substring(0, 150) + '...' : step.observation;
+      return '<div class="react-step">' +
+        '<div class="react-step-header">' +
+          '<span class="react-step-num">步骤 ' + (idx + 1) + '</span>' +
+          '<span class="react-step-tool">' + escapeHtml(toolLabel) + '</span>' +
+        '</div>' +
+        '<div class="react-step-thought"><strong>推理:</strong> ' + escapeHtml(thoughtPreview || "") + '</div>' +
+        (step.actionArgs ? '<div class="react-step-args"><strong>参数:</strong> ' + escapeHtml(JSON.stringify(step.actionArgs)) + '</div>' : '') +
+        (step.observation ? '<div class="react-step-obs"><strong>结果:</strong> ' + escapeHtml(obsPreview) + '</div>' : '') +
+      '</div>';
+    }).join("") +
+  '</div>';
 }
 
 function buildProgressCard(progress) {
@@ -1121,6 +1187,18 @@ async function handleZipUpload(form, selectedSkillIds) {
     formData.append("sourceType", "zip-upload");
     formData.append("selectedSkillIds", JSON.stringify(selectedSkillIds));
     formData.append("useMemory", form.elements.useMemory?.checked || false);
+
+    const useReAct = form.elements.useReAct?.checked === true;
+    if (useReAct) {
+      formData.append("useReAct", "true");
+      const reactConfig = {
+        maxSteps: Number(form.elements.reactMaxSteps?.value || 15),
+        temperature: Number(form.elements.reactTemperature?.value || 0.1),
+        maxRetries: Number(form.elements.reactMaxRetries?.value || 3),
+        verbose: form.elements.reactVerbose?.checked === true
+      };
+      formData.append("reactConfig", JSON.stringify(reactConfig));
+    }
 
     for (const file of files) {
       formData.append("zipFiles", file);

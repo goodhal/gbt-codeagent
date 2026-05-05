@@ -286,19 +286,7 @@ class KnowledgeIndex {
 
 const globalKnowledgeIndex = new KnowledgeIndex();
 
-const Severity = {
-  LOW: "LOW",
-  MEDIUM: "MEDIUM",
-  HIGH: "HIGH",
-  CRITICAL: "CRITICAL"
-};
-
-const KnowledgeCategory = {
-  VULNERABILITY: "VULNERABILITY",
-  SECURITY: "SECURITY",
-  BEST_PRACTICE: "BEST_PRACTICE",
-  COMPLIANCE: "COMPLIANCE"
-};
+export { Severity, KnowledgeCategory } from './frameworks.js';
 
 const VulnerabilityPatterns = {
   SQL_INJECTION: {
@@ -414,7 +402,5 @@ export {
   CWE_CATEGORIES,
   KnowledgeIndex,
   globalKnowledgeIndex,
-  Severity,
-  KnowledgeCategory,
   ALL_VULNERABILITY_DOCS
 };

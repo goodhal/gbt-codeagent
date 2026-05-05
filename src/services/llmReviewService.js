@@ -2,11 +2,13 @@ import { promises as fs } from "node:fs";
 import path from "path";
 import { inferFenceLanguage } from "../utils/fileUtils.js";
 import { jsonrepair } from "jsonrepair";
-import { withRetry, CircuitBreaker, CircuitBreakerConfig } from "../core/index.js";
+import { withRetry, CircuitBreaker, CircuitBreakerConfig, createReActAuditor } from "../core/index.js";
+import { createLocalToolExecutor } from "../tools/localToolExecutor.js";
+import { buildReActSystemPrompt, buildReActInitialPrompt } from "../core/reactPrompts.js";
 import { ragService } from "./ragService.js";
 import { streamService } from "./streamService.js";
 import { estimateTokens, countTokensTiktoken, getModelMaxTokens, PromptCompressor, IncrementalSummary, ContextConfig } from "../utils/contextManager.js";
-import { fetchWithTimeout } from "./llmFactory.js";
+import { fetchWithTimeout, globalLLMFactory } from "./llmFactory.js";
 
 const MAX_BATCHES = 16;
 const MAX_FILES_PER_BATCH = 4;
@@ -611,6 +613,117 @@ export class DefensiveLlmReviewer {
       warnings,
       findings: dedupedFindings.map((finding) => ({ ...finding, source: "llm" }))
     };
+  }
+
+  async auditWithReAct({ project, selectedSkills, llmConfig, reactConfig = {}, onProgress }) {
+    console.log(`[ReAct审计] auditWithReAct 开始 - 项目: ${project.name}, 提供商: ${llmConfig.providerId}, 模型: ${llmConfig.model}`);
+
+    if (!llmConfig?.apiKey) {
+      return {
+        status: "skipped",
+        called: false,
+        skipReason: "missing-api-key",
+        summary: "未配置可用的 LLM API Key，本次没有调用大模型进行 ReAct 推理审计。",
+        findings: [],
+        warnings: [],
+        reactResult: null
+      };
+    }
+
+    const sourceRoot = path.join(process.cwd(), "workspace", "downloads", project.id);
+
+    const adapter = globalLLMFactory.createAdapter(llmConfig);
+    const toolExecutor = createLocalToolExecutor(sourceRoot);
+
+    const auditorConfig = {
+      maxSteps: reactConfig.maxSteps || 15,
+      temperature: reactConfig.temperature || 0.1,
+      maxRetries: reactConfig.maxRetries || 3,
+      verbose: reactConfig.verbose || false
+    };
+
+    const auditor = createReActAuditor(adapter, toolExecutor, auditorConfig);
+
+    try {
+      const files = await collectFiles(sourceRoot);
+      if (!files.length) {
+        return {
+          status: "skipped",
+          called: false,
+          skipReason: "no-local-files",
+          summary: "当前目标没有生成可供 ReAct 审计的本地审计镜像。",
+          findings: [],
+          warnings: [],
+          reactResult: null
+        };
+      }
+
+      const codeDiff = files.map(f => `FILE: ${f.relativePath}\n\`\`\`${f.language}\n${f.content}\n\`\`\``).join('\n\n');
+      const projectInfo = {
+        name: project.name,
+        path: project.localPath || sourceRoot,
+        language: files[0]?.language || 'unknown'
+      };
+
+      onProgress?.({
+        type: "react-start",
+        projectName: project.name,
+        totalFiles: files.length,
+        label: `正在启动 ReAct 推理审计：${project.name}`
+      });
+
+      const reactResult = await auditor.audit({
+        systemPrompt: await buildReActSystemPrompt(),
+        initialPrompt: buildReActInitialPrompt(codeDiff, projectInfo),
+        projectInfo
+      });
+
+      const findings = reactResult.issues.map(issue => ({
+        title: issue.desc || issue.type || 'ReAct 发现',
+        severity: issue.level || 'medium',
+        confidence: 0.8,
+        location: issue.file || 'n/a',
+        skillId: selectedSkills[0]?.id || 'gbt-code-audit',
+        evidence: issue.code || issue.desc || '',
+        impact: `ReAct 推理发现：${issue.type} 相关风险`,
+        remediation: issue.suggestion || issue.FixSuggestion || '建议进行安全代码审查',
+        safeValidation: '建议使用工具验证问题代码并确认修复',
+        source: 'react'
+      }));
+
+      onProgress?.({
+        type: "react-complete",
+        projectName: project.name,
+        totalSteps: reactResult.steps.length,
+        findingsCount: findings.length,
+        label: `ReAct 推理审计完成：发现 ${findings.length} 个问题`
+      });
+
+      return {
+        status: reactResult.error ? "partial" : "completed",
+        called: true,
+        skipReason: "",
+        providerId: llmConfig.providerId,
+        model: llmConfig.model,
+        totalSteps: reactResult.steps.length,
+        skillsUsed: selectedSkills.map((skill) => skill.id),
+        summary: `ReAct 推理审计完成，共 ${reactResult.steps.length} 步推理，发现 ${findings.length} 个安全问题。`,
+        warnings: reactResult.error ? [reactResult.error] : [],
+        findings,
+        reactResult: reactResult.toJSON()
+      };
+    } catch (error) {
+      console.error(`[ReAct审计] auditWithReAct 错误:`, error.message);
+      return {
+        status: "failed",
+        called: false,
+        skipReason: "react-error",
+        summary: `ReAct 审计失败：${error.message}`,
+        findings: [],
+        warnings: [error.message],
+        reactResult: null
+      };
+    }
   }
 }
 

@@ -28,3 +28,17 @@ export {
   SpanStatus, SpanKind, Span, Tracer,
   getGlobalTracer, setGlobalTracer, createTracer
 } from './telemetry.js';
+export {
+  ReActStep,
+  ReActResult,
+  ReActAuditorConfig,
+  ReActAuditor,
+  createReActAuditor
+} from './reactAuditor.js';
+export {
+  buildReActInitialPrompt,
+  buildReActSystemPrompt,
+  getAnalysisStrategy,
+  getFinalAnswerGuidance,
+  loadReActPrompts
+} from './reactPrompts.js';

@@ -13,7 +13,7 @@ export class AuditAnalystAgent {
     this.quickScanService = new QuickScanService();
   }
 
-  async run({ projects, selectedSkillIds, llmConfig, onProgress }) {
+  async run({ projects, selectedSkillIds, llmConfig, useReAct = false, reactConfig = {}, onProgress }) {
     const reviewProfile = resolveAuditSkills(selectedSkillIds);
     const results = [];
     const isGbtAudit = reviewProfile.some(skill => skill.id === "gbt-code-audit");
@@ -36,28 +36,47 @@ export class AuditAnalystAgent {
         skipReason: "auditor-unavailable",
         summary: "未配置 LLM 审计器。",
         findings: [],
-        warnings: []
+        warnings: [],
+        reactResult: null
       };
 
       if (this.llmReviewer) {
-        llmAudit = await this.llmReviewer.auditProject({
-          project,
-          selectedSkills: reviewProfile,
-          llmConfig,
-          onProgress: (detail) =>
-            onProgress?.({
-              stage: "llm-audit",
-              projectId: project.id,
-              projectName: project.name,
-              projectIndex: index + 1,
-              totalProjects: projects.length,
-              ...detail
-            })
-        });
+        if (useReAct && typeof this.llmReviewer.auditWithReAct === 'function') {
+          llmAudit = await this.llmReviewer.auditWithReAct({
+            project,
+            selectedSkills: reviewProfile,
+            llmConfig,
+            reactConfig,
+            onProgress: (detail) =>
+              onProgress?.({
+                stage: "react-audit",
+                projectId: project.id,
+                projectName: project.name,
+                projectIndex: index + 1,
+                totalProjects: projects.length,
+                ...detail
+              })
+          });
+        } else {
+          llmAudit = await this.llmReviewer.auditProject({
+            project,
+            selectedSkills: reviewProfile,
+            llmConfig,
+            onProgress: (detail) =>
+              onProgress?.({
+                stage: "llm-audit",
+                projectId: project.id,
+                projectName: project.name,
+                projectIndex: index + 1,
+                totalProjects: projects.length,
+                ...detail
+              })
+          });
+        }
 
         if (llmAudit.status === "skipped") {
           onProgress?.({
-            stage: "llm-audit",
+            stage: useReAct ? "react-audit" : "llm-audit",
             projectId: project.id,
             projectName: project.name,
             projectIndex: index + 1,
@@ -83,6 +102,7 @@ export class AuditAnalystAgent {
         totalProjects: projects.length,
         heuristicCount: heuristicFindings.length,
         llmCount: llmAudit?.findings?.length || 0,
+        useReAct,
         label: `已完成：${project.name}`
       });
 

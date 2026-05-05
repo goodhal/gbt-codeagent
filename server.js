@@ -162,12 +162,16 @@ const server = http.createServer(async (req, res) => {
 
         const selectedSkillIds = JSON.parse(uploadResult.fields.selectedSkillIds || "[]");
         const useMemory = uploadResult.fields.useMemory === "true";
+        const useReAct = uploadResult.fields.useReAct === "true";
+        const reactConfig = uploadResult.fields.reactConfig ? JSON.parse(uploadResult.fields.reactConfig) : {};
 
         const memory = await memoryStore.read();
         const taskData = {
           sourceType: "zip-upload",
           selectedSkillIds,
           useMemory,
+          useReAct,
+          reactConfig,
           zipFiles: uploadResult.files
         };
 
@@ -318,6 +322,26 @@ const server = http.createServer(async (req, res) => {
       }
       recordRequest(url.pathname, performance.now() - start, true);
       return sendJson(res, 200, task);
+    }
+
+    if (req.method === "GET" && /\/api\/tasks\/[^/]+\/react-steps$/.test(url.pathname)) {
+      const [, , , taskId] = url.pathname.split("/");
+      const task = tasks.getTask(taskId);
+      if (!task) {
+        return sendJson(res, 404, { error: "Task not found" });
+      }
+      const projects = task.auditResult?.projects || [];
+      const reactStepsData = projects.map(p => {
+        const reactResult = p.reactAudit || p.reactResult;
+        return {
+          projectId: p.id,
+          projectName: p.name,
+          steps: reactResult?.steps || [],
+          finalAnswer: reactResult?.finalAnswer || reactResult?.summary || "",
+          issues: reactResult?.issues || []
+        };
+      });
+      return sendJson(res, 200, { taskId, useReAct: task.useReAct, reactConfig: task.reactConfig, projects: reactStepsData });
     }
 
     if (req.method === "GET" && url.pathname.startsWith("/downloads/")) {
@@ -471,10 +495,13 @@ async function runAudit(taskId, selectedProjectIds) {
     const settings = await settingsStore.read();
     const llmConfig = resolveLlmConfig(process.env, settings.llm);
     console.log(`[审计流程] LLM配置 - 提供商: ${llmConfig.providerId}, 模型: ${llmConfig.model}, 端点: ${llmConfig.baseUrl}, API Key配置: ${Boolean(llmConfig.apiKey)}`);
+    console.log(`[审计流程] ReAct模式: ${task.useReAct ? '启用' : '禁用'}, 最大步数: ${task.reactConfig?.maxSteps || 15}`);
     const auditResult = await auditAgent.run({
       projects: selectedProjects,
       selectedSkillIds: task.selectedSkillIds,
       llmConfig,
+      useReAct: task.useReAct || false,
+      reactConfig: task.reactConfig || {},
       onProgress: (detail) => updateTaskProgress(taskId, buildAuditProgress(detail, selectedProjects.length))
     });
     updateTaskProgress(taskId, {
@@ -588,11 +615,53 @@ function buildAuditProgress(detail, totalProjects) {
     };
   }
 
+  if (detail.stage === "react-audit") {
+    if (detail.type === "react-start") {
+      return {
+        stage: "react-audit",
+        label: detail.label || `正在启动 ReAct 推理审计：${detail.projectName || ""}`,
+        detail: `${detail.totalFiles || 0} 个文件`,
+        percent: 68,
+        current: 0,
+        total: 1
+      };
+    }
+    if (detail.type === "react-batch" || detail.type === "react-step") {
+      return {
+        stage: "react-audit",
+        label: detail.label || `正在进行 ReAct 推理审计：${detail.projectName || ""}`,
+        detail: `推理步骤 ${detail.currentStep || 0} / ${detail.totalSteps || 0}`,
+        percent: Math.min(92, Math.round(68 + ((detail.currentStep || 0) / Math.max(detail.totalSteps || 1, 1)) * 24)),
+        current: detail.currentStep || 0,
+        total: detail.totalSteps || 1
+      };
+    }
+    if (detail.type === "react-complete") {
+      return {
+        stage: "react-complete",
+        label: detail.label || `ReAct 推理审计完成：${detail.projectName || ""}`,
+        detail: `推理步骤 ${detail.totalSteps || 0}，发现问题 ${detail.findingsCount || 0} 个`,
+        percent: 95,
+        current: 1,
+        total: 1
+      };
+    }
+    const projectOffset = (Math.max((detail.projectIndex || 1) - 1, 0) / safeProjects) * 24;
+    return {
+      stage: "react-audit",
+      label: detail.label || `正在进行 ReAct 推理审计：${detail.projectName || ""}`,
+      detail: detail.label || `推理审计中...`,
+      percent: Math.min(92, Math.round(68 + projectOffset + 12)),
+      current: detail.projectIndex || 0,
+      total: safeProjects
+    };
+  }
+
   if (detail.stage === "project-complete") {
     return {
       stage: "project-complete",
       label: detail.label || `已完成：${detail.projectName || ""}`,
-      detail: `规则层 ${detail.heuristicCount || 0} 条，LLM ${detail.llmCount || 0} 条`,
+      detail: `规则层 ${detail.heuristicCount || 0} 条，LLM ${detail.llmCount || 0} 条${detail.useReAct ? ' (ReAct模式)' : ''}`,
       percent: Math.min(96, Math.round(68 + ((detail.projectIndex || 0) / safeProjects) * 27)),
       current: detail.projectIndex || 0,
       total: detail.totalProjects || safeProjects
@@ -711,6 +780,8 @@ function stripTrailingSlash(value) {
 function applyMemoryDefaults(body, memory) {
   const useMemory = body.useMemory !== false;
   const sourceType = body.sourceType || "github";
+  const useReAct = body.useReAct === true;
+  const reactConfig = typeof body.reactConfig === 'object' && body.reactConfig !== null ? body.reactConfig : {};
   let selectedSkillIds = Array.isArray(body.selectedSkillIds) ? body.selectedSkillIds : [];
   
   // 如果提供了selectedSkills，将其转换为selectedSkillIds
@@ -739,6 +810,8 @@ function applyMemoryDefaults(body, memory) {
       selectedSkillIds,
       localRepoPaths,
       useMemory,
+      useReAct,
+      reactConfig,
       query: "local repository import",
       cmsType: "all",
       industry: "all",
@@ -777,6 +850,8 @@ function applyMemoryDefaults(body, memory) {
       selectedSkillIds,
       localRepoPaths: [],
       useMemory: false,
+      useReAct,
+      reactConfig,
       query,
       cmsType: body.cmsType || "all",
       industry: body.industry || "all",
@@ -789,6 +864,8 @@ function applyMemoryDefaults(body, memory) {
     selectedSkillIds,
     localRepoPaths: [],
     useMemory,
+    useReAct,
+    reactConfig,
     query,
     cmsType: body.cmsType || "all",
     industry: body.industry || "all",

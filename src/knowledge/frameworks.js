@@ -1,3 +1,11 @@
+const Severity = {
+  CRITICAL: 'critical',
+  HIGH: 'high',
+  MEDIUM: 'medium',
+  LOW: 'low',
+  INFO: 'info'
+};
+
 const KnowledgeCategory = {
   VULNERABILITY: "vulnerability",
   FRAMEWORK: "framework",
@@ -12,6 +20,10 @@ class KnowledgeDocument {
     title,
     category,
     tags = [],
+    severity = null,
+    cweIds = [],
+    owaspIds = [],
+    gbtMapping = null,
     content = "",
     metadata = {}
   }) {
@@ -19,10 +31,24 @@ class KnowledgeDocument {
     this.title = title;
     this.category = category;
     this.tags = tags;
+    this.severity = severity;
+    this.cweIds = cweIds;
+    this.owaspIds = owaspIds;
+    this.gbtMapping = gbtMapping;
     this.content = content;
     this.metadata = metadata;
     this.createdAt = new Date().toISOString();
     this.updatedAt = new Date().toISOString();
+  }
+
+  matches(query) {
+    const lowerQuery = query.toLowerCase();
+    return (
+      this.title.toLowerCase().includes(lowerQuery) ||
+      this.content.toLowerCase().includes(lowerQuery) ||
+      this.tags.some(tag => tag.toLowerCase().includes(lowerQuery)) ||
+      this.cweIds.some(cwe => cwe.toLowerCase().includes(lowerQuery))
+    );
   }
 
   toJSON() {
@@ -31,6 +57,10 @@ class KnowledgeDocument {
       title: this.title,
       category: this.category,
       tags: this.tags,
+      severity: this.severity,
+      cweIds: this.cweIds,
+      owaspIds: this.owaspIds,
+      gbtMapping: this.gbtMapping,
       content: this.content,
       metadata: this.metadata,
       createdAt: this.createdAt,
@@ -408,6 +438,7 @@ function searchFrameworks(query) {
 }
 
 export {
+  Severity,
   KnowledgeCategory,
   KnowledgeDocument,
   FRAMEWORK_DOCUMENTS,

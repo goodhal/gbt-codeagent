@@ -63,20 +63,35 @@ export function createTaskStore({ workspaceDir } = {}) {
 
   return {
     async createTask(input = {}) {
+      const sourceType = input.sourceType || "github";
+      let query;
+      if (input.query) {
+        query = input.query;
+      } else if (sourceType === "zip-upload") {
+        query = "ZIP 代码包上传";
+      } else if (sourceType === "local") {
+        query = "本地仓库导入";
+      } else if (sourceType === "git-url") {
+        query = "Git 仓库导入";
+      } else {
+        query = 'topic:cms OR "headless cms" OR "content management system"';
+      }
       const task = {
         id: crypto.randomUUID(),
         status: "queued",
         phase: "queued",
         message: "Task accepted.",
         createdAt: new Date().toISOString(),
-        sourceType: input.sourceType || "github",
-        query: input.query || 'topic:cms OR "headless cms" OR "content management system"',
+        sourceType,
+        query,
         cmsType: input.cmsType || "all",
         industry: input.industry || "all",
         localRepoPaths: Array.isArray(input.localRepoPaths) ? input.localRepoPaths : [],
+        gitUrls: Array.isArray(input.gitUrls) ? input.gitUrls : [],
         minAdoption: Number(input.minAdoption || 100),
         useMemory: input.useMemory !== false,
         selectedSkillIds: Array.isArray(input.selectedSkillIds) ? input.selectedSkillIds : [],
+        zipFiles: Array.isArray(input.zipFiles) ? input.zipFiles : [],
         scoutResult: null,
         selectedProjectIds: [],
         auditResult: null,

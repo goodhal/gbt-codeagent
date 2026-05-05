@@ -96,8 +96,18 @@ export class LocalRepoScoutAgent {
     const sourceRoot = path.join(this.downloadsDir, project.id);
     console.log(`[本地仓库镜像] 镜像路径：${sourceRoot}`);
     
-    const mirroredFiles = await mirrorLocalRepository(project.localPath, sourceRoot);
-    console.log(`[本地仓库镜像] 镜像完成，复制了 ${mirroredFiles.length} 个文件`);
+    let mirroredFiles;
+    if (project.localPath === sourceRoot) {
+      console.log(`[本地仓库镜像] 源路径与目标路径相同，跳过镜像复制`);
+      const files = await collectRelevantFiles(project.localPath, { limit: MAX_LOCAL_FILES });
+      mirroredFiles = files.map(f => ({ 
+        path: path.relative(project.localPath, f).replaceAll("\\", "/"),
+        size: 0 
+      }));
+    } else {
+      mirroredFiles = await mirrorLocalRepository(project.localPath, sourceRoot);
+      console.log(`[本地仓库镜像] 镜像完成，复制了 ${mirroredFiles.length} 个文件`);
+    }
     
     const payload = {
       project,

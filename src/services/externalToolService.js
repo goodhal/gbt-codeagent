@@ -1,10 +1,26 @@
 import { exec } from "node:child_process";
-import { promisify } from "node:util";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 
-const execAsync = promisify(exec);
+const execAsync = async (command, options = {}) => {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error(`命令执行超时: ${command}`));
+    }, options.timeout || 30000); // 默认30秒超时
+
+    exec(command, options, (error, stdout, stderr) => {
+      clearTimeout(timeout);
+      if (error) {
+        error.stdout = stdout;
+        error.stderr = stderr;
+        reject(error);
+      } else {
+        resolve({ stdout, stderr });
+      }
+    });
+  });
+};
 
 /**
  * 外部工具集成服务

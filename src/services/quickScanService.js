@@ -830,7 +830,7 @@ export class QuickScanService {
 
   normalizeSeverity(severity) {
     const mapping = {
-      "严重": "high",
+      "严重": "critical",
       "高危": "high", 
       "中危": "medium",
       "低危": "low"

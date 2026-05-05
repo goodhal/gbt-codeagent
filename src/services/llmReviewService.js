@@ -319,7 +319,7 @@ export class DefensiveLlmReviewer {
     for (let i = 0; i < validBatches.length; i += MAX_PARALLEL_REQUESTS) {
       const batchGroup = validBatches.slice(i, i + MAX_PARALLEL_REQUESTS);
       const results = await Promise.all(
-        batchGroup.map((batch, idx) => processBatch(batch, i + idx + 1))
+        batchGroup.map((batch, idx) => processBatch(batch, i + idx))
       );
 
       for (const result of results) {
@@ -456,7 +456,7 @@ export class DefensiveLlmReviewer {
     for (let i = 0; i < validBatches.length; i += MAX_PARALLEL_REQUESTS) {
       const batchGroup = validBatches.slice(i, i + MAX_PARALLEL_REQUESTS);
       const results = await Promise.all(
-        batchGroup.map((batch, idx) => processAuditBatch(batch, i + idx + 1))
+        batchGroup.map((batch, idx) => processAuditBatch(batch, i + idx))
       );
 
       for (const result of results) {
@@ -1106,7 +1106,8 @@ function stripTrailingSlash(value) {
 }
 
 function normalizeSeverity(value) {
-  return value === "high" || value === "medium" ? value : "low";
+  const validSeverities = ["critical", "high", "medium", "low", "info"];
+  return validSeverities.includes(value) ? value : "low";
 }
 
 function clampConfidence(value) {

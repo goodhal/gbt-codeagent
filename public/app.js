@@ -131,14 +131,24 @@ function initDiscoverPage() {
   const selectAllButton = document.querySelector("#select-all-skills-button");
   const clearButton = document.querySelector("#clear-skills-button");
   const githubFields = document.querySelector("#github-launch-fields");
+  const gitUrlFields = document.querySelector("#git-url-fields");
+  const zipUploadFields = document.querySelector("#zip-upload-fields");
   const localFields = document.querySelector("#local-launch-fields");
 
   renderSkillPicker(skillPicker);
-  syncSourceMode(githubFields, localFields);
+  syncSourceMode(githubFields, gitUrlFields, zipUploadFields, localFields);
 
   document.querySelectorAll('input[name="sourceType"]').forEach((input) => {
-    input.addEventListener("change", () => syncSourceMode(githubFields, localFields));
+    input.addEventListener("change", () => syncSourceMode(githubFields, gitUrlFields, zipUploadFields, localFields));
   });
+
+  // 监听文件选择变化
+  const zipFileInput = form?.elements.zipFiles;
+  if (zipFileInput) {
+    zipFileInput.addEventListener("change", () => {
+      updateUploadPreview(zipFileInput.files);
+    });
+  }
 
   selectAllButton?.addEventListener("click", () => setAllSkills(true));
   clearButton?.addEventListener("click", () => setAllSkills(false));
@@ -152,6 +162,12 @@ function initDiscoverPage() {
     }
 
     const sourceType = getSourceType();
+
+    if (sourceType === "zip-upload") {
+      await handleZipUpload(form, selectedSkillIds);
+      return;
+    }
+
     const payload = {
       sourceType,
       selectedSkillIds,
@@ -165,6 +181,15 @@ function initDiscoverPage() {
         .filter(Boolean);
       if (!payload.localRepoPaths.length) {
         showToast("请填写至少一个本地仓库路径。", "info");
+        return;
+      }
+    } else if (sourceType === "git-url") {
+      payload.gitUrls = String(form.elements.gitUrls.value || "")
+        .split(/\r?\n|,/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+      if (!payload.gitUrls.length) {
+        showToast("请填写至少一个 Git 仓库地址。", "info");
         return;
       }
     } else {
@@ -184,9 +209,11 @@ function initDiscoverPage() {
   });
 }
 
-function syncSourceMode(githubFields, localFields) {
+function syncSourceMode(githubFields, gitUrlFields, zipUploadFields, localFields) {
   const sourceType = getSourceType();
   githubFields?.classList.toggle("hidden-panel", sourceType !== "github");
+  gitUrlFields?.classList.toggle("hidden-panel", sourceType !== "git-url");
+  zipUploadFields?.classList.toggle("hidden-panel", sourceType !== "zip-upload");
   localFields?.classList.toggle("hidden-panel", sourceType !== "local");
 }
 
@@ -223,7 +250,7 @@ function setAllSkills(checked) {
 }
 
 function getSourceType() {
-  return document.querySelector('input[name="sourceType"]:checked')?.value === "local" ? "local" : "github";
+  return document.querySelector('input[name="sourceType"]:checked')?.value || "github";
 }
 
 async function renderEnvironment() {
@@ -536,12 +563,17 @@ function renderProjectReview(project) {
   const projectNameClean = project.projectName.replace(/[^a-zA-Z0-9]/g, '-');
 
   setTimeout(() => {
-    charts.pieChart('#severity-pie-' + projectNameClean, [
-      { label: '严重', value: severityStats.critical, color: '#ef4444' },
-      { label: '高危', value: severityStats.high, color: '#f97316' },
-      { label: '中危', value: severityStats.medium, color: '#f59e0b' },
-      { label: '低危', value: severityStats.low, color: '#10b981' }
-    ]);
+    const severityChartContainer = document.querySelector('#severity-pie-' + projectNameClean);
+    const typeChartContainer = document.querySelector('#type-bar-' + projectNameClean);
+    
+    if (severityChartContainer) {
+      charts.pieChart('#severity-pie-' + projectNameClean, [
+        { label: '严重', value: severityStats.critical, color: '#ef4444' },
+        { label: '高危', value: severityStats.high, color: '#f97316' },
+        { label: '中危', value: severityStats.medium, color: '#f59e0b' },
+        { label: '低危', value: severityStats.low, color: '#10b981' }
+      ]);
+    }
 
     const vulnTypeLabels = {
       HARD_CODED_SECRET: "硬编码密钥", COMMAND_INJECTION: "命令注入", SQL_INJECTION: "SQL注入",
@@ -562,8 +594,11 @@ function renderProjectReview(project) {
       value,
       color: charts.getColor(idx)
     }));
-    charts.barChart('#type-bar-' + projectNameClean, typeData);
-  }, 100);
+    
+    if (typeChartContainer) {
+      charts.barChart('#type-bar-' + projectNameClean, typeData);
+    }
+  }, 300);
 
   return `
     <article class="review-card-block">
@@ -1032,3 +1067,88 @@ function initParticles() {
   window.addEventListener("resize", resize);
   requestAnimationFrame(tick);
 }
+
+// ZIP 上传相关函数
+function updateUploadPreview(files) {
+  const preview = document.querySelector("#upload-preview");
+  if (!preview) return;
+
+  if (!files || files.length === 0) {
+    preview.innerHTML = "";
+    return;
+  }
+
+  const fileList = Array.from(files).map((file) => {
+    const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+    return `<div class="upload-file-item">
+      <strong>${escapeHtml(file.name)}</strong>
+      <span>${sizeMB} MB</span>
+    </div>`;
+  }).join("");
+
+  preview.innerHTML = `<div class="upload-file-list">${fileList}</div>`;
+}
+
+async function handleZipUpload(form, selectedSkillIds) {
+  const zipFileInput = form.elements.zipFiles;
+  const files = zipFileInput?.files;
+
+  if (!files || files.length === 0) {
+    showToast("请选择至少一个 ZIP 文件。", "info");
+    return;
+  }
+
+  // 检查文件大小
+  const maxSize = 100 * 1024 * 1024; // 100MB
+  for (const file of files) {
+    if (file.size > maxSize) {
+      showToast(`文件 ${file.name} 超过 100MB 限制。`, "error");
+      return;
+    }
+  }
+
+  const submitButton = form.querySelector("#task-submit-button");
+  const previousText = submitButton?.textContent;
+
+  try {
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.textContent = "上传中...";
+    }
+
+    // 使用 FormData 上传文件
+    const formData = new FormData();
+    formData.append("sourceType", "zip-upload");
+    formData.append("selectedSkillIds", JSON.stringify(selectedSkillIds));
+    formData.append("useMemory", form.elements.useMemory?.checked || false);
+
+    for (const file of files) {
+      formData.append("zipFiles", file);
+    }
+
+    const response = await fetch("/api/tasks/upload", {
+      method: "POST",
+      body: formData
+    });
+
+    const task = await response.json();
+
+    if (!response.ok) {
+      throw new Error(task.detail || task.error || "上传失败");
+    }
+
+    showToast(`任务已创建：${task.id.slice(0, 8)}`, "success");
+    setTimeout(() => {
+      location.href = `/audit.html?task=${encodeURIComponent(task.id)}`;
+    }, 500);
+
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error), "error");
+  } finally {
+    if (submitButton) {
+      submitButton.disabled = false;
+      submitButton.textContent = previousText;
+    }
+  }
+}
+

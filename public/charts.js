@@ -20,8 +20,31 @@ export class SimpleCharts {
 
     data.forEach((item, index) => {
       const angle = (item.value / total * 360);
+      
+      if (angle === 0) return;
+
       const startAngle = currentAngle;
       const endAngle = currentAngle + angle;
+
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      
+      if (angle >= 360) {
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('cx', centerX);
+        circle.setAttribute('cy', centerY);
+        circle.setAttribute('r', radius);
+        circle.setAttribute('fill', item.color || this.getColor(index));
+        circle.setAttribute('style', 'cursor: pointer; transition: opacity 0.2s;');
+        
+        const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+        const percentage = ((item.value / total) * 100).toFixed(1);
+        title.textContent = item.label + ': ' + item.value + ' (' + percentage + '%)';
+        circle.appendChild(title);
+        
+        svg.appendChild(circle);
+        currentAngle = endAngle;
+        return;
+      }
 
       const startRad = (startAngle - 90) * Math.PI / 180;
       const endRad = (endAngle - 90) * Math.PI / 180;
@@ -33,7 +56,6 @@ export class SimpleCharts {
 
       const largeArcFlag = angle > 180 ? 1 : 0;
 
-      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       const d = [
         'M ' + centerX + ', ' + centerY,
         'L ' + x1 + ', ' + y1,

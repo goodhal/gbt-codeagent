@@ -5,12 +5,15 @@ workspace/
 
 .env
 .env.*
-*.local
+
 
 *.log
 *.pid
 *.seed
 audit_report_*
+node_modules/
+
+CLAUDE.md
 
 .claude/
 .trae/

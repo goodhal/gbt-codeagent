@@ -14,7 +14,7 @@
         <a class="brand" href="/index.html">
           <img src="/logo.png" alt="中正测评" class="brand-logo" />
           <div class="brand-text">
-            <strong>代码安全审计平台v1.0</strong>
+            <strong>代码安全审计平台v2.0</strong>
           </div>
         </a>
         <nav class="nav">
@@ -44,6 +44,20 @@
                 <div>
                   <strong>GitHub 候选发现</strong>
                   <span>先搜候选项目，再去审计中心手动选择目标。</span>
+                </div>
+              </label>
+              <label class="source-card">
+                <input name="sourceType" type="radio" value="git-url" />
+                <div>
+                  <strong>Git 地址直接导入</strong>
+                  <span>填入 Git 仓库地址，直接克隆并开始审计。</span>
+                </div>
+              </label>
+              <label class="source-card">
+                <input name="sourceType" type="radio" value="zip-upload" />
+                <div>
+                  <strong>ZIP 代码包上传</strong>
+                  <span>上传本地 ZIP 压缩包进行审计分析。</span>
                 </div>
               </label>
               <label class="source-card">
@@ -94,6 +108,20 @@
               </label>
             </div>
 
+            <div id="git-url-fields" class="hidden-panel">
+              <label>
+                Git 仓库地址
+                <textarea name="gitUrls" rows="3" placeholder="每行一个 Git 仓库地址，如 https://gitee.com/user/repo.git"></textarea>
+              </label>
+            </div>
+
+            <div id="zip-upload-fields" class="hidden-panel">
+              <label>
+                ZIP 代码包
+                <input name="zipFiles" type="file" accept=".zip" multiple />
+              </label>
+            </div>
+
             <div id="local-launch-fields" class="hidden-panel">
               <label>
                 本地仓库路径
@@ -116,7 +144,7 @@
             </div>
 
             <div class="form-footer">
-              <p class="note">创建任务后，请前往“审计中心”选择目标并查看结果。</p>
+              <p class="note">GitHub 发现需前往审计中心选择目标；其他方式直接进入审计流程。</p>
               <button id="task-submit-button" type="submit">启动任务</button>
             </div>
           </form>

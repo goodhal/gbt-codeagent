@@ -160,16 +160,49 @@ gbt-codeagent/
 
 ## 本地运行
 
+### 快速开始
+
+#### 1. 安装依赖工具（推荐使用自动安装脚本）
+
+**Windows (PowerShell - 管理员权限)**:
+```powershell
+.\install-deps.ps1
+```
+
+**Windows (CMD - 管理员权限)**:
+```cmd
+install-deps.cmd
+```
+
+**Linux/Mac**:
+```bash
+chmod +x install-deps.sh
+./install-deps.sh
+```
+
+自动安装脚本会检测并安装以下工具：
+- **必需**: Node.js, Git, Python, pip
+- **可选**: Gitleaks, Bandit, Semgrep（用于增强扫描能力）
+
+详细安装说明请查看：[依赖工具安装指南](docs/INSTALL_DEPENDENCIES.md)
+
+#### 2. 安装 Node.js 依赖
+
 ```bash
 npm install
+```
+
+#### 3. 启动服务器
+
+```bash
 node server.js
 ```
 
 启动后访问：
 
-[http://127.0.0.1:3000](http://127.0.0.1:3000)
+[http://127.0.0.1:3001](http://127.0.0.1:3001)
 
-Windows 一键启动：
+### Windows 一键启动
 
 ```powershell
 .\launch.cmd

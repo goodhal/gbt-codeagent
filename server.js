@@ -4,6 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { FrameworkScoutAgent } from "./src/agents/frameworkScoutAgent.js";
 import { LocalRepoScoutAgent } from "./src/agents/localRepoScoutAgent.js";
+import { GitUrlScoutAgent } from "./src/agents/gitUrlScoutAgent.js";
+import { ZipUploadScoutAgent } from "./src/agents/zipUploadScoutAgent.js";
 import { AuditAnalystAgent } from "./src/agents/auditAnalystAgent.js";
 import { getAuditSkillCatalog } from "./src/config/auditSkills.js";
 import { getProviderPreset, maskSecret, resolveLlmConfig } from "./src/config/llmProviders.js";
@@ -30,6 +32,8 @@ const scoutAgent = new FrameworkScoutAgent({
   getGithubConfig: async () => (await settingsStore.read()).github
 });
 const localScoutAgent = new LocalRepoScoutAgent({ downloadsDir });
+const gitUrlScoutAgent = new GitUrlScoutAgent({ downloadsDir });
+const zipUploadScoutAgent = new ZipUploadScoutAgent({ downloadsDir });
 const llmReviewer = new DefensiveLlmReviewer();
 const auditAgent = new AuditAnalystAgent({ llmReviewer });
 const tasks = createTaskStore({ workspaceDir: path.join(__dirname, "workspace") });
@@ -147,6 +151,44 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/memory") {
       const body = await readJson(req);
       return sendJson(res, 200, await memoryStore.write({ preferences: body.preferences || {}, rules: Array.isArray(body.rules) ? body.rules : undefined }));
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/tasks/upload") {
+      console.log("[ZIP上传] 开始处理上传请求");
+      try {
+        const uploadResult = await parseMultipartForm(req);
+        console.log("[ZIP上传] 解析完成，fields:", JSON.stringify(uploadResult.fields));
+        console.log("[ZIP上传] 解析完成，文件数:", uploadResult.files.length);
+
+        const selectedSkillIds = JSON.parse(uploadResult.fields.selectedSkillIds || "[]");
+        const useMemory = uploadResult.fields.useMemory === "true";
+
+        const memory = await memoryStore.read();
+        const taskData = {
+          sourceType: "zip-upload",
+          selectedSkillIds,
+          useMemory,
+          zipFiles: uploadResult.files
+        };
+
+        const created = await tasks.createTask(taskData);
+        console.log("[ZIP上传] 创建任务成功:", created.id);
+
+        if (useMemory) {
+          await tasks.updateTask(created.id, { memorySnapshot: buildMemorySnapshot(memory) });
+        }
+
+        runScout(created.id).catch((error) => {
+          console.error("[ZIP上传] 运行scout失败:", error);
+          tasks.failTask(created.id, error instanceof Error ? error.message : String(error));
+        });
+
+        const task = tasks.getTask(created.id);
+        return sendJson(res, 202, task);
+      } catch (uploadError) {
+        console.error("[ZIP上传] 错误:", uploadError);
+        return sendJson(res, 500, { error: "ZIP上传失败", detail: uploadError instanceof Error ? uploadError.message : String(uploadError) });
+      }
     }
 
     if (req.method === "POST" && url.pathname === "/api/tasks") {
@@ -284,142 +326,187 @@ const server = http.createServer(async (req, res) => {
 });
 
 async function runScout(taskId) {
-  tasks.updateTask(taskId, {
-    status: "running",
-    phase: "framework-scout",
-    message: "正在发现候选目标…",
-    progress: {
-      stage: "framework-scout",
-      label: "正在发现候选目标",
-      detail: "",
-      percent: 12,
-      current: 0,
-      total: 0
-    }
-  });
-  const task = tasks.getTask(taskId);
-  const scoutResult = task.sourceType === "local"
-    ? await localScoutAgent.run({ localRepoPaths: task.localRepoPaths })
-    : await scoutAgent.run({
-      query: task.query,
-      cmsType: task.cmsType,
-      industry: task.industry,
-      minAdoption: task.minAdoption
+  try {
+    tasks.updateTask(taskId, {
+      status: "running",
+      phase: "framework-scout",
+      message: "正在发现候选目标…",
+      progress: {
+        stage: "framework-scout",
+        label: "正在发现候选目标",
+        detail: "",
+        percent: 12,
+        current: 0,
+        total: 0
+      }
     });
-  tasks.updateTask(taskId, {
-    status: "awaiting_selection",
-    phase: "target-selection",
-    message: scoutResult.summary || "请选择需要审计的目标。",
-    scoutResult,
-    progress: {
-      stage: "target-selection",
-      label: "请选择要审计的目标",
-      detail: "",
-      percent: 20,
-      current: scoutResult.projects?.length || 0,
-      total: scoutResult.projects?.length || 0
+    const task = tasks.getTask(taskId);
+
+    let scoutResult;
+    if (task.sourceType === "local") {
+      scoutResult = await localScoutAgent.run({ localRepoPaths: task.localRepoPaths });
+    } else if (task.sourceType === "git-url") {
+      scoutResult = await gitUrlScoutAgent.cloneFromUrls(task.gitUrls, (progress) => {
+        updateTaskProgress(taskId, progress);
+      });
+    } else if (task.sourceType === "zip-upload") {
+      scoutResult = await zipUploadScoutAgent.processZipFiles(task.zipFiles, (progress) => {
+        updateTaskProgress(taskId, progress);
+      });
+    } else {
+      scoutResult = await scoutAgent.run({
+        query: task.query,
+        cmsType: task.cmsType,
+        industry: task.industry,
+        minAdoption: task.minAdoption
+      });
     }
-  });
+
+    const projectIds = scoutResult.projects?.map(p => p.id) || [];
+    
+    if (task.sourceType === "git-url" || task.sourceType === "local" || task.sourceType === "zip-upload") {
+      // 直接导入类型，无需选择，直接开始审计
+      if (projectIds.length > 0) {
+        // 先保存 scoutResult 到任务中，供 runAudit 使用
+        await tasks.updateTask(taskId, { scoutResult });
+        runAudit(taskId, projectIds).catch((error) => tasks.failTask(taskId, error instanceof Error ? error.message : String(error)));
+      } else {
+        tasks.failTask(taskId, "没有找到可审计的项目");
+      }
+    } else {
+      // GitHub 查询类型，需要用户选择
+      tasks.updateTask(taskId, {
+        status: "awaiting_selection",
+        phase: "target-selection",
+        message: scoutResult.summary || "请选择需要审计的目标。",
+        scoutResult,
+        progress: {
+          stage: "target-selection",
+          label: "请选择要审计的目标",
+          detail: "",
+          percent: 20,
+          current: scoutResult.projects?.length || 0,
+          total: scoutResult.projects?.length || 0
+        }
+      });
+    }
+  } catch (error) {
+    console.error(`[任务失败] scout阶段失败 - 任务ID: ${taskId}`, error);
+    tasks.failTask(taskId, {
+      message: "发现候选目标时失败",
+      detail: error instanceof Error ? error.message : String(error),
+      stage: "framework-scout"
+    });
+  }
 }
 
 async function runAudit(taskId, selectedProjectIds) {
-  const task = tasks.getTask(taskId);
-  const selectedProjects = (task.scoutResult?.projects || []).filter((project) => selectedProjectIds.includes(project.id));
-  if (!selectedProjects.length) {
-    throw new Error("No targets selected for audit.");
-  }
-
-  tasks.updateTask(taskId, {
-    status: "running",
-    phase: "audit-analyst",
-    message: "正在下载审计镜像并审计你选中的目标…",
-    selectedProjectIds,
-    progress: {
-      stage: "mirror",
-      label: "正在准备审计镜像",
-      detail: "",
-      percent: 24,
-      current: 0,
-      total: selectedProjects.length
+  try {
+    const task = tasks.getTask(taskId);
+    const selectedProjects = (task.scoutResult?.projects || []).filter((project) => selectedProjectIds.includes(project.id));
+    if (!selectedProjects.length) {
+      throw new Error("No targets selected for audit.");
     }
-  });
 
-  for (const [projectIndex, project] of selectedProjects.entries()) {
-    if (project.sourceType === "local") {
-      updateTaskProgress(taskId, {
+    tasks.updateTask(taskId, {
+      status: "running",
+      phase: "audit-analyst",
+      message: "正在下载审计镜像并审计你选中的目标…",
+      selectedProjectIds,
+      progress: {
         stage: "mirror",
-        label: `正在生成本地镜像：${project.name}`,
+        label: "正在准备审计镜像",
         detail: "",
-        percent: calculateMirrorPercent(projectIndex + 1, selectedProjects.length, 1, 1),
-        current: projectIndex + 1,
+        percent: 24,
+        current: 0,
         total: selectedProjects.length
-      });
-      await localScoutAgent.ensureProjectMirror(project);
-    } else {
-      await scoutAgent.ensureProjectMirror(project, {
-        onProgress: (detail) =>
-          updateTaskProgress(taskId, {
-            stage: "mirror",
-            label: `正在下载审计镜像：${project.name}`,
-            detail: detail.currentPath || "",
-            percent: calculateMirrorPercent(projectIndex + 1, selectedProjects.length, detail.processed || 0, detail.total || 1),
-            current: detail.processed || 0,
-            total: detail.total || 0
-          })
-      });
+      }
+    });
+
+    for (const [projectIndex, project] of selectedProjects.entries()) {
+      if (project.sourceType === "local" || project.sourceType === "git-url" || project.sourceType === "zip-upload") {
+        updateTaskProgress(taskId, {
+          stage: "mirror",
+          label: `正在生成本地镜像：${project.name}`,
+          detail: "",
+          percent: calculateMirrorPercent(projectIndex + 1, selectedProjects.length, 1, 1),
+          current: projectIndex + 1,
+          total: selectedProjects.length
+        });
+        await localScoutAgent.ensureProjectMirror(project);
+      } else {
+        await scoutAgent.ensureProjectMirror(project, {
+          onProgress: (detail) =>
+            updateTaskProgress(taskId, {
+              stage: "mirror",
+              label: `正在下载审计镜像：${project.name}`,
+              detail: detail.currentPath || "",
+              percent: calculateMirrorPercent(projectIndex + 1, selectedProjects.length, detail.processed || 0, detail.total || 1),
+              current: detail.processed || 0,
+              total: detail.total || 0
+            })
+        });
+      }
     }
-  }
 
-  const settings = await settingsStore.read();
-  const llmConfig = resolveLlmConfig(process.env, settings.llm);
-  console.log(`[审计流程] LLM配置 - 提供商: ${llmConfig.providerId}, 模型: ${llmConfig.model}, 端点: ${llmConfig.baseUrl}, API Key配置: ${Boolean(llmConfig.apiKey)}`);
-  const auditResult = await auditAgent.run({
-    projects: selectedProjects,
-    selectedSkillIds: task.selectedSkillIds,
-    llmConfig,
-    onProgress: (detail) => updateTaskProgress(taskId, buildAuditProgress(detail, selectedProjects.length))
-  });
-  updateTaskProgress(taskId, {
-    stage: "report",
-    label: "正在生成审计报告",
-    detail: "",
-    percent: 98,
-    current: selectedProjects.length,
-    total: selectedProjects.length
-  });
-  const finalTaskSnapshot = {
-    ...tasks.getTask(taskId),
-    phase: "completed",
-    message: "审计完成，可下载审计报告。",
-    selectedProjectIds
-  };
-  
-  // 生成 HTML 报告
-  const htmlReport = await writeAuditHtmlReport({ reportsDir, task: finalTaskSnapshot, selectedProjects, auditResult });
-  
-  const memorySummary = buildMemorySummary(finalTaskSnapshot, { projects: selectedProjects }, auditResult);
-  if (task.useMemory) {
-    await memoryStore.appendRunSummary(memorySummary);
-  }
-
-  tasks.completeTask(taskId, {
-    phase: "completed",
-    message: "审计完成，可下载审计报告。",
-    selectedProjectIds,
-    auditResult,
-    report: {
-      html: htmlReport
-    },
-    memorySummary,
-    progress: {
-      stage: "completed",
-      label: "审计完成",
+    const settings = await settingsStore.read();
+    const llmConfig = resolveLlmConfig(process.env, settings.llm);
+    console.log(`[审计流程] LLM配置 - 提供商: ${llmConfig.providerId}, 模型: ${llmConfig.model}, 端点: ${llmConfig.baseUrl}, API Key配置: ${Boolean(llmConfig.apiKey)}`);
+    const auditResult = await auditAgent.run({
+      projects: selectedProjects,
+      selectedSkillIds: task.selectedSkillIds,
+      llmConfig,
+      onProgress: (detail) => updateTaskProgress(taskId, buildAuditProgress(detail, selectedProjects.length))
+    });
+    updateTaskProgress(taskId, {
+      stage: "report",
+      label: "正在生成审计报告",
       detail: "",
-      percent: 100,
+      percent: 98,
       current: selectedProjects.length,
       total: selectedProjects.length
+    });
+    const finalTaskSnapshot = {
+      ...tasks.getTask(taskId),
+      phase: "completed",
+      message: "审计完成，可下载审计报告。",
+      selectedProjectIds
+    };
+    
+    // 生成 HTML 报告
+    const htmlReport = await writeAuditHtmlReport({ reportsDir, task: finalTaskSnapshot, selectedProjects, auditResult });
+    
+    const memorySummary = buildMemorySummary(finalTaskSnapshot, { projects: selectedProjects }, auditResult);
+    if (task.useMemory) {
+      await memoryStore.appendRunSummary(memorySummary);
     }
-  });
+
+    tasks.completeTask(taskId, {
+      phase: "completed",
+      message: "审计完成，可下载审计报告。",
+      selectedProjectIds,
+      auditResult,
+      report: {
+        html: htmlReport
+      },
+      memorySummary,
+      progress: {
+        stage: "completed",
+        label: "审计完成",
+        detail: "",
+        percent: 100,
+        current: selectedProjects.length,
+        total: selectedProjects.length
+      }
+    });
+  } catch (error) {
+    console.error(`[任务失败] audit阶段失败 - 任务ID: ${taskId}`, error);
+    tasks.failTask(taskId, {
+      message: "审计过程中失败",
+      detail: error instanceof Error ? error.message : String(error),
+      stage: "audit-analyst"
+    });
+  }
 }
 
 function updateTaskProgress(taskId, progress) {
@@ -604,7 +691,7 @@ function stripTrailingSlash(value) {
 
 function applyMemoryDefaults(body, memory) {
   const useMemory = body.useMemory !== false;
-  const sourceType = body.sourceType === "local" ? "local" : "github";
+  const sourceType = body.sourceType || "github";
   let selectedSkillIds = Array.isArray(body.selectedSkillIds) ? body.selectedSkillIds : [];
   
   // 如果提供了selectedSkills，将其转换为selectedSkillIds
@@ -640,6 +727,30 @@ function applyMemoryDefaults(body, memory) {
     };
   }
 
+  function getDefaultQuery(sourceType, body, memory, useMemory) {
+    if (body.query) {
+      return body.query;
+    }
+    switch (sourceType) {
+      case "git-url":
+        return body.gitUrls?.join(", ") || "Git URL import";
+      case "zip-upload":
+        return "ZIP 代码包上传";
+      case "github":
+        if (useMemory) {
+          return memory.preferences?.preferredQuery || 'topic:cms OR "headless cms" OR "content management system"';
+        }
+        return 'topic:cms OR "headless cms" OR "content management system"';
+      default:
+        if (useMemory) {
+          return memory.preferences?.preferredQuery || 'topic:cms OR "headless cms" OR "content management system"';
+        }
+        return 'topic:cms OR "headless cms" OR "content management system"';
+    }
+  }
+
+  const query = getDefaultQuery(sourceType, body, memory, useMemory);
+
   if (!useMemory) {
     return {
       ...body,
@@ -647,7 +758,7 @@ function applyMemoryDefaults(body, memory) {
       selectedSkillIds,
       localRepoPaths: [],
       useMemory: false,
-      query: body.query || 'topic:cms OR "headless cms" OR "content management system"',
+      query,
       cmsType: body.cmsType || "all",
       industry: body.industry || "all",
       minAdoption: Number(body.minAdoption || 100)
@@ -659,7 +770,7 @@ function applyMemoryDefaults(body, memory) {
     selectedSkillIds,
     localRepoPaths: [],
     useMemory,
-    query: body.query || memory.preferences?.preferredQuery || 'topic:cms OR "headless cms" OR "content management system"',
+    query,
     cmsType: body.cmsType || "all",
     industry: body.industry || "all",
     minAdoption: Number(body.minAdoption || memory.preferences?.preferredMinAdoption || 100)
@@ -720,6 +831,72 @@ function sendJson(res, statusCode, payload) {
     Expires: "0"
   });
   res.end(JSON.stringify(payload, null, 2));
+}
+
+async function parseMultipartForm(req) {
+  const contentType = req.headers["content-type"] || "";
+  const boundaryMatch = contentType.match(/boundary=(.+)$/);
+  if (!boundaryMatch) {
+    throw new Error("Invalid multipart form data");
+  }
+
+  let boundary = boundaryMatch[1];
+  // 移除可能存在的引号
+  boundary = boundary.replace(/^["']|["']$/g, "");
+  boundary = "--" + boundary;
+  console.log("[ZIP上传] boundary:", boundary);
+  const chunks = [];
+  for await (const chunk of req) {
+    chunks.push(chunk);
+  }
+  const buffer = Buffer.concat(chunks);
+  console.log("[ZIP上传] buffer长度:", buffer.length);
+
+  const fields = {};
+  const files = [];
+  const binaryString = buffer.toString("binary");
+  const parts = binaryString.split(boundary);
+  console.log("[ZIP上传] parts数量:", parts.length);
+
+  for (const part of parts) {
+    if (!part || part === "--\r\n" || part === "--") continue;
+
+    const headerEndIndex = part.indexOf("\r\n\r\n");
+    if (headerEndIndex === -1) continue;
+
+    const headerSection = part.substring(0, headerEndIndex);
+    const bodySection = part.substring(headerEndIndex + 4, part.length - 2);
+
+    const nameMatch = headerSection.match(/name="([^"]+)"/) || headerSection.match(/name=([^;\s]+)/);
+    if (!nameMatch) continue;
+
+    const fieldName = nameMatch[1].replace(/"/g, "");
+    const filenameMatch = headerSection.match(/filename="([^"]+)"/) || headerSection.match(/filename=([^;\s]+)/);
+    const actualFilename = filenameMatch ? filenameMatch[1].replace(/"/g, "") : null;
+    console.log("[ZIP上传] 字段:", fieldName, "filename:", actualFilename);
+
+    if (filenameMatch) {
+      // 这是一个文件
+      const filename = filenameMatch[1];
+      const uploadDir = path.join(__dirname, "workspace", "uploads");
+      await fs.mkdir(uploadDir, { recursive: true });
+
+      const filepath = path.join(uploadDir, `${Date.now()}-${filename}`);
+      await fs.writeFile(filepath, Buffer.from(bodySection, "binary"));
+
+      const stat = await fs.stat(filepath);
+      files.push({
+        filename,
+        filepath,
+        size: stat.size
+      });
+    } else {
+      // 这是一个普通字段
+      fields[fieldName] = bodySection;
+    }
+  }
+
+  return { fields, files };
 }
 
 const port = process.env.PORT || 3001;

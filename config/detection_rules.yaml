@@ -1,0 +1,1653 @@
+# 代码安全审计规则配置
+# 支持多语言、多漏洞类型的检测规则
+
+version: "1.0"
+
+# 支持的编程语言
+supportedLanguages:
+  - python
+  - javascript
+  - typescript
+  - java
+  - php
+  - go
+  - ruby
+  - rust
+  - cpp
+  - csharp
+
+# 污点追踪配置
+taintTracking:
+  # 污点源 - 用户输入点
+  sources:
+    python:
+      - name: "User Input"
+        patterns:
+          - "input("
+          - "sys.argv"
+          - "os.environ"
+          - "request.args"
+          - "request.form"
+          - "request.json"
+        category: "user_input"
+      - name: "File Read"
+        patterns:
+          - "open("
+          - "file()"
+          - "read()"
+        category: "file_input"
+      - name: "Network Input"
+        patterns:
+          - "requests.get"
+          - "requests.post"
+          - "urllib"
+          - "http.client"
+        category: "network_input"
+
+    javascript:
+      - name: "DOM Input"
+        patterns:
+          - "innerHTML"
+          - "outerHTML"
+          - "document.write"
+          - "eval("
+        category: "dom_input"
+      - name: "User Input"
+        patterns:
+          - "prompt("
+          - "confirm("
+          - "fetch("
+          - "XMLHttpRequest"
+        category: "user_input"
+
+    java:
+      - name: "User Input"
+        patterns:
+          - "request.getParameter"
+          - "request.getHeader"
+          - "request.getInputStream"
+        category: "user_input"
+      - name: "Database"
+        patterns:
+          - "Statement.execute"
+          - "ResultSet"
+          - "PreparedStatement"
+        category: "db_input"
+
+    go:
+      - name: "User Input"
+        patterns:
+          - "os.Args"
+          - "fmt.Scan"
+          - "bufio.NewReader"
+          - "http.Request.Form"
+          - "http.Request.PostForm"
+        category: "user_input"
+      - name: "Network Input"
+        patterns:
+          - "http.Get"
+          - "http.Post"
+          - "http.Client"
+        category: "network_input"
+
+    ruby:
+      - name: "User Input"
+        patterns:
+          - "gets"
+          - "ARGV"
+          - "ENV"
+          - "params"
+          - "request.params"
+        category: "user_input"
+      - name: "File Read"
+        patterns:
+          - "File.read"
+          - "File.open"
+          - "IO.read"
+        category: "file_input"
+
+    rust:
+      - name: "User Input"
+        patterns:
+          - "std::io::stdin"
+          - "env::args"
+          - "fs::read"
+        category: "user_input"
+      - name: "Network Input"
+        patterns:
+          - "reqwest::get"
+          - "ureq::request"
+        category: "network_input"
+
+    cpp:
+      - name: "User Input"
+        patterns:
+          - "cin>>"
+          - "getline"
+          - "scanf"
+          - "gets"
+          - "fgets"
+        category: "user_input"
+      - name: "File Read"
+        patterns:
+          - "ifstream"
+          - "fstream"
+          - "FILE"
+        category: "file_input"
+
+    csharp:
+      - name: "User Input"
+        patterns:
+          - "Console.ReadLine"
+          - "Request.QueryString"
+          - "Request.Form"
+          - "Request.Params"
+        category: "user_input"
+      - name: "Database"
+        patterns:
+          - "SqlCommand"
+          - "SqlDataReader"
+          - "ExecuteReader"
+        category: "db_input"
+
+  # 危险函数 - 污点汇
+  sinks:
+    python:
+      - name: "Command Execution"
+        patterns:
+          - "os.system"
+          - "os.popen"
+          - "subprocess.call"
+          - "subprocess.Popen"
+          - "subprocess.run"
+          - "exec("
+          - "eval("
+        category: "command_exec"
+        severity: "CRITICAL"
+
+      - name: "SQL Execution"
+        patterns:
+          - "cursor.execute"
+          - "cursor.executemany"
+          - "connection.execute"
+          - "Session.execute"
+          - "raw("
+        category: "sql_injection"
+        severity: "HIGH"
+
+      - name: "Code Execution"
+        patterns:
+          - "eval("
+          - "exec("
+          - "compile("
+        category: "code_injection"
+        severity: "CRITICAL"
+
+      - name: "File Operation"
+        patterns:
+          - "open("
+          - "file_put_contents"
+          - "shutil.copy"
+          - "os.rename"
+        category: "file_operation"
+        severity: "MEDIUM"
+
+      - name: "Deserialization"
+        patterns:
+          - "pickle.loads"
+          - "yaml.load"
+          - "marshal.loads"
+          - "shelve"
+        category: "deserialization"
+        severity: "HIGH"
+
+    javascript:
+      - name: "Code Execution"
+        patterns:
+          - "eval("
+          - "Function("
+          - "setTimeout("
+          - "setInterval("
+          - "new Function"
+        category: "code_injection"
+        severity: "CRITICAL"
+
+      - name: "DOM Manipulation"
+        patterns:
+          - "innerHTML"
+          - "outerHTML"
+          - "insertAdjacentHTML"
+          - "document.write"
+        category: "xss"
+        severity: "HIGH"
+
+      - name: "Network Request"
+        patterns:
+          - "fetch("
+          - "XMLHttpRequest"
+          - "axios("
+        category: "ssrf"
+        severity: "MEDIUM"
+
+      - name: "XML Processing"
+        patterns:
+          - "DOMParser"
+          - "xmldom"
+          - "xml2js"
+          - "xml-js"
+          - "fast-xml-parser"
+          - "xmlbuilder"
+        category: "xxe"
+        severity: "HIGH"
+
+    java:
+      - name: "Command Execution"
+        patterns:
+          - "Runtime.exec"
+          - "ProcessBuilder"
+          - "java.lang.Runtime"
+        category: "command_exec"
+        severity: "CRITICAL"
+
+      - name: "SQL Execution"
+        patterns:
+          - "Statement.execute"
+          - "Statement.executeQuery"
+          - "Statement.executeUpdate"
+        category: "sql_injection"
+        severity: "HIGH"
+
+      - name: "XML Processing"
+        patterns:
+          - "DocumentBuilder.parse"
+          - "SAXParser.parse"
+          - "XMLReader.parse"
+        category: "xxe"
+        severity: "HIGH"
+
+    php:
+      - name: "Command Execution"
+        patterns:
+          - "system("
+          - "exec("
+          - "shell_exec("
+          - "passthru("
+          - "popen("
+          - "proc_open("
+          - "pcntl_exec("
+        category: "command_exec"
+        severity: "CRITICAL"
+
+      - name: "SQL Execution"
+        patterns:
+          - "mysql_query("
+          - "mysqli_query("
+          - "pg_query("
+          - "mysqli_real_query("
+        category: "sql_injection"
+        severity: "HIGH"
+
+      - name: "Code Execution"
+        patterns:
+          - "eval("
+          - "assert("
+          - "create_function("
+        category: "code_injection"
+        severity: "CRITICAL"
+
+      - name: "File Operation"
+        patterns:
+          - "include("
+          - "require("
+          - "fopen("
+          - "file_get_contents"
+          - "file_put_contents"
+        category: "file_operation"
+        severity: "MEDIUM"
+
+      - name: "Deserialization"
+        patterns:
+          - "unserialize("
+        category: "deserialization"
+        severity: "HIGH"
+
+      - name: "XML Processing"
+        positions:
+          - "simplexml_load_string"
+          - "simplexml_load_file"
+          - "DOMDocument.loadXML"
+        category: "xxe"
+        severity: "HIGH"
+
+    go:
+      - name: "Command Execution"
+        patterns:
+          - "exec.Command"
+          - "os/exec"
+        category: "command_exec"
+        severity: "CRITICAL"
+
+      - name: "SQL Execution"
+        patterns:
+          - "db.Query"
+          - "db.Exec"
+          - "sql.Query"
+          - "sql.Exec"
+        category: "sql_injection"
+        severity: "HIGH"
+
+      - name: "Code Execution"
+        patterns:
+          - "reflect.ValueOf"
+          - "unsafe.Pointer"
+        category: "code_injection"
+        severity: "HIGH"
+
+      - name: "File Operation"
+        patterns:
+          - "os.Open"
+          - "ioutil.ReadFile"
+          - "ioutil.WriteFile"
+        category: "file_operation"
+        severity: "MEDIUM"
+
+    ruby:
+      - name: "Command Execution"
+        patterns:
+          - "system("
+          - "`"
+          - "exec("
+          - "spawn("
+        category: "command_exec"
+        severity: "CRITICAL"
+
+      - name: "SQL Execution"
+        patterns:
+          - "execute.*interpolate"
+          - "find_by_sql"
+          - "ActiveRecord::Base.connection.execute"
+        category: "sql_injection"
+        severity: "HIGH"
+
+      - name: "Code Execution"
+        patterns:
+          - "eval("
+          - "instance_eval"
+          - "class_eval"
+          - "send("
+        category: "code_injection"
+        severity: "CRITICAL"
+
+      - name: "Deserialization"
+        patterns:
+          - "Marshal.load"
+          - "YAML.load"
+          - "Psych.load"
+        category: "deserialization"
+        severity: "HIGH"
+
+    rust:
+      - name: "Command Execution"
+        patterns:
+          - "std::process::Command"
+          - "Command::new"
+        category: "command_exec"
+        severity: "CRITICAL"
+
+      - name: "File Operation"
+        patterns:
+          - "std::fs::read"
+          - "std::fs::write"
+          - "File::open"
+        category: "file_operation"
+        severity: "MEDIUM"
+
+      - name: "Deserialization"
+        patterns:
+          - "serde::Deserialize"
+          - "bincode::deserialize"
+        category: "deserialization"
+        severity: "MEDIUM"
+
+    cpp:
+      - name: "Command Execution"
+        patterns:
+          - "system("
+          - "popen("
+          - "execl"
+          - "execlp"
+          - "execv"
+          - "execvp"
+        category: "command_exec"
+        severity: "CRITICAL"
+
+      - name: "SQL Execution"
+        patterns:
+          - "mysql_query"
+          - "sqlite3_exec"
+          - "PQexec"
+        category: "sql_injection"
+        severity: "HIGH"
+
+      - name: "File Operation"
+        patterns:
+          - "fopen"
+          - "ifstream"
+          - "ofstream"
+          - "freopen"
+        category: "file_operation"
+        severity: "MEDIUM"
+
+      - name: "Code Execution"
+        patterns:
+          - "longjmp"
+          - "setjmp"
+        category: "code_injection"
+        severity: "HIGH"
+
+    csharp:
+      - name: "Command Execution"
+        patterns:
+          - "Process.Start"
+          - "Runtime.exec"
+          - "ProcessStartInfo"
+        category: "command_exec"
+        severity: "CRITICAL"
+
+      - name: "SQL Execution"
+        patterns:
+          - "SqlCommand"
+          - "ExecuteReader"
+          - "ExecuteNonQuery"
+          - "ExecuteScalar"
+        category: "sql_injection"
+        severity: "HIGH"
+
+      - name: "Code Execution"
+        patterns:
+          - "DynamicMethod"
+          - "Assembly.Load"
+        category: "code_injection"
+        severity: "HIGH"
+
+      - name: "Deserialization"
+        patterns:
+          - "BinaryFormatter.Deserialize"
+          - "LosFormatter.Deserialize"
+          - "ObjectStateFormatter.Deserialize"
+        category: "deserialization"
+        severity: "CRITICAL"
+
+  # 安全函数 - 净化器
+  sanitizers:
+    python:
+      - name: "Input Validation"
+        patterns:
+          - "re.match"
+          - "re.search"
+          - "validate"
+          - "is_valid"
+        category: "validation"
+
+      - name: "Output Encoding"
+        patterns:
+          - "html.escape"
+          - "htmlspecialchars"
+          - "markupsafe"
+          - "bleach"
+        category: "encoding"
+
+      - name: "SQL Parameterization"
+        patterns:
+          - "execute.*\\?"
+          - "execute.*%s"
+          - "execute.*:\\w+"
+          - "prepare("
+        category: "sql_safe"
+
+      - name: "Shell Escaping"
+        patterns:
+          - "shlex.quote"
+          - "shlex.escape"
+          - "subprocess.list2cmdline"
+        category: "shell_safe"
+
+    javascript:
+      - name: "Output Encoding"
+        patterns:
+          - "textContent"
+          - "innerText"
+          - "encodeURIComponent"
+          - "encodeURI"
+        category: "encoding"
+
+      - name: "DOM Safe Methods"
+        patterns:
+          - "createElement"
+          - "createTextNode"
+          - "appendChild"
+          - "removeChild"
+        category: "dom_safe"
+
+    java:
+      - name: "SQL Parameterization"
+        patterns:
+          - "PreparedStatement"
+          - "\\?\\s*="
+          - "setString"
+          - "setInt"
+        category: "sql_safe"
+
+      - name: "XML Security"
+        patterns:
+          - "XMLConstants.FEATURE_SECURE_PROCESSING"
+          - "setFeature.*SECURE_PROCESSING"
+        category: "xml_safe"
+
+    php:
+      - name: "SQL Parameterization"
+        patterns:
+          - "mysqli_prepare"
+          - "PDO::prepare"
+          - "\\$stmt->execute"
+          - "\\$pdo->prepare"
+        category: "sql_safe"
+
+      - name: "Output Encoding"
+        patterns:
+          - "htmlspecialchars"
+          - "htmlentities"
+          - "ENT_QUOTES"
+          - "ENT_HTML5"
+        category: "encoding"
+
+      - name: "Shell Escaping"
+        patterns:
+          - "escapeshellarg"
+          - "escapeshellcmd"
+        category: "shell_safe"
+
+      - name: "Path Security"
+        patterns:
+          - "basename"
+          - "realpath"
+          - "dirname"
+          - "is_file"
+          - "is_dir"
+        category: "path_safe"
+
+# 漏洞检测规则
+detectionRules:
+  sql_injection:
+    description: "SQL 注入漏洞"
+    cwe: "CWE-89"
+    gbt: "GB/T34943-2017, GB/T34944-2017, GB/T34946-2017"
+    languages:
+      python:
+        riskPatterns:
+          - pattern: "execute\\s*\\([^)]*\\+[^)]*\\)"
+            description: "字符串拼接的 SQL 查询"
+          - pattern: "cursor\\.execute\\s*\\([^)]*format\\s*\\("
+            description: "使用 format 的 SQL 查询"
+          - pattern: "cursor\\.execute\\s*\\([^)]*%[^)]*\\)"
+            description: "使用 % 格式化的 SQL 查询"
+        safePatterns:
+          - pattern: "execute\\s*\\([^,]+,\\s*\\[.*\\]\\)"
+            description: "参数化查询"
+          - pattern: "cursor\\.execute\\s*\\([^,]+,\\s*\\(.*\\)\\)"
+            description: "参数化查询"
+        severity: "HIGH"
+        remediation: "使用参数化查询或 ORM"
+
+      java:
+        riskPatterns:
+          - pattern: "Statement\\.executeQuery\\s*\\([^)]*\\+[^)]*\\)"
+            description: "字符串拼接的 SQL 查询"
+          - pattern: "createStatement\\(\\)\\.executeQuery\\s*\\([^)]*\\+"
+            description: "直接拼接的 SQL"
+        safePatterns:
+          - pattern: "PreparedStatement"
+            description: "预处理语句"
+          - pattern: "\\?\\s*=\\s*.*set\\w+"
+            description: "参数绑定"
+        severity: "HIGH"
+        remediation: "使用 PreparedStatement 参数化查询"
+
+      javascript:
+        riskPatterns:
+          - pattern: "query\\s*\\([^)]*\\+[^)]*\\)"
+            description: "字符串拼接的 SQL 查询"
+        safePatterns:
+          - pattern: "\\$in\\s*:\\s*\\["
+            description: "MongoDB 参数化"
+        severity: "HIGH"
+        remediation: "使用参数化查询"
+
+      php:
+        riskPatterns:
+          - pattern: "\\$_(GET|POST|REQUEST|COOKIE)\\s*\\[.*?\\].*?(?:SELECT|INSERT|UPDATE|DELETE)"
+            description: "直接使用用户输入构造 SQL"
+          - pattern: "mysql_query\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "mysql_query 字符串拼接"
+          - pattern: "mysqli_query\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "mysqli_query 字符串拼接"
+          - pattern: "pg_query\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "pg_query 字符串拼接"
+        safePatterns:
+          - pattern: "mysqli_prepare\\s*\\("
+            description: "预处理语句"
+          - pattern: "PDO::prepare\\s*\\("
+            description: "PDO 预处理"
+          - pattern: "\\$stmt\\s*=\\s*.*->execute\\s*\\("
+            description: "参数化查询"
+        severity: "HIGH"
+        remediation: "使用参数化查询或 ORM"
+
+      go:
+        riskPatterns:
+          - pattern: "db\\.Query\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "字符串拼接的 SQL 查询"
+          - pattern: "db\\.Exec\\s*\\([^)]*fmt\\.Sprintf"
+            description: "fmt.Sprintf 构造的 SQL"
+        safePatterns:
+          - pattern: "\\?\\s*"
+            description: "参数占位符"
+          - pattern: "\\$\\d+"
+            description: "参数占位符"
+        severity: "HIGH"
+        remediation: "使用参数化查询，避免字符串拼接 SQL"
+
+      ruby:
+        riskPatterns:
+          - pattern: "execute.*interpolate.*true"
+            description: "启用了字符串插值的查询"
+          - pattern: "find_by_sql\\s*\\([^)]*\\+"
+            description: "字符串拼接的 SQL"
+        safePatterns:
+          - pattern: "where\\("
+            description: "ActiveRecord 查询方法"
+          - pattern: "\\?\\s*"
+            description: "参数占位符"
+        severity: "HIGH"
+        remediation: "使用 ActiveRecord ORM，避免字符串拼接 SQL"
+
+      rust:
+        riskPatterns:
+          - pattern: "sqlx::query\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "字符串拼接的 SQL 查询"
+          - pattern: "rust-postgres.*execute\\s*\\([^)]*\\+"
+            description: "字符串拼接的 SQL"
+        safePatterns:
+          - pattern: "\\?\\s*"
+            description: "参数占位符"
+          - pattern: "\\$\\d+"
+            description: "参数占位符"
+        severity: "HIGH"
+        remediation: "使用参数化查询"
+
+      cpp:
+        riskPatterns:
+          - pattern: "mysql_query\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "字符串拼接的 SQL 查询"
+          - pattern: "sqlite3_exec\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "字符串拼接的 SQL"
+        safePatterns:
+          - pattern: "sqlite3_prepare"
+            description: "预处理语句"
+        severity: "HIGH"
+        remediation: "使用预处理语句，避免字符串拼接 SQL"
+
+      csharp:
+        riskPatterns:
+          - pattern: "SqlCommand\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "字符串拼接的 SQL 查询"
+          - pattern: "ExecuteReader\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "字符串拼接的 SQL"
+        safePatterns:
+          - pattern: "SqlCommand.*@"
+            description: "参数化查询"
+          - pattern: "Using.*SqlParameter"
+            description: "使用 SqlParameter"
+        severity: "HIGH"
+        remediation: "使用参数化查询，避免字符串拼接 SQL"
+
+  command_injection:
+    description: "命令注入漏洞"
+    cwe: "CWE-78"
+    gbt: "GB/T34943-2017, GB/T34944-2017"
+    languages:
+      python:
+        riskPatterns:
+          - pattern: "os\\.system\\s*\\([^)]*\\+"
+            description: "os.system 字符串拼接"
+          - pattern: "os\\.popen\\s*\\([^)]*\\+"
+            description: "os.popen 字符串拼接"
+          - pattern: "subprocess\\.(call|Popen|run)\\s*\\([^)]*shell\\s*=\\s*True"
+            description: "启用 shell 的子进程调用"
+          - pattern: "subprocess\\.(call|Popen|run)\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "子进程字符串拼接"
+        safePatterns:
+          - pattern: "subprocess\\.run\\s*\\([^,]+,\\s*shell\\s*=\\s*False"
+            description: "禁用 shell 的子进程"
+          - pattern: "shlex\\.quote\\s*\\("
+            description: "使用 shlex.quote 转义"
+        severity: "CRITICAL"
+        remediation: "避免使用 shell=True，使用 shlex.quote 转义用户输入"
+
+      java:
+        riskPatterns:
+          - pattern: "Runtime\\.exec\\s*\\([^)]*\\+[^)]*\\)"
+            description: "Runtime.exec 字符串拼接"
+          - pattern: "ProcessBuilder\\s*\\([^)]*\\+"
+            description: "ProcessBuilder 字符串参数"
+        safePatterns:
+          - pattern: "new String\\[\\].*\\)"
+            description: "数组形式参数"
+        severity: "CRITICAL"
+        remediation: "使用数组形式传递命令参数，避免字符串拼接"
+
+      javascript:
+        riskPatterns:
+          - pattern: "child_process\\.exec\\s*\\([^)]*\\+"
+            description: "child_process.exec 字符串拼接"
+          - pattern: "exec\\s*\\(`.*\\${"
+            description: "模板字符串注入"
+        safePatterns:
+          - pattern: "execFile\\s*\\("
+            description: "使用 execFile 而非 exec"
+          - pattern: "spawn\\s*\\([^,]+,\\s*\\["
+            description: "数组形式参数"
+        severity: "CRITICAL"
+        remediation: "避免使用 exec，采用 spawn/execFile 数组参数形式"
+
+      php:
+        riskPatterns:
+          - pattern: "system\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "system() 字符串拼接"
+          - pattern: "exec\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "exec() 字符串拼接"
+          - pattern: "shell_exec\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "shell_exec() 字符串拼接"
+          - pattern: "passthru\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "passthru() 字符串拼接"
+          - pattern: "popen\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "popen() 字符串拼接"
+        safePatterns:
+          - pattern: "escapeshellarg\\s*\\("
+            description: "使用 escapeshellarg 转义"
+          - pattern: "escapeshellcmd\\s*\\("
+            description: "使用 escapeshellcmd 转义"
+        severity: "CRITICAL"
+        remediation: "使用 escapeshellarg/escapeshellcmd 转义用户输入"
+
+      go:
+        riskPatterns:
+          - pattern: "exec\\.Command\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "exec.Command 字符串拼接"
+        safePatterns:
+          - pattern: "exec\\.Command\\s*\\([^,]+,[^)]*\\)"
+            description: "数组形式参数"
+        severity: "CRITICAL"
+        remediation: "使用数组形式传递命令参数，避免字符串拼接"
+
+      ruby:
+        riskPatterns:
+          - pattern: "system\\s*\\([^)]*\\+"
+            description: "system() 字符串拼接"
+          - pattern: "`.*#\\{"
+            description: "反引号字符串插值"
+        safePatterns:
+          - pattern: "system\\s*\\(.*,\\s*\\[" 
+            description: "数组形式参数"
+        severity: "CRITICAL"
+        remediation: "使用数组形式参数，避免字符串拼接"
+
+      rust:
+        riskPatterns:
+          - pattern: "Command::new\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "Command::new 字符串拼接"
+        safePatterns:
+          - pattern: "Command::new\\s*\\([^)]*\\)\\s*\\.arg\\s*\\("
+            description: "使用 arg 方法"
+        severity: "CRITICAL"
+        remediation: "使用 args 方法传递参数，避免字符串拼接"
+
+      cpp:
+        riskPatterns:
+          - pattern: "system\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "system() 字符串拼接"
+          - pattern: "popen\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "popen() 字符串拼接"
+        safePatterns:
+          - pattern: "execlp?\\s*\\([^,]+,\\s*\\[" 
+            description: "数组形式参数"
+        severity: "CRITICAL"
+        remediation: "使用数组形式参数，避免字符串拼接"
+
+      csharp:
+        riskPatterns:
+          - pattern: "Process\\.Start\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "Process.Start 字符串拼接"
+          - pattern: "ProcessStartInfo\\.Arguments\\s*=\\s*[^;]*\\+"
+            description: "Arguments 属性字符串拼接"
+        safePatterns:
+          - pattern: 'ProcessStartInfo\\.Arguments\\s*=\\s*\\"'
+            description: "显式设置参数"
+        severity: "CRITICAL"
+        remediation: "显式设置 Arguments，避免字符串拼接"
+
+  xss:
+    description: "跨站脚本攻击 (XSS)"
+    cwe: "CWE-79"
+    gbt: "GB/T34946-2017"
+    languages:
+      javascript:
+        riskPatterns:
+          - pattern: "innerHTML\\s*=\\s*[^;]*\\+"
+            description: "innerHTML 字符串拼接"
+          - pattern: "outerHTML\\s*=\\s*[^;]*\\+"
+            description: "outerHTML 字符串拼接"
+          - pattern: "document\\.write\\s*\\("
+            description: "document.write"
+          - pattern: "insertAdjacentHTML"
+            description: "insertAdjacentHTML"
+        safePatterns:
+          - pattern: "textContent\\s*="
+            description: "使用 textContent"
+          - pattern: "innerText\\s*="
+            description: "使用 innerText"
+          - pattern: "createTextNode"
+            description: "使用 createTextNode"
+          - pattern: "encodeURIComponent"
+            description: "URL 编码"
+        severity: "HIGH"
+        remediation: "使用 textContent/innerText 而非 innerHTML，对用户输入进行编码"
+
+      php:
+        riskPatterns:
+          - pattern: "echo\\s+\\$_(GET|POST|REQUEST|COOKIE)"
+            description: "直接输出用户输入"
+          - pattern: "print\\s+\\$_(GET|POST|REQUEST|COOKIE)"
+            description: "直接输出用户输入"
+        safePatterns:
+          - pattern: "htmlspecialchars\\s*\\("
+            description: "使用 htmlspecialchars"
+          - pattern: "htmlentities\\s*\\("
+            description: "使用 htmlentities"
+        severity: "HIGH"
+        remediation: "使用 htmlspecialchars 或 htmlentities 对输出进行编码"
+
+      go:
+        riskPatterns:
+          - pattern: "html/template\\.HTML\\s*\\([^)]*\\+"
+            description: "模板字符串拼接"
+        safePatterns:
+          - pattern: "template\\.HTML\\s*\\("
+            description: "使用 template 包"
+        severity: "HIGH"
+        remediation: "使用 html/template 包的自动转义功能"
+
+      ruby:
+        riskPatterns:
+          - pattern: "raw\\s*\\([^)]*\\+"
+            description: "raw 输出未转义"
+          - pattern: "html\\.raw\\s*\\([^)]*\\+"
+            description: "html.raw 未转义"
+        safePatterns:
+          - pattern: "render.*html\\s*\\:"
+            description: "使用 ERB 默认转义"
+        severity: "HIGH"
+        remediation: "使用 ERB 默认转义，避免 raw"
+
+      csharp:
+        riskPatterns:
+          - pattern: "Response\\.Write\\s*\\([^)]*\\+"
+            description: "Response.Write 字符串拼接"
+          - pattern: "@Html\\.Raw\\s*\\([^)]*\\+"
+            description: "@Html.Raw 未转义"
+        safePatterns:
+          - pattern: "@Model\\."
+            description: "使用 Model 属性"
+        severity: "HIGH"
+        remediation: "使用 @Model 而非 @Html.Raw"
+
+  path_traversal:
+    description: "路径遍历漏洞"
+    cwe: "CWE-22"
+    languages:
+      python:
+        riskPatterns:
+          - pattern: "open\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "字符串拼接的文件路径"
+          - pattern: "os\\.path\\.join\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "路径拼接中的变量"
+          - pattern: "os\\.path\\.join\\s*\\([^)]*request\\."
+            description: "用户输入参与路径拼接"
+        safePatterns:
+          - pattern: "os\\.path\\.realpath\\s*\\("
+            description: "使用 realpath 规范化"
+          - pattern: "os\\.path\\.abspath\\s*\\("
+            description: "使用 abspath 规范化"
+          - pattern: "pathlib\\.Path\\([^)]*\\)\\.resolve\\("
+            description: "使用 resolve 规范化"
+        severity: "MEDIUM"
+        remediation: "使用 Path.resolve() 规范化路径，验证路径在允许范围内"
+
+      java:
+        riskPatterns:
+          - pattern: "new File\\s*\\([^)]*\\+"
+            description: "字符串拼接的文件路径"
+          - pattern: "FileInputStream\\s*\\([^)]*\\+"
+            description: "文件输入流的字符串拼接"
+        safePatterns:
+          - pattern: "toRealPath"
+            description: "使用 toRealPath 规范化"
+          - pattern: "toPath\\(\\).*\\.normalize\\(\\)"
+            description: "使用 normalize 规范化"
+        severity: "MEDIUM"
+        remediation: "使用 Path.normalize() 和 realPath() 规范化路径"
+
+      php:
+        riskPatterns:
+          - pattern: "include\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "include 字符串拼接"
+          - pattern: "require\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "require 字符串拼接"
+          - pattern: "fopen\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "fopen 字符串拼接"
+          - pattern: "file_get_contents\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "file_get_contents 字符串拼接"
+          - pattern: "readfile\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "readfile 字符串拼接"
+        safePatterns:
+          - pattern: "basename\\s*\\("
+            description: "使用 basename 提取文件名"
+          - pattern: "realpath\\s*\\("
+            description: "使用 realpath 规范化"
+          - pattern: "is_file\\s*\\("
+            description: "使用 is_file 验证"
+        severity: "MEDIUM"
+        remediation: "使用 realpath() 规范化路径，验证文件存在且在允许范围内"
+
+      go:
+        riskPatterns:
+          - pattern: "ioutil\\.ReadFile\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "ioutil.ReadFile 字符串拼接"
+          - pattern: "ioutil\\.WriteFile\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "ioutil.WriteFile 字符串拼接"
+          - pattern: "os\\.Open\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "os.Open 字符串拼接"
+        safePatterns:
+          - pattern: "path\\.Clean\\s*\\("
+            description: "使用 path.Clean 规范化"
+          - pattern: "path\\.Join\\s*\\("
+            description: "使用 path.Join 安全拼接"
+        severity: "MEDIUM"
+        remediation: "使用 path.Join 或 path.Clean 规范化路径"
+
+      ruby:
+        riskPatterns:
+          - pattern: "File\\.open\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "File.open 字符串拼接"
+          - pattern: "open\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "open 方法字符串拼接"
+          - pattern: "read\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "read 方法字符串拼接"
+        safePatterns:
+          - pattern: "File\\.join\\s*\\("
+            description: "使用 File.join 拼接"
+          - pattern: "File\\.basename\\s*\\("
+            description: "使用 File.basename 提取文件名"
+        severity: "MEDIUM"
+        remediation: "使用 File.join 拼接路径，避免字符串拼接"
+
+      rust:
+        riskPatterns:
+          - pattern: "std::fs::read\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "std::fs::read 字符串拼接"
+          - pattern: "std::fs::write\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "std::fs::write 字符串拼接"
+          - pattern: "File::open\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "File::open 字符串拼接"
+        safePatterns:
+          - pattern: "std::path::Path\\.new\\s*\\("
+            description: "使用 Path::new"
+          - pattern: "Path::join\\s*\\("
+            description: "使用 Path::join 拼接"
+        severity: "MEDIUM"
+        remediation: "使用 Path::join 拼接路径"
+
+      cpp:
+        riskPatterns:
+          - pattern: "fopen\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "fopen 字符串拼接"
+          - pattern: "ifstream\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "ifstream 字符串拼接"
+          - pattern: "ofstream\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "ofstream 字符串拼接"
+        safePatterns:
+          - pattern: "realpath\\s*\\("
+            description: "使用 realpath 规范化"
+        severity: "MEDIUM"
+        remediation: "使用 realpath 规范化路径"
+
+      csharp:
+        riskPatterns:
+          - pattern: "File\\.Open\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "File.Open 字符串拼接"
+          - pattern: "File\\.ReadAllText\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "File.ReadAllText 字符串拼接"
+          - pattern: "File\\.WriteAllText\\s*\\([^)]*\\+\\s*[^)]*\\)"
+            description: "File.WriteAllText 字符串拼接"
+        safePatterns:
+          - pattern: "Path\\.Combine\\s*\\("
+            description: "使用 Path.Combine"
+          - pattern: "Path\\.GetFullPath\\s*\\("
+            description: "使用 Path.GetFullPath"
+        severity: "MEDIUM"
+        remediation: "使用 Path.Combine 拼接路径"
+
+  deserialization:
+    description: "不安全反序列化"
+    cwe: "CWE-502"
+    languages:
+      python:
+        riskPatterns:
+          - pattern: "pickle\\.loads?\\s*\\("
+            description: "pickle 反序列化"
+          - pattern: "yaml\\.load\\s*\\([^)]*\\)"
+            description: "不安全的 yaml.load"
+          - pattern: "marshal\\.loads?\\s*\\("
+            description: "marshal 反序列化"
+        safePatterns:
+          - pattern: "yaml\\.safe_load\\s*\\("
+            description: "安全的 yaml.safe_load"
+          - pattern: "json\\.loads\\s*\\("
+            description: "JSON 反序列化"
+        severity: "HIGH"
+        remediation: "使用 yaml.safe_load 替代 yaml.load，使用 JSON 而非 pickle"
+
+      java:
+        riskPatterns:
+          - pattern: "ObjectInputStream"
+            description: "Java 对象反序列化"
+          - pattern: "readObject\\s*\\("
+            description: "反序列化方法调用"
+          - pattern: "XMLDecoder\\s*\\("
+            description: "XML 反序列化"
+        safePatterns:
+          - pattern: "ObjectInputStream.*validateObject"
+            description: "带有验证的反序列化"
+          - pattern: "JSON\\.parse"
+            description: "JSON 解析"
+        severity: "HIGH"
+        remediation: "避免原生反序列化，使用 JSON 或配置验证"
+
+      php:
+        riskPatterns:
+          - pattern: "unserialize\\s*\\("
+            description: "PHP unserialize 反序列化"
+        safePatterns:
+          - pattern: "json_decode\\s*\\("
+            description: "使用 JSON 解码"
+        severity: "HIGH"
+        remediation: "避免使用 unserialize，使用 json_decode"
+
+      go:
+        riskPatterns:
+          - pattern: "encoding/gob\\.NewDecoder"
+            description: "gob 反序列化"
+          - pattern: "golang/protobuf.*Unmarshal"
+            description: "protobuf 反序列化"
+        safePatterns:
+          - pattern: "json\\.Unmarshal"
+            description: "JSON 反序列化"
+        severity: "HIGH"
+        remediation: "使用 JSON 而非 gob 或 protobuf"
+
+      ruby:
+        riskPatterns:
+          - pattern: "Marshal\\.load\\s*\\("
+            description: "Marshal.load 反序列化"
+          - pattern: "YAML\\.load\\s*\\([^)]*\\)"
+            description: "YAML.load 反序列化"
+          - pattern: "Psych\\.load\\s*\\("
+            description: "Psych.load 反序列化"
+        safePatterns:
+          - pattern: "YAML\\.safe_load\\s*\\("
+            description: "安全的 YAML.safe_load"
+          - pattern: "JSON\\.parse"
+            description: "JSON 解析"
+        severity: "HIGH"
+        remediation: "使用 YAML.safe_load，避免 Marshal.load"
+
+      rust:
+        riskPatterns:
+          - pattern: "bincode::deserialize"
+            description: "bincode 反序列化"
+          - pattern: "ron::from_str"
+            description: "RON 反序列化"
+        safePatterns:
+          - pattern: "serde_json::from_str"
+            description: "JSON 反序列化"
+        severity: "HIGH"
+        remediation: "使用 serde_json 而非 bincode"
+
+      cpp:
+        riskPatterns:
+          - pattern: "boost:: serialization::unserialize"
+            description: "Boost 反序列化"
+          - pattern: "std::istream.*read.*reinterpret_cast"
+            description: "原生指针反序列化"
+        safePatterns:
+          - pattern: "nlohmann::json::parse"
+            description: "JSON 解析"
+        severity: "HIGH"
+        remediation: "使用 JSON 而非原生序列化"
+
+      csharp:
+        riskPatterns:
+          - pattern: "BinaryFormatter\\.Deserialize"
+            description: "BinaryFormatter 反序列化"
+          - pattern: "LosFormatter\\.Deserialize"
+            description: "LosFormatter 反序列化"
+          - pattern: "ObjectStateFormatter\\.Deserialize"
+            description: "ObjectStateFormatter 反序列化"
+        safePatterns:
+          - pattern: "JsonSerializer\\.Deserialize"
+            description: "JSON 序列化"
+          - pattern: "DataContractSerializer"
+            description: "数据契约序列化"
+        severity: "CRITICAL"
+        remediation: "禁用 BinaryFormatter，使用 JsonSerializer"
+
+  xxe:
+    description: "XML 外部实体注入 (XXE)"
+    cwe: "CWE-611"
+    languages:
+      java:
+        riskPatterns:
+          - pattern: "DocumentBuilderFactory\\.newInstance\\(\\)"
+            description: "XML 文档工厂"
+          - pattern: "SAXParserFactory\\.newInstance\\(\\)"
+            description: "SAX 解析器工厂"
+          - pattern: "XMLInputFactory\\.newInstance\\(\\)"
+            description: "XML 输入工厂"
+        safePatterns:
+          - pattern: "XMLConstants\\.FEATURE_SECURE_PROCESSING"
+            description: "安全处理特性"
+          - pattern: "setFeature.*SECURE_PROCESSING.*true"
+            description: "启用安全处理"
+        severity: "HIGH"
+        remediation: "禁用外部实体，启用 SECURE_PROCESSING"
+
+      python:
+        riskPatterns:
+          - pattern: "etree\\.parse\\s*\\("
+            description: "lxml XML 解析"
+          - pattern: "ElementTree\\.parse\\s*\\("
+            description: "ElementTree 解析"
+        safePatterns:
+          - pattern: "no_network\\s*=\\s*True"
+            description: "禁用网络"
+        severity: "HIGH"
+        remediation: "禁用网络访问，验证 XML 内容"
+
+      php:
+        riskPatterns:
+          - pattern: "simplexml_load_string\\s*\\([^)]*\\)"
+            description: "simplexml_load_string 解析"
+          - pattern: "simplexml_load_file\\s*\\([^)]*\\)"
+            description: "simplexml_load_file 解析"
+          - pattern: "DOMDocument\\.loadXML\\s*\\([^)]*\\)"
+            description: "DOMDocument 解析"
+        safePatterns:
+          - pattern: "LIBXML_NOENT\\s*=\\s*0"
+            description: "禁用外部实体"
+          - pattern: "LIBXML_NONET"
+            description: "禁用网络访问"
+        severity: "HIGH"
+        remediation: "使用 LIBXML_NOENT | LIBXML_NONET 禁用外部实体"
+
+      javascript:
+        riskPatterns:
+          - pattern: "DOMParser\\s*\\([^)]*\\)\\.parseFromString"
+            description: "DOMParser 解析 XML"
+          - pattern: "xmldom\\.parse"
+            description: "xmldom 解析"
+          - pattern: "xml2js\\.parseString"
+            description: "xml2js 解析"
+          - pattern: "xmlbuilder\\.parse"
+            description: "xmlbuilder 解析"
+        safePatterns:
+          - pattern: "isXMLSafe\\s*=\\s*true"
+            description: "安全配置"
+          - pattern: "dtdDisabled\\s*=\\s*true"
+            description: "禁用 DTD"
+        severity: "HIGH"
+        remediation: "禁用外部实体解析，使用安全的 XML 解析配置"
+
+      go:
+        riskPatterns:
+          - pattern: "xml\\.NewDecoder\\s*\\([^)]*\\)"
+            description: "XML 解码器"
+        safePatterns:
+          - pattern: "xml\\.Decoder\\.Strict\\s*\\("
+            description: "严格模式解码器"
+        severity: "HIGH"
+        remediation: "避免解析不受信任的 XML"
+
+      ruby:
+        riskPatterns:
+          - pattern: "REXML\\.Document\\.new\\s*\\([^)]*\\)"
+            description: "REXML 解析"
+          - pattern: "Hash\\.from_xml\\s*\\([^)]*\\)"
+            description: "from_xml 解析"
+        safePatterns:
+          - pattern: "REXML\\.Security\\.EntityExpansion\\s*=\\s*:literal"
+            description: "限制实体扩展"
+        severity: "HIGH"
+        remediation: "限制实体扩展数量"
+
+      csharp:
+        riskPatterns:
+          - pattern: "XmlDocument\\.Load\\s*\\([^)]*\\)"
+            description: "XmlDocument 加载"
+          - pattern: "XDocument\\.Load\\s*\\([^)]*\\)"
+            description: "XDocument 加载"
+        safePatterns:
+          - pattern: "XmlUrlResolver\\s*=\\s*nil"
+            description: "禁用外部实体解析"
+          - pattern: "DtdProcessing\\s*=\\s*DtdProcessing\\.Prohibit"
+            description: "禁用 DTD 处理"
+        severity: "HIGH"
+        remediation: "禁用 DtdProcessing，禁用 XmlUrlResolver"
+
+  ssrf:
+    description: "服务器端请求伪造 (SSRF)"
+    cwe: "CWE-918"
+    languages:
+      python:
+        riskPatterns:
+          - pattern: "requests\\.(get|post)\\s*\\([^)]*\\+\\s*"
+            description: "字符串拼接的请求 URL"
+          - pattern: "urllib\\.(request\\.)?urlopen\\s*\\([^)]*\\+"
+            description: "字符串拼接的 URL"
+          - pattern: "http\\.client\\.(HTTPConnection|HTTPSConnection)"
+            description: "HTTP 客户端请求"
+        safePatterns:
+          - pattern: "urlparse\\s*\\("
+            description: "URL 解析验证"
+          - pattern: "startswith\\s*\\(\\s*['\\\"]https?://"
+            description: "URL 协议验证"
+        severity: "HIGH"
+        remediation: "验证和限制 URL 协议、主机名，使用 urlparse 解析检查"
+
+      javascript:
+        riskPatterns:
+          - pattern: "fetch\\s*\\([^)]*\\+"
+            description: "字符串拼接的 URL"
+          - pattern: "axios\\s*\\([^)]*\\+"
+            description: "字符串拼接的 URL"
+        safePatterns:
+          - pattern: "new URL\\s*\\("
+            description: "使用 URL 构造函数"
+          - pattern: "URLSearchParams"
+            description: "使用 URLSearchParams"
+        severity: "HIGH"
+        remediation: "使用 URL 构造函数验证，确保 URL 符合预期"
+
+      php:
+        riskPatterns:
+          - pattern: "file_get_contents\\s*\\([^)]*\\$_(GET|POST|REQUEST)"
+            description: "用户输入作为 URL"
+          - pattern: "curl_setopt\\s*\\([^)]*CURLOPT_URL[^)]*\\+"
+            description: "字符串拼接的 URL"
+          - pattern: "fopen\\s*\\([^)]*http"
+            description: "HTTP URL 请求"
+        safePatterns:
+          - pattern: "parse_url\\s*\\("
+            description: "URL 解析验证"
+          - pattern: "filter_var.*FILTER_VALIDATE_URL"
+            description: "URL 过滤验证"
+        severity: "HIGH"
+        remediation: "验证 URL 协议和主机名，使用 parse_url 或 filter_var"
+
+      go:
+        riskPatterns:
+          - pattern: "http\\.Get\\s*\\([^)]*\\+"
+            description: "字符串拼接的 URL"
+          - pattern: "http\\.Post\\s*\\([^)]*\\+"
+            description: "字符串拼接的 URL"
+          - pattern: "http\\.Client.*Do\\s*\\([^)]*\\+"
+            description: "字符串拼接的 URL"
+        safePatterns:
+          - pattern: "url\\.Parse\\s*\\("
+            description: "URL 解析验证"
+          - pattern: "net\\.IP.*Parse"
+            description: "IP 地址验证"
+        severity: "HIGH"
+        remediation: "验证 URL 协议和主机名，避免字符串拼接"
+
+      ruby:
+        riskPatterns:
+          - pattern: "Net::HTTP\\.start\\s*\\([^)]*\\+"
+            description: "字符串拼接的 URL"
+          - pattern: "open\\s*\\([^)]*\\+"
+            description: "字符串拼接的 URL"
+          - pattern: "RestClient\\.get\\s*\\([^)]*\\+"
+            description: "字符串拼接的 URL"
+        safePatterns:
+          - pattern: "URI\\.parse\\s*\\("
+            description: "URI 解析验证"
+          - pattern: "Addressable\\.URI\\.parse"
+            description: "使用 Addressable 解析"
+        severity: "HIGH"
+        remediation: "使用 URI.parse 验证 URL"
+
+      rust:
+        riskPatterns:
+          - pattern: "reqwest::blocking::get\\s*\\([^)]*\\+"
+            description: "字符串拼接的 URL"
+          - pattern: "surf::get\\s*\\([^)]*\\+"
+            description: "字符串拼接的 URL"
+        safePatterns:
+          - pattern: "url::Url::parse\\s*\\("
+            description: "URL 解析验证"
+        severity: "HIGH"
+        remediation: "使用 Url::parse 验证 URL"
+
+      cpp:
+        riskPatterns:
+          - pattern: "curl_easy_setopt.*CURLOPT_URL.*\\+"
+            description: "字符串拼接的 URL"
+          - pattern: "libcurl.*http_get\\s*\\([^)]*\\+"
+            description: "字符串拼接的 URL"
+        safePatterns:
+          - pattern: "curl_easy_setopt.*CURLOPT_URL.*parse_url"
+            description: "URL 解析验证"
+        severity: "HIGH"
+        remediation: "验证 URL，避免字符串拼接"
+
+      csharp:
+        riskPatterns:
+          - pattern: "WebClient\\.DownloadString\\s*\\([^)]*\\+"
+            description: "字符串拼接的 URL"
+          - pattern: "HttpClient\\.GetAsync\\s*\\([^)]*\\+"
+            description: "字符串拼接的 URL"
+          - pattern: "WebRequest\\.Create\\s*\\([^)]*\\+"
+            description: "字符串拼接的 URL"
+        safePatterns:
+          - pattern: "Uri\\.TryCreate\\s*\\("
+            description: "使用 Uri.TryCreate 验证"
+          - pattern: "new Uri\\s*\\("
+            description: "使用 Uri 构造函数"
+        severity: "HIGH"
+        remediation: "使用 Uri.TryCreate 验证 URL"
+
+  hardcoded_secrets:
+    description: "硬编码凭据/密钥"
+    cwe: "CWE-798"
+    languages:
+      python:
+        riskPatterns:
+          - pattern: "password\\s*=\\s*['\\\"][^'\\\"]+['\\\"]"
+            description: "硬编码密码"
+          - pattern: "api_key\\s*=\\s*['\\\"][^'\\\"]+['\\\"]"
+            description: "硬编码 API Key"
+          - pattern: "secret\\s*=\\s*['\\\"][^'\\\"]+['\\\"]"
+            description: "硬编码密钥"
+          - pattern: "token\\s*=\\s*['\\\"][^'\\\"]+['\\\"]"
+            description: "硬编码 Token"
+        severity: "HIGH"
+        remediation: "使用环境变量或安全的密钥管理服务"
+
+      javascript:
+        riskPatterns:
+          - pattern: "const\\s+(apiKey|api_key)\\s*=\\s*['\\\"][^'\\\"]+['\\\"]"
+            description: "硬编码 API Key"
+          - pattern: "const\\s+password\\s*=\\s*['\\\"][^'\\\"]+['\\\"]"
+            description: "硬编码密码"
+        severity: "HIGH"
+        remediation: "使用环境变量或配置服务"
+
+      java:
+        riskPatterns:
+          - pattern: 'password\\s*=\\s*"[^"]+"'
+            description: "硬编码密码"
+          - pattern: 'apiKey\\s*=\\s*"[^"]+"'
+            description: "硬编码 API Key"
+          - pattern: 'secretKey\\s*=\\s*"[^"]+"'
+            description: "硬编码密钥"
+          - pattern: 'privateKey\\s*=\\s*"[^"]+"'
+            description: "硬编码私钥"
+        severity: "HIGH"
+        remediation: "使用环境变量或密钥管理服务"
+
+      php:
+        riskPatterns:
+          - pattern: "\\$password\\s*=\\s*['\\\"][^'\\\"]+['\\\"]"
+            description: "硬编码密码"
+          - pattern: "\\$apiKey\\s*=\\s*['\\\"][^'\\\"]+['\\\"]"
+            description: "硬编码 API Key"
+          - pattern: "\\$secret\\s*=\\s*['\\\"][^'\\\"]+['\\\"]"
+            description: "硬编码密钥"
+          - pattern: "define\\s*\\(['\\\"](API_KEY|SECRET|PASSWORD)\\s*,\\s*['\\\"][^'\\\"]+['\\\"]"
+            description: "常量定义硬编码密钥"
+        severity: "HIGH"
+        remediation: "使用环境变量或配置服务"
+
+      go:
+        riskPatterns:
+          - pattern: 'apiKey\\s*:=\\s*"[^"]+"'
+            description: "硬编码 API Key"
+          - pattern: 'password\\s*:=\\s*"[^"]+"'
+            description: "硬编码密码"
+          - pattern: 'secret\\s*:=\\s*"[^"]+"'
+            description: "硬编码密钥"
+          - pattern: 'token\\s*:=\\s*"[^"]+"'
+            description: "硬编码 Token"
+        severity: "HIGH"
+        remediation: "使用环境变量或密钥管理服务"
+
+      ruby:
+        riskPatterns:
+          - pattern: "api_key\\s*=\\s*['\\\"][^'\\\"]+['\\\"]"
+            description: "硬编码 API Key"
+          - pattern: "password\\s*=\\s*['\\\"][^'\\\"]+['\\\"]"
+            description: "硬编码密码"
+          - pattern: "secret_key\\s*=\\s*['\\\"][^'\\\"]+['\\\"]"
+            description: "硬编码密钥"
+        severity: "HIGH"
+        remediation: "使用环境变量或 Rails credentials"
+
+      rust:
+        riskPatterns:
+          - pattern: 'api_key\\s*:\\s*"[^"]+"'
+            description: "硬编码 API Key"
+          - pattern: 'password\\s*:\\s*"[^"]+"'
+            description: "硬编码密码"
+          - pattern: 'secret\\s*:\\s*"[^"]+"'
+            description: "硬编码密钥"
+        severity: "HIGH"
+        remediation: "使用环境变量或密钥管理服务"
+
+      cpp:
+        riskPatterns:
+          - pattern: 'const\\s+char\\s+\\*\\s*apiKey\\s*=\\s*"[^"]+"'
+            description: "硬编码 API Key"
+          - pattern: 'const\\s+char\\s+\\*\\s*password\\s*=\\s*"[^"]+"'
+            description: "硬编码密码"
+          - pattern: '#define\\s+API_KEY\\s+"[^"]+"'
+            description: "宏定义硬编码密钥"
+        severity: "HIGH"
+        remediation: "使用配置文件或环境变量"
+
+      csharp:
+        riskPatterns:
+          - pattern: 'private\\s+const\\s+string\\s+(ApiKey|apiKey|API_KEY)\\s*=\\s*"[^"]+"'
+            description: "硬编码 API Key"
+          - pattern: 'private\\s+const\\s+string\\s+Password\\s*=\\s*"[^"]+"'
+            description: "硬编码密码"
+          - pattern: 'private\\s+const\\s+string\\s+(Secret|secretKey|SECRET)\\s*=\\s*"[^"]+"'
+            description: "硬编码密钥"
+        severity: "HIGH"
+        remediation: "使用配置文件或环境变量"
+
+  weak_crypto:
+    description: "弱加密算法"
+    cwe: "CWE-327"
+    languages:
+      python:
+        riskPatterns:
+          - pattern: "hashlib\\.md5\\s*\\("
+            description: "MD5 哈希"
+          - pattern: "hashlib\\.sha1\\s*\\("
+            description: "SHA1 哈希"
+          - pattern: "Cryptography\\.crypt\\("
+            description: "crypt 加密"
+        severity: "MEDIUM"
+        remediation: "使用 SHA-256 或更强的哈希算法"
+
+      java:
+        riskPatterns:
+          - pattern: "MessageDigest\\.getInstance\\s*\\(\\s*['\\\"]md5"
+            description: "MD5 算法"
+          - pattern: "MessageDigest\\.getInstance\\s*\\(\\s*['\\\"]sha-?1"
+            description: "SHA1 算法"
+        severity: "MEDIUM"
+        remediation: "使用 SHA-256 或更强的哈希算法"
+
+      go:
+        riskPatterns:
+          - pattern: "crypto/md5\\.New\\s*\\("
+            description: "MD5 算法"
+          - pattern: "crypto/sha1\\.New\\s*\\("
+            description: "SHA1 算法"
+        severity: "MEDIUM"
+        remediation: "使用 crypto/sha256 或更强的哈希算法"
+
+      ruby:
+        riskPatterns:
+          - pattern: "Digest::MD5\\.new"
+            description: "MD5 算法"
+          - pattern: "Digest::SHA1\\.new"
+            description: "SHA1 算法"
+          - pattern: "OpenSSL::Cipher\\.new\\s*\\([^)]*\\)"
+            description: "弱加密算法"
+        severity: "MEDIUM"
+        remediation: "使用 SHA-256 或更强的哈希算法"
+
+      rust:
+        riskPatterns:
+          - pattern: "md5::compute\\s*\\("
+            description: "MD5 算法"
+          - pattern: "sha1::Sha1\\s*\\("
+            description: "SHA1 算法"
+          - pattern: "des::\\w+\\s*\\("
+            description: "DES 加密"
+        severity: "MEDIUM"
+        remediation: "使用 SHA-256 或更强的哈希算法"
+
+      cpp:
+        riskPatterns:
+          - pattern: "MD5\\s*\\([^)]*\\)"
+            description: "MD5 算法"
+          - pattern: "SHA1\\s*\\([^)]*\\)"
+            description: "SHA1 算法"
+          - pattern: "EVP_des_\\w+"
+            description: "DES 加密"
+        severity: "MEDIUM"
+        remediation: "使用 SHA-256 或更强的哈希算法"
+
+      csharp:
+        riskPatterns:
+          - pattern: "MD5\\.Create\\s*\\("
+            description: "MD5 算法"
+          - pattern: "SHA1\\.Create\\s*\\("
+            description: "SHA1 算法"
+          - pattern: "DESCryptoServiceProvider"
+            description: "DES 加密"
+        severity: "MEDIUM"
+        remediation: "使用 SHA-256 或更强的哈希算法"
+
+# 框架特定规则
+frameworkRules:
+  django:
+    name: "Django"
+    languages:
+      - python
+    indicators:
+      - "from django"
+      - "import django"
+      - "@app.route"
+    specificVulnerabilities:
+      - id: "django-sql-injection"
+        description: "Django ORM 不安全使用"
+        patterns:
+          - "extra\\s*\\("
+          - "raw\\s*\\("
+          - ".objects\\.raw\\s*\\("
+        remediation: "使用 Django ORM 的参数化查询"
+
+      - id: "django-ssti"
+        description: "模板注入"
+        patterns:
+          - "Template\\s*\\(\\s*request\\."
+          - "render_to_string\\s*\\([^,]*request\\."
+        remediation: "避免用户输入直接进入模板"
+
+  express:
+    name: "Express.js"
+    languages:
+      - javascript
+    indicators:
+      - "require\\s*\\(\\s*['\\\"]express['\\\"]\\)"
+      - "from\\s+['\\\"]express['\\\"]"
+    specificVulnerabilities:
+      - id: "express-nosql-injection"
+        description: "NoSQL 注入"
+        patterns:
+          - "findOne\\s*\\([^)]*\\+\\s*[^)]*\\)"
+          - "findById\\s*\\([^)]*req\\."
+        remediation: "验证和清理用户输入，使用参数化查询"
+
+      - id: "express-route-traversal"
+        description: "路由遍历"
+        patterns:
+          - "res\\.sendFile\\s*\\([^)]*\\+\\s*"
+        remediation: "使用路径安全函数，避免用户控制的文件路径"
+
+# 严重等级映射
+severityLevels:
+  CRITICAL:
+    score: 9.5
+    description: "危急漏洞，可导致系统完全被控"
+  HIGH:
+    score: 7.5
+    description: "高危漏洞，可导致数据泄露或权限提升"
+  MEDIUM:
+    score: 5.0
+    description: "中危漏洞，可导致部分功能受影响"
+  LOW:
+    score: 2.5
+    description: "低危漏洞，潜在风险或代码质量问题"
+
+# 分析选项
+analysisOptions:
+  maxLineLength: 10000
+  maxFileSize: 10485760  # 10MB
+  supportedExtensions:
+    - ".py"
+    - ".js"
+    - ".ts"
+    - ".jsx"
+    - ".tsx"
+    - ".java"
+    - ".php"
+    - ".go"
+    - ".rb"
+    - ".rs"
+    - ".c"
+    - ".cpp"
+    - ".cs"

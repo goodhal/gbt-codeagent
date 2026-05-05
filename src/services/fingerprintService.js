@@ -145,11 +145,11 @@ export function createFingerprintService({ downloadsDir }) {
       try {
         const projects = await this.listProjects();
         const project = projects.find(p => p.id === projectId);
-        
+
         if (!project) {
           return { success: false, message: "Project not found" };
         }
-        
+
         // 检查项目路径是否存在
         const projectPath = path.join(downloadsDir, project.name);
         try {
@@ -157,19 +157,27 @@ export function createFingerprintService({ downloadsDir }) {
         } catch {
           return { success: false, message: "Project directory not found" };
         }
-        
+
         // 删除项目目录
         await fs.rm(projectPath, { recursive: true, force: true });
-        
-        return { 
-          success: true, 
+
+        // 删除关联的 JSON 元数据文件
+        const jsonFilePath = path.join(downloadsDir, `${project.name}.json`);
+        try {
+          await fs.unlink(jsonFilePath);
+        } catch (error) {
+          // 文件不存在时忽略
+        }
+
+        return {
+          success: true,
           message: "Project deleted successfully",
-          projectId 
+          projectId
         };
       } catch (error) {
         console.error("Error deleting project:", error);
-        return { 
-          success: false, 
+        return {
+          success: false,
           message: error instanceof Error ? error.message : "Failed to delete project"
         };
       }

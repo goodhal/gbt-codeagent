@@ -155,16 +155,42 @@ const LINE_NUMBER_VERIFICATION = `
 
 ⚠️ ValidationService验证：验证逻辑使用关键词匹配，只要2个关键词重叠就认为匹配。LLM必须主动验证行号！`;
 
-async function loadAuditKnowledge() {
+const LANGUAGE_GBT_MAP = {
+  'java': 'GBT_34944-2017.md',
+  'python': 'GBT_39412-2020.md',
+  'javascript': 'GBT_39412-2020.md',
+  'typescript': 'GBT_39412-2020.md',
+  'go': 'GBT_39412-2020.md',
+  'ruby': 'GBT_39412-2020.md',
+  'rust': 'GBT_39412-2020.md',
+  'php': 'GBT_39412-2020.md',
+  'cpp': 'GBT_34943-2017.md',
+  'c': 'GBT_34943-2017.md',
+  'csharp': 'GBT_34946-2017.md',
+  'c#': 'GBT_34946-2017.md'
+};
+
+const VULNERABILITY_FILES = {
+  'sql_injection': 'sql_injection.md',
+  'command_injection': 'command_injection.md',
+  'code_injection': 'code_injection.md',
+  'deserialization': 'deserialization.md',
+  'hardcoded_credentials': 'hardcoded_credentials.md',
+  'path_traversal': 'path_traversal.md',
+  'weak_crypto': 'weak_crypto.md'
+};
+
+async function loadAuditKnowledge({ languages = [], vulnerabilityTypes = [] } = {}) {
   const docsDir = path.join(process.cwd(), "docs");
+  const gbtAuditDir = path.join(docsDir, "gbt-audit");
   const knowledge = {};
-  
+
   try {
-    const skillContent = await fs.readFile(path.join(docsDir, "skill.md"), "utf8");
+    const skillContent = await fs.readFile(path.join(gbtAuditDir, "skill.md"), "utf8");
     const lines = skillContent.split('\n');
     let inMappingTable = false;
     let mappingLines = [];
-    
+
     for (const line of lines) {
       if (line.includes('| 语言') && line.includes('GB/T')) {
         inMappingTable = true;
@@ -176,22 +202,38 @@ async function loadAuditKnowledge() {
         }
       }
     }
-    
+
     knowledge.gbtMapping = mappingLines.join('\n');
   } catch (error) {
     knowledge.gbtMapping = '';
   }
-  
+
   try {
-    const workflowContent = await fs.readFile(path.join(docsDir, "workflow", "audit_workflow.md"), "utf8");
+    const workflowContent = await fs.readFile(path.join(gbtAuditDir, "workflow", "audit_workflow.md"), "utf8");
     const lines = workflowContent.split('\n');
     const languageSections = [];
     let capture = false;
     let section = [];
-    
+
+    const targetLanguages = languages.map(l => l.toLowerCase());
+    const languageKeywords = {
+      'python': '### Python 审计要点',
+      'java': '### Java 审计要点',
+      'cpp': '### C/C++ 审计要点',
+      'c': '### C/C++ 审计要点',
+      'csharp': '### C# 审计要点',
+      'c#': '### C# 审计要点',
+      'javascript': '### JavaScript 审计要点',
+      'typescript': '### TypeScript 审计要点',
+      'go': '### Go 审计要点',
+      'ruby': '### Ruby 审计要点',
+      'rust': '### Rust 审计要点',
+      'php': '### PHP 审计要点'
+    };
+
     for (const line of lines) {
-      if (line.includes('### Python 审计要点') || line.includes('### Java 审计要点') || 
-          line.includes('### C/C++ 审计要点') || line.includes('### C# 审计要点')) {
+      const matchedLang = targetLanguages.find(lang => line.includes(languageKeywords[lang]));
+      if (matchedLang) {
         if (section.length > 0) {
           languageSections.push(section.join('\n'));
         }
@@ -207,12 +249,89 @@ async function loadAuditKnowledge() {
     if (section.length > 0) {
       languageSections.push(section.join('\n'));
     }
-    
+
     knowledge.languageAudit = languageSections.join('\n\n');
   } catch (error) {
     knowledge.languageAudit = '';
   }
-  
+
+  const gbtReferences = [];
+  const uniqueGbtFiles = new Set();
+
+  const baseStandard = 'GBT_39412-2020.md';
+  if (!uniqueGbtFiles.has(baseStandard)) {
+    uniqueGbtFiles.add(baseStandard);
+    try {
+      const content = await fs.readFile(path.join(gbtAuditDir, "reference", baseStandard), "utf8");
+      gbtReferences.push(`\n\n=== ${baseStandard.replace('.md', '')} (通用基线) ===\n\n${content}`);
+    } catch (error) {
+    }
+  }
+
+  for (const lang of languages) {
+    const gbtFile = LANGUAGE_GBT_MAP[lang.toLowerCase()];
+    if (gbtFile && gbtFile !== baseStandard && !uniqueGbtFiles.has(gbtFile)) {
+      uniqueGbtFiles.add(gbtFile);
+      try {
+        const content = await fs.readFile(path.join(gbtAuditDir, "reference", gbtFile), "utf8");
+        gbtReferences.push(`\n\n=== ${gbtFile.replace('.md', '')} (${lang}) ===\n\n${content}`);
+      } catch (error) {
+      }
+    }
+  }
+  knowledge.gbtReferences = gbtReferences.join('\n');
+
+  const vulnReferences = [];
+  const uniqueVulnFiles = new Set();
+  for (const vulnType of vulnerabilityTypes) {
+    const vulnFile = VULNERABILITY_FILES[vulnType.toLowerCase()];
+    if (vulnFile && !uniqueVulnFiles.has(vulnFile)) {
+      uniqueVulnFiles.add(vulnFile);
+      try {
+        const content = await fs.readFile(path.join(gbtAuditDir, "vulnerabilities", vulnFile), "utf8");
+        vulnReferences.push(`\n\n=== ${vulnFile.replace('.md', '')} ===\n\n${content}`);
+      } catch (error) {
+      }
+    }
+  }
+  knowledge.vulnerabilityReferences = vulnReferences.join('\n');
+
+  try {
+    const qualityContent = await fs.readFile(path.join(gbtAuditDir, "workflow", "quality_standards.md"), "utf8");
+    const lines = qualityContent.split('\n');
+    const prohibitedSection = [];
+    const remediationExamples = [];
+    let captureProhibited = false;
+    let captureExamples = false;
+
+    for (const line of lines) {
+      if (line.includes('### ❌ 禁止以下敷衍内容')) {
+        captureProhibited = true;
+        prohibitedSection.push(line);
+      } else if (captureProhibited && line.startsWith('### ')) {
+        captureProhibited = false;
+      } else if (captureProhibited) {
+        prohibitedSection.push(line);
+      }
+
+      if (line.includes('| 漏洞类型') && line.includes('合格修复方案')) {
+        captureExamples = true;
+        remediationExamples.push(line);
+      } else if (captureExamples && line.trim() === '|') {
+        captureExamples = false;
+      } else if (captureExamples) {
+        remediationExamples.push(line);
+      }
+    }
+
+    knowledge.qualityStandards = {
+      prohibited: prohibitedSection.join('\n'),
+      examples: remediationExamples.join('\n')
+    };
+  } catch (error) {
+    knowledge.qualityStandards = { prohibited: '', examples: '' };
+  }
+
   return knowledge;
 }
 
@@ -250,7 +369,9 @@ export class DefensiveLlmReviewer {
     let reviewedBatches = 0;
     let completedBatches = 0;
 
-    const auditKnowledge = await loadAuditKnowledge();
+    const languages = [...new Set(batches.flatMap(b => b.map(f => f.language)).filter(Boolean))];
+    const vulnerabilityTypes = [...new Set(heuristicFindings.map(f => f.vulnType).filter(Boolean))];
+    const auditKnowledge = await loadAuditKnowledge({ languages, vulnerabilityTypes });
     const validBatches = batches.slice(0, MAX_BATCHES);
 
     onProgress?.({
@@ -387,7 +508,8 @@ export class DefensiveLlmReviewer {
     let auditedBatches = 0;
     let completedBatches = 0;
 
-    const auditKnowledge = await loadAuditKnowledge();
+    const languages = [...new Set(batches.flatMap(b => b.map(f => f.language)).filter(Boolean))];
+    const auditKnowledge = await loadAuditKnowledge({ languages, vulnerabilityTypes: [] });
     const validBatches = batches.slice(0, MAX_BATCHES);
 
     onProgress?.({
@@ -691,19 +813,7 @@ function buildSystemPrompt(selectedSkills, auditKnowledge = {}) {
       "🔴 三条核心原则（必须遵守）：",
       "1. 独立性：LLM 审计必须完全独立，不查看快速扫描结果",
       "2. 全面性：必须覆盖所有源代码文件，不得遗漏",
-      "3. 准确性：行号必须用代码行号验证，禁止凭记忆填写",
-      "",
-      "🎯 LLM 审计重点（需要上下文分析的漏洞）：",
-      "- 业务逻辑：条件判断缺陷、状态绕过、并发安全问题",
-      "- 认证授权：身份鉴别绕过、权限检查缺失、会话管理问题",
-      "- 输入验证：关键数据外部可控、数据真实性验证不足",
-      "",
-      VULNERABILITY_PRIORITIES,
-      "",
-      "⚠️ 修复方案强制要求：",
-      "- 必须包含具体代码示例或 API 名称",
-      "- 禁止模糊表述（如'加强验证'、'使用安全方法'）",
-      "- 字数≥30，说明修复原理和实现方式"
+      "3. 准确性：行号必须用代码行号验证，禁止凭记忆填写"
     );
     
     if (auditKnowledge.gbtMapping) {
@@ -712,11 +822,7 @@ function buildSystemPrompt(selectedSkills, auditKnowledge = {}) {
         "【国标映射表】（必须严格遵守）：",
         "---",
         auditKnowledge.gbtMapping,
-        "---",
-        "",
-        "映射规则：",
-        "- Java/C/C++/C# 必须使用双映射：格式为 `{专用标准}；GB/T39412-{规则}`",
-        "- Python/Go/JS/PHP/Rust 等无专用标准的语言使用单映射：格式为 `GB/T39412-{规则}`"
+        "---"
       );
     }
     
@@ -726,6 +832,46 @@ function buildSystemPrompt(selectedSkills, auditKnowledge = {}) {
         "【语言特定审计要点】（必须遵循）：",
         "---",
         auditKnowledge.languageAudit,
+        "---"
+      );
+    }
+
+    if (auditKnowledge.gbtReferences) {
+      prompt.push(
+        "",
+        "【国标规则详解】（参考使用）：",
+        "---",
+        auditKnowledge.gbtReferences,
+        "---"
+      );
+    }
+
+    if (auditKnowledge.vulnerabilityReferences) {
+      prompt.push(
+        "",
+        "【漏洞类型详解】（参考使用）：",
+        "---",
+        auditKnowledge.vulnerabilityReferences,
+        "---"
+      );
+    }
+
+    if (auditKnowledge.qualityStandards?.prohibited) {
+      prompt.push(
+        "",
+        "【修复方案禁止内容】（出现则验证失败）：",
+        "---",
+        auditKnowledge.qualityStandards.prohibited,
+        "---"
+      );
+    }
+
+    if (auditKnowledge.qualityStandards?.examples) {
+      prompt.push(
+        "",
+        "【修复方案示例】（合格/不合格对比）：",
+        "---",
+        auditKnowledge.qualityStandards.examples,
         "---"
       );
     }

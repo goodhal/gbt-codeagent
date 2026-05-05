@@ -1,15 +1,36 @@
 import { ALL_VULNERABILITY_DOCS, KnowledgeCategory, Severity } from '../knowledge/index.js';
+import { getGlobalVectorStore, createSemanticSearchEngine } from './vectorStore.js';
 
 class SimpleRetriever {
   constructor(documents) {
     this.documents = documents;
+    this._index = this._buildIndex();
+  }
+
+  _buildIndex() {
+    const index = {};
+    for (const doc of this.documents) {
+      for (const tag of doc.tags) {
+        const tagLower = tag.toLowerCase();
+        if (!index[tagLower]) {
+          index[tagLower] = [];
+        }
+        if (Array.isArray(index[tagLower])) {
+          index[tagLower].push(doc);
+        }
+      }
+    }
+    return index;
   }
 
   search(query, topK = 5) {
     const lowerQuery = query.toLowerCase();
     const scores = [];
+    const seen = new Set();
 
     for (const doc of this.documents) {
+      if (seen.has(doc.id)) continue;
+
       let score = 0;
 
       if (doc.title.toLowerCase().includes(lowerQuery)) {
@@ -20,7 +41,7 @@ class SimpleRetriever {
         score += 5;
       }
 
-      if (doc.cweIds.some(cwe => cwe.toLowerCase().includes(lowerQuery))) {
+      if (doc.cweIds && doc.cweIds.some(cwe => cwe.toLowerCase().includes(lowerQuery))) {
         score += 8;
       }
 
@@ -34,6 +55,7 @@ class SimpleRetriever {
 
       if (score > 0) {
         scores.push({ doc, score });
+        seen.add(doc.id);
       }
     }
 
@@ -52,24 +74,92 @@ class SimpleRetriever {
   getById(id) {
     return this.documents.find(doc => doc.id === id);
   }
+
+  getAllDocuments() {
+    return this.documents;
+  }
 }
 
 class RAGService {
   constructor() {
     this.retriever = new SimpleRetriever(ALL_VULNERABILITY_DOCS);
-    this._initialized = true;
+    this._vectorStore = null;
+    this._searchEngine = null;
+    this._vectorIndexed = false;
+    this._initialized = false;
   }
 
-  async initialize() {
+  async initialize(options = {}) {
+    if (this._initialized) {
+      return this;
+    }
+
+    try {
+      this._vectorStore = await getGlobalVectorStore({
+        persistPath: options.vectorPersistPath || './data/rag_vectors.json'
+      });
+
+      if (options.embedder) {
+        this._searchEngine = createSemanticSearchEngine(this._vectorStore, options.embedder);
+      }
+
+      if (!this._vectorIndexed && this._searchEngine) {
+        await this._indexKnowledgeBase();
+      }
+    } catch (error) {
+      console.warn('[RAGService] Vector store initialization failed:', error);
+    }
+
     this._initialized = true;
     console.log(`[RAG服务] 已初始化，知识文档数量: ${ALL_VULNERABILITY_DOCS.length}`);
     return this;
   }
 
-  async query(query, topK = 5) {
+  async _indexKnowledgeBase() {
+    try {
+      const documents = this.retriever.getAllDocuments();
+      const items = documents.map(doc => ({
+        id: doc.id,
+        text: `${doc.title}\n${doc.content}`,
+        metadata: {
+          title: doc.title,
+          category: doc.category,
+          severity: doc.severity,
+          cweIds: doc.cweIds,
+          tags: doc.tags
+        }
+      }));
+
+      await this._searchEngine.indexBatch(items);
+      await this._vectorStore.persist();
+      this._vectorIndexed = true;
+      console.log('[RAGService] Knowledge base indexed to vector store');
+    } catch (error) {
+      console.error('[RAGService] Failed to index knowledge base:', error);
+    }
+  }
+
+  async query(query, topK = 5, options = {}) {
     if (!this._initialized) {
       await this.initialize();
     }
+
+    const { useSemantic = true } = options;
+
+    if (useSemantic && this._searchEngine) {
+      try {
+        const results = await this._searchEngine.search(query, topK);
+        if (results.length > 0) {
+          return results.map(r => {
+            const doc = this.retriever.getById(r.id);
+            return doc || { id: r.id, ...r.metadata };
+          });
+        }
+      } catch (error) {
+        console.warn('[RAGService] Semantic search failed, falling back to keyword:', error);
+      }
+    }
+
     return this.retriever.search(query, topK);
   }
 
@@ -95,14 +185,14 @@ class RAGService {
   }
 
   async querySecurityKnowledge(query, options = {}) {
-    const { language, severity, topK = 3 } = options;
+    const { language, severity, topK = 3, useSemantic = true } = options;
 
-    let results = await this.query(query, topK * 2);
+    let results = await this.query(query, topK * 2, { useSemantic });
 
     if (language) {
       const langLower = language.toLowerCase();
       results = results.filter(doc =>
-        doc.tags.some(tag => tag.toLowerCase().includes(langLower))
+        doc.tags && doc.tags.some(tag => tag.toLowerCase().includes(langLower))
       );
     }
 
@@ -115,6 +205,10 @@ class RAGService {
 
   async buildAuditContext(options = {}) {
     const { language, fileCount = 4 } = options;
+
+    if (!this._initialized) {
+      await this.initialize();
+    }
 
     const contextParts = [];
 
@@ -141,6 +235,14 @@ class RAGService {
     }
 
     return contextParts.join('\n');
+  }
+
+  getVectorStore() {
+    return this._vectorStore;
+  }
+
+  getSearchEngine() {
+    return this._searchEngine;
   }
 }
 

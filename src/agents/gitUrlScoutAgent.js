@@ -86,7 +86,7 @@ export class GitUrlScoutAgent {
       throw new Error(`Git 克隆失败: ${error.message}`);
     }
 
-    return await this.buildProjectInfo(gitUrl, repoName, localPath);
+    return await this.buildProjectInfo(gitUrl, uniqueRepoName, localPath);
   }
 
   /**

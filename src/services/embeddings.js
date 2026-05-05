@@ -1,3 +1,5 @@
+import { getGlobalVectorStore, createSemanticSearchEngine } from './vectorStore.js';
+
 class EmbeddingResult {
   constructor({ embedding, tokensUsed, model }) {
     this.embedding = embedding;
@@ -86,11 +88,11 @@ class LocalEmbedding extends BaseEmbeddingProvider {
   constructor(options = {}) {
     super();
     this.modelName = options.modelName || "sentence-transformers/all-MiniLM-L6-v2";
-    this.dimension = options.dimension || 384;
+    this._dimension = options.dimension || 384;
   }
 
   get dimension() {
-    return this.dimension;
+    return this._dimension;
   }
 
   async embedText(text) {
@@ -155,139 +157,61 @@ class EmbeddingProviderFactory {
   }
 }
 
-class VectorStore {
-  constructor(dimension = 1536) {
-    this.dimension = dimension;
-    this.vectors = new Map();
-    this.metadata = new Map();
-  }
-
-  add(id, vector, metadata = {}) {
-    if (vector.length !== this.dimension) {
-      throw new Error(`Vector dimension mismatch: expected ${this.dimension}, got ${vector.length}`);
-    }
-
-    this.vectors.set(id, vector);
-    this.metadata.set(id, {
-      ...metadata,
-      id,
-      addedAt: new Date().toISOString()
-    });
-  }
-
-  get(id) {
-    return {
-      vector: this.vectors.get(id),
-      metadata: this.metadata.get(id)
-    };
-  }
-
-  remove(id) {
-    this.vectors.delete(id);
-    this.metadata.delete(id);
-  }
-
-  search(queryVector, k = 5) {
-    if (queryVector.length !== this.dimension) {
-      throw new Error(`Query vector dimension mismatch`);
-    }
-
-    const scores = [];
-
-    for (const [id, vector] of this.vectors) {
-      const similarity = this._cosineSimilarity(queryVector, vector);
-      scores.push({
-        id,
-        score: similarity,
-        metadata: this.metadata.get(id)
-      });
-    }
-
-    scores.sort((a, b) => b.score - a.score);
-    return scores.slice(0, k);
-  }
-
-  _cosineSimilarity(a, b) {
-    let dotProduct = 0;
-    let normA = 0;
-    let normB = 0;
-
-    for (let i = 0; i < a.length; i++) {
-      dotProduct += a[i] * b[i];
-      normA += a[i] * a[i];
-      normB += b[i] * b[i];
-    }
-
-    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-  }
-
-  size() {
-    return this.vectors.size;
-  }
-
-  clear() {
-    this.vectors.clear();
-    this.metadata.clear();
-  }
-
-  toJSON() {
-    return {
-      dimension: this.dimension,
-      size: this.size(),
-      vectors: Array.from(this.vectors.entries()),
-      metadata: Array.from(this.metadata.entries())
-    };
-  }
-
-  static fromJSON(json) {
-    const store = new VectorStore(json.dimension);
-    for (const [id, vector] of json.vectors) {
-      store.vectors.set(id, vector);
-    }
-    for (const [id, metadata] of json.metadata) {
-      store.metadata.set(id, metadata);
-    }
-    return store;
-  }
-}
-
 class EmbeddingsService {
   constructor(options = {}) {
     this.providerType = options.providerType || "openai";
     this.provider = EmbeddingProviderFactory.create(this.providerType, options);
-    this.vectorStore = new VectorStore(this.provider.dimension);
+    this._vectorStore = null;
+    this._searchEngine = null;
+    this._initialized = false;
   }
 
-  async embedText(text, id = null, metadata = {}) {
-    const result = await this.provider.embedText(text);
-
-    if (id) {
-      this.vectorStore.add(id, result.embedding, {
-        ...metadata,
-        text: text.slice(0, 500)
-      });
+  async initialize(options = {}) {
+    if (this._initialized) {
+      return this;
     }
 
-    return result;
+    this._vectorStore = await getGlobalVectorStore({
+      dimension: this.provider.dimension,
+      persistPath: options.persistPath || './data/embeddings.json',
+      ...options
+    });
+
+    this._searchEngine = createSemanticSearchEngine(this._vectorStore, this);
+
+    this._initialized = true;
+    return this;
   }
 
-  async embedTexts(texts, ids = null, metadatas = null) {
-    const results = await this.provider.embedTexts(texts);
+  async embedText(text) {
+    const results = await this.embedTexts([text]);
+    return results[0];
+  }
 
-    if (ids) {
-      for (let i = 0; i < results.length; i++) {
-        this.vectorStore.add(ids[i], results[i].embedding, {
-          ...(metadatas?.[i] || {}),
-          text: texts[i].slice(0, 500)
-        });
-      }
-    }
+  async embedTexts(texts) {
+    if (!texts || texts.length === 0) return [];
 
-    return results;
+    const maxLength = 8191;
+    const truncatedTexts = texts.map(t => t.slice(0, maxLength));
+
+    const results = await this.provider.embedTexts(truncatedTexts);
+    return results.map((result, index) => ({
+      ...result,
+      originalText: texts[index]
+    }));
   }
 
   async addDocument(id, text, metadata = {}) {
-    const result = await this.embedText(text, id, metadata);
+    if (!this._initialized) {
+      await this.initialize();
+    }
+
+    const result = await this.embedText(text);
+    await this._vectorStore.add(id, result.embedding, {
+      ...metadata,
+      text: text.slice(0, 500)
+    });
+
     return {
       id,
       embedding: result.embedding,
@@ -295,9 +219,35 @@ class EmbeddingsService {
     };
   }
 
+  async addDocuments(documents) {
+    if (!this._initialized) {
+      await this.initialize();
+    }
+
+    const texts = documents.map(d => d.text);
+    const results = await this.embedTexts(texts);
+
+    for (let i = 0; i < results.length; i++) {
+      const doc = documents[i];
+      await this._vectorStore.add(doc.id, results[i].embedding, {
+        ...(doc.metadata || {}),
+        text: doc.text.slice(0, 500)
+      });
+    }
+
+    return results;
+  }
+
   async search(query, k = 5) {
-    const queryEmbedding = await this.provider.embedText(query);
-    return this.vectorStore.search(queryEmbedding.embedding, k);
+    if (!this._initialized) {
+      await this.initialize();
+    }
+
+    if (!this._searchEngine) {
+      throw new Error('Search engine not initialized');
+    }
+
+    return this._searchEngine.search(query, k);
   }
 
   async searchWithScore(query, k = 5, minScore = 0.7) {
@@ -305,16 +255,30 @@ class EmbeddingsService {
     return results.filter(r => r.score >= minScore).slice(0, k);
   }
 
+  async persist() {
+    if (!this._vectorStore) {
+      return false;
+    }
+    return this._vectorStore.persist();
+  }
+
   getStore() {
-    return this.vectorStore;
+    return this._vectorStore;
   }
 
-  saveStore() {
-    return this.vectorStore.toJSON();
+  getSearchEngine() {
+    return this._searchEngine;
   }
 
-  loadStore(data) {
-    this.vectorStore = VectorStore.fromJSON(data);
+  get dimension() {
+    return this.provider.dimension;
+  }
+
+  get stats() {
+    if (!this._vectorStore) {
+      return { size: 0, dimension: this.provider.dimension };
+    }
+    return this._vectorStore.getStats();
   }
 }
 
@@ -326,7 +290,6 @@ export {
   OpenAIEmbedding,
   LocalEmbedding,
   EmbeddingProviderFactory,
-  VectorStore,
   EmbeddingsService,
   globalEmbeddingsService
 };

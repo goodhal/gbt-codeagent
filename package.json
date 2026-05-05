@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "jsonrepair": "^3.14.0",
-    "tiktoken": "^1.0.22"
+    "tiktoken": "^1.0.22",
+    "yaml": "^2.3.4"
   }
 }

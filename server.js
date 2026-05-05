@@ -257,16 +257,27 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 202, task);
     }
 
+    if (req.method === "DELETE" && /\/api\/tasks\/[^/]+\/report$/.test(url.pathname)) {
+      const [, , , taskId] = url.pathname.split("/");
+      const reportFile = path.join(reportsDir, `audit-report-${taskId}.html`);
+      try {
+        await fs.unlink(reportFile);
+      } catch (error) {
+        // 文件不存在时忽略
+      }
+      return sendJson(res, 200, { status: "ok", message: "Report deleted" });
+    }
+
     if (req.method === "DELETE" && /\/api\/tasks\/[^/]+$/.test(url.pathname)) {
       const [, , , taskId] = url.pathname.split("/");
       const task = tasks.getTask(taskId);
       if (!task) {
         return sendJson(res, 404, { error: "Task not found" });
       }
-      
+
       // 从内存中移除任务
       tasks.deleteTask(taskId);
-      
+
       // 清理任务文件
       const tasksDir = path.join(__dirname, "workspace", "tasks");
       try {
@@ -275,7 +286,15 @@ const server = http.createServer(async (req, res) => {
       } catch (error) {
         // 文件不存在时忽略
       }
-      
+
+      // 清理关联的报告文件
+      const reportFile = path.join(reportsDir, `audit-report-${taskId}.html`);
+      try {
+        await fs.unlink(reportFile);
+      } catch (error) {
+        // 文件不存在时忽略
+      }
+
       return sendJson(res, 200, { status: "ok", message: "Task deleted" });
     }
 

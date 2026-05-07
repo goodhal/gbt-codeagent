@@ -80,6 +80,11 @@ taintTracking:
           - "urllib\\."
           - "http\\.client"
           - "httpx\\."
+          - "\\.json\\(\\)"
+          - "\\.text\\(\\)"
+          - "\\.content\\b"
+          - "\\.read\\(\\)"
+          - "\\.body"
         category: "network_input"
       - name: "Database Input"
         patterns:
@@ -109,6 +114,10 @@ taintTracking:
           - "axios\\("
           - "req\\."
           - "res\\."
+          - "\\.json\\(\\)"
+          - "\\.text\\(\\)"
+          - "\\.data"
+          - "\\.body"
         category: "user_input"
 
     java:
@@ -353,11 +362,14 @@ taintTracking:
         name: "XML Processing"
         patterns:
           - "DOMParser"
+          - "new DOMParser"
+          - "parseFromString"
           - "xmldom"
           - "xml2js"
           - "xml-js"
           - "fast-xml-parser"
           - "xmlbuilder"
+          - "\\.parse\\("
         category: "xxe"
         severity: "HIGH"
         profiles:

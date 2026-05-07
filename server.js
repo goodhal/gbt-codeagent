@@ -18,6 +18,7 @@ import { createSettingsStore } from "./src/services/settingsStore.js";
 import { createTaskStore } from "./src/store/taskStore.js";
 import { recordRequest, getPerformanceMetrics, getCache, setCache, withCache, measurePerformance } from "./src/core/performance.js";
 
+import { warmupService } from "./src/services/warmupService.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const publicDir = path.join(__dirname, "public");
@@ -1208,6 +1209,7 @@ async function parseMultipartForm(req) {
 
   return { fields, files };
 }
+await warmupService.warmup();
 
 const port = process.env.PORT || 3001;
 server.listen(port, '0.0.0.0', () => console.log(`Safe audit agents listening on http://0.0.0.0:${port}`));

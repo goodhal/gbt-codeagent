@@ -1,3 +1,4 @@
+import pLimit from "p-limit";
 import { promises as fs } from "node:fs";
 import path from "path";
 import { inferFenceLanguage, collectFiles } from "../utils/fileUtils.js";
@@ -25,6 +26,7 @@ const llmCircuitBreaker = new CircuitBreaker("llm-service", {
 });
 
 const incrementalSummary = new IncrementalSummary();
+const llmLimit = pLimit(3);
 const promptCompressor = new PromptCompressor();
 const promptCacheManager = new PromptCacheManager();
 

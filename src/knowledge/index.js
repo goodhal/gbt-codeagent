@@ -283,6 +283,135 @@ class KnowledgeIndex {
   get rulesEngine() {
     return this._rulesEngine;
   }
+
+  checkGuidelinesCompliance(vulnerabilities) {
+    const compliance = {
+      total: vulnerabilities.length,
+      byGuideline: {},
+      uncovered: [],
+      summary: {}
+    };
+
+    const guidelineTypes = ['cwe', 'owasp', 'gbt'];
+
+    for (const vuln of vulnerabilities) {
+      let foundGuideline = false;
+
+      for (const glType of guidelineTypes) {
+        const glKey = glType === 'cwe' ? vuln.cwe : glType === 'owasp' ? vuln.owasp : vuln.gbt;
+        if (glKey) {
+          const guidelines = Array.isArray(glKey) ? glKey : [glKey];
+          for (const gl of guidelines) {
+            const glKeyLower = gl.toLowerCase();
+            if (!compliance.byGuideline[glKeyLower]) {
+              compliance.byGuideline[glKeyLower] = {
+                type: glType,
+                count: 0,
+                vulnerabilities: []
+              };
+            }
+            compliance.byGuideline[glKeyLower].count++;
+            compliance.byGuideline[glKeyLower].vulnerabilities.push({
+              id: vuln.patternId || vuln.id,
+              title: vuln.title,
+              severity: vuln.severity
+            });
+            foundGuideline = true;
+          }
+        }
+      }
+
+      if (!foundGuideline) {
+        compliance.uncovered.push({
+          id: vuln.patternId || vuln.id,
+          title: vuln.title,
+          severity: vuln.severity
+        });
+      }
+    }
+
+    for (const [glKey, glData] of Object.entries(compliance.byGuideline)) {
+      compliance.summary[glKey] = {
+        type: glData.type,
+        count: glData.count,
+        coverage: ((glData.count / compliance.total) * 100).toFixed(2) + '%'
+      };
+    }
+
+    return compliance;
+  }
+
+  getGuidelineSummary() {
+    if (this._useYamlRules && this._rulesEngine) {
+      const summary = {};
+      for (const [ruleId, rule] of this._rulesEngine._labelIndex) {
+        for (const [glType, glValues] of Object.entries(rule.guidelines || {})) {
+          for (const glValue of glValues) {
+            const key = `${glType.toLowerCase()}:${glValue.toLowerCase()}`;
+            if (!summary[key]) {
+              summary[key] = {
+                type: glType,
+                value: glValue,
+                count: 0,
+                rules: []
+              };
+            }
+            summary[key].count++;
+            summary[key].rules.push(ruleId);
+          }
+        }
+      }
+      return summary;
+    }
+    return {};
+  }
+
+  getRulesByProfile(profile) {
+    if (this._useYamlRules && this._rulesEngine) {
+      return this._rulesEngine.getRulesByProfile(profile);
+    }
+    return [];
+  }
+
+  getComplianceReport(vulnerabilities, targetGuidelines = null) {
+    const compliance = this.checkGuidelinesCompliance(vulnerabilities);
+    const report = {
+      timestamp: new Date().toISOString(),
+      totalVulnerabilities: compliance.total,
+      guidelineCoverage: {},
+      recommendations: []
+    };
+
+    const targetSet = targetGuidelines
+      ? new Set(targetGuidelines.map(g => g.toLowerCase()))
+      : null;
+
+    for (const [glKey, glData] of Object.entries(compliance.summary)) {
+      if (!targetSet || targetSet.has(glKey)) {
+        report.guidelineCoverage[glKey] = {
+          type: glData.type,
+          vulnerabilitiesFound: glData.count,
+          coveragePercentage: glData.coverage
+        };
+      }
+    }
+
+    for (const vuln of compliance.uncovered) {
+      report.recommendations.push({
+        type: 'missing_guideline',
+        vulnerability: vuln,
+        message: `Vulnerability '${vuln.title}' is not mapped to any guideline. Consider adding appropriate guideline mappings.`
+      });
+    }
+
+    const coveragePercentages = Object.values(report.guidelineCoverage)
+      .map(g => parseFloat(g.coveragePercentage));
+    if (coveragePercentages.length > 0) {
+      report.averageCoverage = (coveragePercentages.reduce((a, b) => a + b, 0) / coveragePercentages.length).toFixed(2) + '%';
+    }
+
+    return report;
+  }
 }
 
 const globalKnowledgeIndex = new KnowledgeIndex();

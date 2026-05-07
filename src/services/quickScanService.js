@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { deduplicateAndSort } from "../utils/findingsUtils.js";
 
 const LANGUAGE_EXTENSIONS = {
   "java": [".java"],
@@ -971,17 +972,6 @@ export class QuickScanService {
   }
 
   deduplicateFindings(findings) {
-    const seen = new Set();
-    const deduped = [];
-
-    for (const finding of findings) {
-      const key = `${finding.vulnType}::${finding.location}::${finding.line}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        deduped.push(finding);
-      }
-    }
-
-    return deduped.sort((a, b) => b.cvssScore - a.cvssScore);
+    return deduplicateAndSort(findings);
   }
 }

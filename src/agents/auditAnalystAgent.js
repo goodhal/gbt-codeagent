@@ -8,6 +8,8 @@ import { getGlobalASTEnhancer } from "../services/astEnhancer.js";
 import { CodeAnalysisTool } from "../services/codeAnalysis.js";
 import { ASTBuilderService } from "../utils/astBuilder.js";
 import { QueryEngine } from "../utils/queryEngine.js";
+import { deduplicateFindings, deduplicateAndSort, severityScore } from "../utils/findingsUtils.js";
+import { collectFiles } from "../utils/fileUtils.js";
 import { globalCheckpointManager, AuditState, AgentStatus } from "../core/stateManager.js";
 
 const MAX_PARALLEL_PROJECTS = 2;
@@ -27,6 +29,7 @@ export class AuditAnalystAgent {
     auditState.agentId = `audit_${taskId}_${Date.now().toString(36)}`;
     auditState.task = `审计任务 ${taskId}`;
     auditState.taskContext = { taskId, projectCount: projects.length, selectedSkillIds };
+    auditState.start();
 
     const CHECKPOINT_INTERVAL = 3;
     let checkpointCounter = 0;
@@ -273,6 +276,11 @@ export class AuditAnalystAgent {
 
     for (let i = 0; i < projects.length; i += MAX_PARALLEL_PROJECTS) {
       const projectGroup = projects.slice(i, i + MAX_PARALLEL_PROJECTS);
+      const currentStep = Math.floor(i / MAX_PARALLEL_PROJECTS) + 1;
+      const totalSteps = Math.ceil(projects.length / MAX_PARALLEL_PROJECTS);
+
+      auditState.updateProgress(currentStep, totalSteps, `处理项目组 ${currentStep}/${totalSteps}`);
+      auditState.recordResourceUsage();
 
       // 处理项目组
       const groupResults = await Promise.all(
@@ -352,6 +360,9 @@ export class AuditAnalystAgent {
       projectsCount: validatedResults.length
     });
     await createCheckpoint('final');
+
+    const statusSummary = auditState.getStatusSummary?.();
+    console.log(`[审计分析] 任务完成 - 状态摘要: ${JSON.stringify(statusSummary)}`);
 
     return {
       reviewedAt: new Date().toISOString(),
@@ -954,17 +965,6 @@ function convertTaintRemediation(sinkName, vulnType) {
   return '对用户输入进行严格验证、过滤和转义处理后再使用';
 }
 
-function deduplicateFindings(findings) {
-  const seen = new Map();
-  for (const f of findings) {
-    const key = `${f.location}:${f.vulnType || f.title}`;
-    if (!seen.has(key)) {
-      seen.set(key, f);
-    }
-  }
-  return Array.from(seen.values());
-}
-
 function createFinding(finding) {
   return {
     source: "rule",
@@ -973,18 +973,8 @@ function createFinding(finding) {
 }
 
 function prioritizeFindings(findings) {
-  const deduped = [];
-  const seen = new Set();
-  for (const finding of findings) {
-    const key = `${finding.title}::${finding.location}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    deduped.push(finding);
-  }
-
-  return deduped
-    .filter((finding) => finding.confidence >= 0.6)
-    .sort((a, b) => severityScore(b.severity) - severityScore(a.severity) || b.confidence - a.confidence);
+  return deduplicateAndSort(findings)
+    .filter((finding) => finding.confidence >= 0.6);
 }
 
 function hasObjectAccessIndicator(content) {
@@ -995,24 +985,7 @@ function hasAuthGuardIndicator(content) {
   return /\b(can|authorize|authorization|permission|permissions|policy|guard|rbac|ownership|tenant)\b/i.test(content);
 }
 
-function severityScore(value) {
-  return value === "high" ? 3 : value === "medium" ? 2 : 1;
-}
 
-async function collectFiles(root) {
-  try {
-    const entries = await fs.readdir(root, { withFileTypes: true });
-    const output = [];
-    for (const entry of entries) {
-      const target = path.join(root, entry.name);
-      if (entry.isDirectory()) output.push(...(await collectFiles(target)));
-      else output.push(target);
-    }
-    return output;
-  } catch {
-    return [];
-  }
-}
 
 function matches(content, requiredA, requiredB) {
   return requiredA.test(content) && requiredB.test(content);

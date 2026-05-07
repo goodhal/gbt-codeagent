@@ -1,3 +1,4 @@
+import { promises as fs } from "node:fs";
 import path from "node:path";
 
 export const CODE_EXTENSIONS = new Set([
@@ -82,4 +83,27 @@ export function inferFenceLanguage(filePath) {
     ".h": "c",
     ".hpp": "cpp"
   }[path.extname(filePath).toLowerCase()] || "";
+}
+
+/**
+ * 递归收集目录下所有文件
+ * @param {string} root - 根目录路径
+ * @returns {Promise<string[]>} 文件路径数组
+ */
+export async function collectFiles(root) {
+  try {
+    const entries = await fs.readdir(root, { withFileTypes: true });
+    const output = [];
+    for (const entry of entries) {
+      const target = path.join(root, entry.name);
+      if (entry.isDirectory()) {
+        output.push(...(await collectFiles(target)));
+      } else {
+        output.push(target);
+      }
+    }
+    return output;
+  } catch {
+    return [];
+  }
 }

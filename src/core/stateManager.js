@@ -9,7 +9,8 @@ const AgentStatus = {
   COMPLETED: "completed",
   FAILED: "failed",
   STOPPED: "stopped",
-  STOPPING: "stopping"
+  STOPPING: "stopping",
+  TIMEOUT: "timeout"
 };
 
 class AuditState {
@@ -55,6 +56,31 @@ class AuditState {
 
     this.stopRequested = false;
     this.maxIterationsWarningSent = false;
+
+    this.heartbeatInterval = 30000;
+    this.lastHeartbeat = null;
+    this.heartbeatCount = 0;
+    this.healthStatus = "healthy";
+
+    this.progress = {
+      currentStep: 0,
+      totalSteps: 0,
+      stepName: "",
+      estimatedTimeRemaining: null
+    };
+
+    this.performance = {
+      iterationTimes: [],
+      avgIterationTime: 0,
+      maxIterationTime: 0,
+      totalProcessingTime: 0
+    };
+
+    this.resourceUsage = {
+      memoryUsage: [],
+      cpuUsage: [],
+      peakMemory: 0
+    };
   }
 
   _generateAgentId() {
@@ -65,15 +91,109 @@ class AuditState {
     this.status = AgentStatus.RUNNING;
     this.startedAt = new Date().toISOString();
     this._updateTimestamp();
+    this.recordHeartbeat();
   }
 
-  incrementIteration() {
+  incrementIteration(startTime = null) {
     this.iteration++;
+    
+    if (startTime) {
+      const iterationTime = Date.now() - startTime;
+      this.performance.iterationTimes.push(iterationTime);
+      this.performance.maxIterationTime = Math.max(this.performance.maxIterationTime, iterationTime);
+      this.performance.totalProcessingTime += iterationTime;
+      this.performance.avgIterationTime = 
+        this.performance.totalProcessingTime / this.performance.iterationTimes.length;
+    }
+    
     this._updateTimestamp();
 
     if (this.iteration >= this.maxIterations && !this.maxIterationsWarningSent) {
       this.maxIterationsWarningSent = true;
     }
+  }
+
+  recordHeartbeat() {
+    this.lastHeartbeat = new Date().toISOString();
+    this.heartbeatCount++;
+    this._updateTimestamp();
+  }
+
+  setHealthStatus(status, message = "") {
+    this.healthStatus = status;
+    if (message) {
+      this.addObservation(`Health status changed to ${status}: ${message}`, "health");
+    }
+    this._updateTimestamp();
+  }
+
+  updateProgress(currentStep, totalSteps, stepName = "") {
+    this.progress = {
+      currentStep,
+      totalSteps,
+      stepName,
+      estimatedTimeRemaining: this._calculateEstimatedTime(currentStep, totalSteps)
+    };
+    this._updateTimestamp();
+  }
+
+  _calculateEstimatedTime(currentStep, totalSteps) {
+    if (currentStep === 0 || this.performance.avgIterationTime === 0) {
+      return null;
+    }
+    const remainingSteps = totalSteps - currentStep;
+    return Math.round(remainingSteps * this.performance.avgIterationTime / 1000);
+  }
+
+  recordResourceUsage() {
+    if (typeof process !== 'undefined' && process.memoryUsage) {
+      const memUsage = process.memoryUsage();
+      const memoryMB = (memUsage.heapUsed / 1024 / 1024).toFixed(2);
+      this.resourceUsage.memoryUsage.push({
+        timestamp: new Date().toISOString(),
+        heapUsed: memUsage.heapUsed,
+        heapTotal: memUsage.heapTotal,
+        external: memUsage.external
+      });
+      this.resourceUsage.peakMemory = Math.max(
+        this.resourceUsage.peakMemory,
+        memUsage.heapUsed
+      );
+    }
+    this._updateTimestamp();
+  }
+
+  isHeartbeatExpired(timeoutSeconds = 120) {
+    if (!this.lastHeartbeat) return false;
+    const now = new Date();
+    const lastHeartbeat = new Date(this.lastHeartbeat);
+    const diffSeconds = (now - lastHeartbeat) / 1000;
+    return diffSeconds > timeoutSeconds;
+  }
+
+  getDuration() {
+    if (!this.startedAt) return 0;
+    const endTime = this.finishedAt ? new Date(this.finishedAt) : new Date();
+    return Math.round((endTime - new Date(this.startedAt)) / 1000);
+  }
+
+  getStatusSummary() {
+    return {
+      agentId: this.agentId,
+      status: this.status,
+      iteration: this.iteration,
+      maxIterations: this.maxIterations,
+      findingsCount: this.findings.length,
+      errorsCount: this.errors.length,
+      duration: this.getDuration(),
+      healthStatus: this.healthStatus,
+      lastHeartbeat: this.lastHeartbeat,
+      progress: this.progress,
+      performance: {
+        avgIterationTime: this.performance.avgIterationTime,
+        totalProcessingTime: this.performance.totalProcessingTime
+      }
+    };
   }
 
   setCompleted(finalResult = null) {
@@ -188,7 +308,14 @@ class AuditState {
       totalTokens: this.totalTokens,
       toolCalls: this.toolCalls,
       stopRequested: this.stopRequested,
-      maxIterationsWarningSent: this.maxIterationsWarningSent
+      maxIterationsWarningSent: this.maxIterationsWarningSent,
+      heartbeatInterval: this.heartbeatInterval,
+      lastHeartbeat: this.lastHeartbeat,
+      heartbeatCount: this.heartbeatCount,
+      healthStatus: this.healthStatus,
+      progress: this.progress,
+      performance: this.performance,
+      resourceUsage: this.resourceUsage
     };
   }
 

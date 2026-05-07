@@ -47,7 +47,7 @@ export { KnowledgeIndex, globalKnowledgeIndex, VulnerabilityPatterns, CWE_CATEGO
 export { AgentRegistry, registerAgent } from '../core/agentRegistry.js';
 export { CircuitBreaker } from '../core/circuitBreaker.js';
 export { TokenBucketRateLimiter, RateLimiterRegistry } from '../core/rateLimiter.js';
-export { withRetry } from '../core/retry.js';
+export { withRetry, withRetryWithFallback, createRetryDecorator } from '../core/retry.js';
 export { StatePersistence, globalStatePersistence } from '../core/stateManager.js';
 export { Tracer, getGlobalTracer } from '../core/telemetry.js';
 

@@ -100,7 +100,7 @@ class CodeAnalysisTool {
   }
 
   async analyze(code, filePath = "unknown", language = "python", options = {}) {
-    const { focus = null, context = null, useAI = true, useStatic = true } = options;
+    const { focus = null, context = null, useAI = true, useStatic = true, incrementalEnabled = true, cacheEnabled = true } = options;
 
     const results = {
       success: true,
@@ -111,20 +111,73 @@ class CodeAnalysisTool {
       vulnerabilities: [],
       recommendations: [],
       aiAnalysis: null,
-      staticAnalysis: null
+      staticAnalysis: null,
+      clusters: [],
+      filteredCount: 0,
+      analysisTime: 0,
+      breakdown: {
+        standard: 0,
+        owasp: 0,
+        gbt: 0
+      }
     };
+
+    const startTime = Date.now();
 
     if (useStatic && this._analyzer) {
       try {
-        const staticResult = await this._analyzer.analyze(code, {
+        const analyzeOptions = {
           language,
           filePath,
-          focus
-        });
-        results.staticAnalysis = staticResult;
-        results.vulnerabilities.push(...(staticResult.vulnerabilities || []));
+          focus,
+          contextWindow: 3,
+          minConfidence: 0.5,
+          similarityThreshold: 0.8
+        };
+
+        let contextResult;
+        if (incrementalEnabled && options.diffInfo) {
+          contextResult = await this._analyzer.analyzeWithIncremental(code, {
+            ...analyzeOptions,
+            diffInfo: options.diffInfo
+          });
+        } else {
+          contextResult = await this._analyzer.analyzeWithContext(code, analyzeOptions);
+        }
+
+        results.staticAnalysis = contextResult;
+        results.vulnerabilities.push(...(contextResult.findings || contextResult.vulnerabilities || []));
+        results.clusters = contextResult.clusters || [];
+        results.filteredCount = contextResult.filteredCount || 0;
+        results.breakdown.standard = (contextResult.findings || contextResult.vulnerabilities || []).length;
       } catch (error) {
         console.error('[CodeAnalysisTool] Static analysis failed:', error);
+      }
+    }
+
+    if (this._rulesEngine && options.enableOwasp !== false) {
+      try {
+        const owaspFindings = this._rulesEngine.detectOWASPTop10(code, language);
+        if (owaspFindings.length > 0) {
+          const filtered = this._rulesEngine.filterFalsePositives(owaspFindings);
+          results.vulnerabilities.push(...filtered);
+          results.breakdown.owasp = filtered.length;
+        }
+      } catch (error) {
+        console.error('[CodeAnalysisTool] OWASP detection failed:', error);
+      }
+    }
+
+    if (this._rulesEngine && options.enableGBT !== false) {
+      try {
+        const gbtFindings = this._rulesEngine.detectGBTStandards(code, language);
+        if (gbtFindings.length > 0) {
+          const filtered = this._rulesEngine.filterFalsePositives(gbtFindings);
+          results.vulnerabilities.push(...filtered);
+          results.breakdown.gbt = filtered.length;
+        }
+      } catch (error) {
+        console.error('[CodeAnalysisTool] GB/T detection failed:', error);
       }
     }
 
@@ -145,9 +198,16 @@ class CodeAnalysisTool {
       }
     }
 
+    if (results.vulnerabilities.length > 0 && this._rulesEngine) {
+      results.clusters = this._rulesEngine.clusterFindings(results.vulnerabilities, {
+        similarityThreshold: options.similarityThreshold || 0.8
+      });
+    }
+
     results.hasVulnerabilities = results.vulnerabilities.length > 0;
     results.summary = this._generateSummary(results);
     results.recommendations = this._generateRecommendations(results.vulnerabilities);
+    results.analysisTime = Date.now() - startTime;
 
     return results;
   }

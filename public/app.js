@@ -9,6 +9,7 @@ let selectedTaskId = null;
 let latestSettings = null;
 let latestMemory = null;
 let auditSkills = [];
+let availableProfiles = [];
 let fingerprintProjects = [];
 let selectedFingerprintProjectId = "";
 let refreshTimer = null;
@@ -120,8 +121,10 @@ function renderQuickStatus(settings, tasks = []) {
 async function loadAuditSkills() {
   try {
     auditSkills = await api("/api/audit-skills");
+    availableProfiles = await api("/api/profiles");
   } catch {
     auditSkills = [];
+    availableProfiles = [];
   }
 }
 
@@ -243,19 +246,61 @@ function renderSkillPicker(target) {
     return;
   }
 
-  target.innerHTML = auditSkills
-    .map(
+  const profileOptions = availableProfiles.map(p =>
+    `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)} - ${escapeHtml(p.description)}</option>`
+  ).join("");
+
+  const defaultProfile = availableProfiles[0]?.id || "default";
+
+  target.innerHTML = `
+    <div class="profile-selector" style="margin-bottom: 16px; padding: 12px; background: #f0f5ff; border-radius: 8px;">
+      <label style="display: block; margin-bottom: 8px; font-weight: 600;">
+        审计配置 (Profile)
+        <select id="profile-selector" style="margin-left: 8px; padding: 4px 8px; border-radius: 4px; border: 1px solid #bfdbfe;">
+          ${profileOptions}
+        </select>
+      </label>
+      <p class="muted" style="font-size: 12px; margin: 0;">选择不同的配置会影响审计的严格程度和覆盖范围。</p>
+    </div>
+    <div id="skill-list">
+    ${auditSkills.map(
       (skill) => `
-        <label class="skill-card">
+        <label class="skill-card" data-profiles="${(skill.profiles || []).join(",")}">
           <input class="skill-checkbox" type="checkbox" value="${escapeHtml(skill.id)}" checked />
           <div>
             <strong>${escapeHtml(skill.name)}</strong>
             <p>${escapeHtml(skill.description)}</p>
+            ${skill.profiles ? `<p style="font-size: 11px; color: #667eea;">配置: ${skill.profiles.join(", ")} | 优先级: ${skill.priority || "normal"}</p>` : ""}
           </div>
         </label>
       `
-    )
-    .join("");
+    ).join("")}
+    </div>
+  `;
+
+  const profileSelector = document.getElementById("profile-selector");
+  if (profileSelector) {
+    profileSelector.addEventListener("change", (e) => {
+      const selectedProfile = e.target.value;
+      filterSkillsByProfile(selectedProfile);
+    });
+  }
+}
+
+function filterSkillsByProfile(profile) {
+  const skillCards = document.querySelectorAll("#skill-list .skill-card");
+  skillCards.forEach((card) => {
+    const cardProfiles = (card.dataset.profiles || "").split(",").filter(p => p);
+    if (cardProfiles.length === 0 || cardProfiles.includes(profile)) {
+      card.style.display = "";
+      const checkbox = card.querySelector(".skill-checkbox");
+      if (checkbox) checkbox.checked = true;
+    } else {
+      card.style.display = "none";
+      const checkbox = card.querySelector(".skill-checkbox");
+      if (checkbox) checkbox.checked = false;
+    }
+  });
 }
 
 function getSelectedSkillIds() {
@@ -507,6 +552,7 @@ function renderTaskDetail(task) {
     html += '<div class="detail-block">';
     html += '<h3>审计报告</h3>';
     html += '<p><a class="download-link" href="' + escapeHtml(task.report.html.downloadPath) + '" target="_blank" rel="noreferrer">📄 下载 HTML 报告</a></p>';
+    html += '<p><button class="download-link" id="export-sarif-btn" data-task-id="' + escapeHtml(task.id) + '">📋 导出 SARIF 格式（GitHub Code Scanning）</button></p>';
     html += '</div>';
   }
 
@@ -565,6 +611,55 @@ function renderTaskDetail(task) {
           showToast("创建重新审计任务失败: " + (error.message || "未知错误"), "error");
         }
       }
+    });
+  });
+
+  target.querySelectorAll("#export-sarif-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const taskId = btn.dataset.taskId;
+      if (!taskId) return;
+      btn.textContent = "正在导出...";
+      btn.disabled = true;
+      try {
+        const result = await api("/api/export-sarif?taskId=" + encodeURIComponent(taskId));
+        if (result.success) {
+          showToast("SARIF 报告已生成: " + result.findingsCount + " 条发现", "success");
+          window.open(result.downloadPath, "_blank");
+        } else {
+          showToast("导出失败: " + (result.error || "未知错误"), "error");
+        }
+      } catch (error) {
+        showToast("导出失败: " + (error.message || "未知错误"), "error");
+      } finally {
+        btn.textContent = "📋 导出 SARIF 格式（GitHub Code Scanning）";
+        btn.disabled = false;
+      }
+    });
+  });
+
+  target.querySelectorAll("[data-filter-all], [data-filter-owasp], [data-filter-gbt]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const projectName = btn.dataset.filterAll || btn.dataset.filterOwasp || btn.dataset.filterGbt;
+      const filterType = btn.dataset.filterAll ? 'all' : btn.dataset.filterOwasp ? 'owasp' : 'gbt';
+      
+      target.querySelectorAll(`[data-filter-all="${projectName}"], [data-filter-owasp="${projectName}"], [data-filter-gbt="${projectName}"]`).forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+
+      const findingLists = target.querySelectorAll('.finding-list');
+      findingLists.forEach(list => {
+        list.querySelectorAll('li').forEach(item => {
+          const standard = item.querySelector('.badge-gbt, .badge-owasp');
+          if (filterType === 'all') {
+            item.style.display = '';
+          } else if (filterType === 'owasp' && standard?.classList.contains('badge-owasp')) {
+            item.style.display = '';
+          } else if (filterType === 'gbt' && standard?.classList.contains('badge-gbt')) {
+            item.style.display = '';
+          } else if (filterType !== 'all') {
+            item.style.display = 'none';
+          }
+        });
+      });
     });
   });
 }
@@ -683,12 +778,8 @@ function renderProjectReview(project) {
     typeStats[type] = (typeStats[type] || 0) + 1;
   });
 
-  const gbStandardStats = {
-    'GB/T 39412-2020': 70,
-    'GB/T 34944-2017': 28,
-    'GB/T 34946-2017': 27,
-    'GB/T 34943-2017': 16
-  };
+  const owaspCount = allFindings.filter(f => f.standard?.includes('OWASP')).length;
+  const gbtCount = allFindings.filter(f => f.standard?.includes('GB/T')).length;
 
   const total = severityStats.critical + severityStats.high + severityStats.medium + severityStats.low;
   const projectNameClean = project.projectName.replace(/[^a-zA-Z0-9]/g, '-');
@@ -749,7 +840,15 @@ function renderProjectReview(project) {
         </div>
         <div class="summary-badge">
           <span class="total-count">共 ${total} 个问题</span>
+          ${owaspCount > 0 ? `<span class="badge badge-owasp" style="margin-left: 8px;">OWASP ${owaspCount}</span>` : ''}
+          ${gbtCount > 0 ? `<span class="badge badge-gbt" style="margin-left: 8px;">国标 ${gbtCount}</span>` : ''}
         </div>
+      </div>
+
+      <div class="filter-tabs" style="margin-bottom: 16px;">
+        <button class="filter-tab active" data-filter-all="${projectNameClean}" type="button">全部</button>
+        <button class="filter-tab" data-filter-owasp="${projectNameClean}" type="button">OWASP</button>
+        <button class="filter-tab" data-filter-gbt="${projectNameClean}" type="button">国标</button>
       </div>
 
       <div class="stats-grid">
@@ -769,31 +868,6 @@ function renderProjectReview(project) {
           <div class="chart-container bar-chart" id="type-bar-${projectNameClean}"></div>
         </section>
       </div>
-
-      <section class="standard-section">
-        <h5>按国标标准统计</h5>
-        <div class="standard-table">
-          <table>
-            <thead>
-              <tr><th>标准编号</th><th>问题数</th><th>占比</th><th>进度</th></tr>
-            </thead>
-            <tbody>
-              ${Object.entries(gbStandardStats).map(([standard, count], idx) => {
-                const percentage = ((count / 141) * 100).toFixed(1);
-                const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
-                return `
-                  <tr>
-                    <td>${escapeHtml(standard)}</td>
-                    <td>${count}</td>
-                    <td>${percentage}%</td>
-                    <td><div class="progress-mini"><div class="progress-fill-mini" style="width:${(count / 70 * 100)}%;background:${colors[idx]}"></div></div></td>
-                  </tr>
-                `;
-              }).join('')}
-            </tbody>
-          </table>
-        </div>
-      </section>
 
       <div class="review-columns">
         <section class="review-pane">
@@ -825,16 +899,46 @@ function renderFindingList(findings, emptyMessage) {
     return '<div class="empty-card">' + escapeHtml(emptyMessage) + '</div>';
   }
 
+  const getConfidenceClass = (confidence) => {
+    if (!confidence) return 'medium';
+    if (confidence >= 0.7) return 'high';
+    if (confidence >= 0.4) return 'medium';
+    return 'low';
+  };
+
+  const getStandardBadge = (standard) => {
+    if (!standard) return '';
+    if (standard.includes('GB/T')) return '<span class="badge badge-gbt">国标</span>';
+    if (standard.includes('OWASP')) return '<span class="badge badge-owasp">OWASP</span>';
+    return '';
+  };
+
   return '<ul class="finding-list">' +
     findings.map(f => {
       const severityLabels = { critical: "严重", CRITICAL: "严重", high: "高危", HIGH: "高危", medium: "中危", MEDIUM: "中危", low: "低危", LOW: "低危" };
       const sev = severityLabels[f.severity] || f.severity || "info";
+      const confidence = f.confidence !== undefined ? f.confidence : 0.75;
+      const confidencePercent = Math.round(confidence * 100);
+      const confidenceClass = getConfidenceClass(confidence);
+      const clusterInfo = f.clusterId ? `<span class="cluster-tag">🗂️ 聚类 ${f.clusterSize || 1}</span>` : '';
+      const standardBadge = getStandardBadge(f.standard);
+
       return '<li>' +
         '<div class="finding-head">' +
           '<strong>' + escapeHtml(f.title) + '</strong>' +
-          '<span class="badge badge-' + (f.severity || 'info') + '">' + escapeHtml(sev) + '</span>' +
+          '<span>' +
+            '<span class="badge badge-' + (f.severity || 'info') + '">' + escapeHtml(sev) + '</span>' +
+            standardBadge +
+            clusterInfo +
+          '</span>' +
         '</div>' +
         '<span class="finding-location">' + escapeHtml(f.location || "n/a") + '</span>' +
+        '<div class="confidence-bar">' +
+          '<span class="confidence-label">置信度: ' + confidencePercent + '%</span>' +
+          '<div class="confidence-track">' +
+            '<div class="confidence-fill ' + confidenceClass + '" style="width:' + confidencePercent + '%"></div>' +
+          '</div>' +
+        '</div>' +
       '</li>';
     }).join("") +
   '</ul>';

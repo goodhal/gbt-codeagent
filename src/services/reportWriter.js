@@ -338,3 +338,240 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
+
+const SARIF_SEVERITY = {
+  'CRITICAL': 'error',
+  'HIGH': 'error',
+  'MEDIUM': 'warning',
+  'LOW': 'note',
+  'INFO': 'note'
+};
+
+const SARIF_LEVEL = {
+  'CRITICAL': 'error',
+  'HIGH': 'error',
+  'MEDIUM': 'warning',
+  'LOW': 'note',
+  'INFO': 'note'
+};
+
+function convertToSarif(findings, options = {}) {
+  const {
+    toolName = 'GBT CodeAgent',
+    toolVersion = '1.0.0',
+    toolInformationUri = 'https://gbt-codeagent.com'
+  } = options;
+
+  const sarif = {
+    version: '2.1.0',
+    '$schema': 'https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json',
+    runs: []
+  };
+
+  const run = {
+    tool: {
+      driver: {
+        name: toolName,
+        version: toolVersion,
+        informationUri: toolInformationUri,
+        rules: []
+      }
+    },
+    results: []
+  };
+
+  const ruleIdMap = new Map();
+
+  for (const finding of findings) {
+    const ruleId = finding.vulnType || finding.id || 'UNKNOWN';
+
+    if (!ruleIdMap.has(ruleId)) {
+      const rule = {
+        id: ruleId,
+        name: finding.title || ruleId,
+        shortDescription: {
+          text: finding.title || ruleId
+        },
+        fullDescription: {
+          text: finding.description || finding.title || ''
+        },
+        help: {
+          text: finding.remediation || '',
+          markdown: finding.remediation || ''
+        },
+        properties: {
+          tags: [
+            finding.category || 'security',
+            finding.severity || 'medium'
+          ],
+          precision: finding.confidence ? 'high' : 'medium'
+        }
+      };
+
+      if (finding.severity) {
+        rule.defaultConfiguration = {
+          level: SARIF_LEVEL[finding.severity.toUpperCase()] || 'warning'
+        };
+        rule.properties.severity = finding.severity;
+      }
+
+      if (finding.cwe) {
+        rule.properties.cwe = Array.isArray(finding.cwe) ? finding.cwe : [finding.cwe];
+      }
+
+      if (finding.owasp) {
+        rule.properties.owasp = Array.isArray(finding.owasp) ? finding.owasp : [finding.owasp];
+      }
+
+      if (finding.gbt) {
+        rule.properties.gbt = Array.isArray(finding.gbt) ? finding.gbt : [finding.gbt];
+      }
+
+      if (finding.doc_url) {
+        rule.helpUri = finding.doc_url;
+      }
+
+      run.tool.driver.rules.push(rule);
+      ruleIdMap.set(ruleId, rule);
+    }
+
+    const result = {
+      ruleId: ruleId,
+      ruleIndex: run.tool.driver.rules.findIndex(r => r.id === ruleId),
+      level: SARIF_LEVEL[finding.severity?.toUpperCase()] || 'warning',
+      message: {
+        text: finding.impact || finding.title || 'Security issue detected'
+      },
+      locations: []
+    };
+
+    if (finding.location) {
+      const locationParts = finding.location.split(':');
+      const filePath = locationParts[0] || '';
+      const lineNumber = locationParts[1] ? parseInt(locationParts[1], 10) : 1;
+
+      const physicalLocation = {
+        artifactLocation: {
+          uri: filePath,
+          uriBaseId: '%SRCROOT%'
+        }
+      };
+
+      if (lineNumber) {
+        physicalLocation.region = {
+          startLine: lineNumber,
+          startColumn: 1
+        };
+
+        if (locationParts[2]) {
+          physicalLocation.region.startColumn = parseInt(locationParts[2], 10);
+        }
+      }
+
+      if (finding.evidence) {
+        physicalLocation.region = physicalLocation.region || {};
+        physicalLocation.region.snippet = {
+          text: finding.evidence
+        };
+      }
+
+      result.locations.push({
+        physicalLocation
+      });
+    }
+
+    if (finding.suppressionComment) {
+      result.suppressions = [
+        {
+          kind: 'inSource',
+          justification: finding.suppressionComment
+        }
+      ];
+    }
+
+    if (finding.astContext) {
+      result.properties = {
+        astContext: {
+          sink: finding.astContext.sink,
+          sinkSeverity: finding.astContext.sinkSeverity,
+          hasUserInput: finding.astContext.hasUserInput,
+          hasValidation: finding.astContext.hasValidation,
+          hasEncoding: finding.astContext.hasEncoding
+        }
+      };
+    }
+
+    run.results.push(result);
+  }
+
+  sarif.runs.push(run);
+  return sarif;
+}
+
+async function writeSarifReport(findings, outputPath, options = {}) {
+  const sarif = convertToSarif(findings, options);
+  const jsonContent = JSON.stringify(sarif, null, 2);
+  await fs.writeFile(outputPath, jsonContent, 'utf-8');
+
+  return {
+    filePath: outputPath,
+    findingsCount: findings.length,
+    rulesCount: sarif.runs[0]?.tool?.driver?.rules?.length || 0,
+    generatedAt: new Date().toISOString()
+  };
+}
+
+async function writeSarifReportStream(findings, outputStream, options = {}) {
+  const sarif = convertToSarif(findings, options);
+  const jsonContent = JSON.stringify(sarif, null, 2);
+
+  return new Promise((resolve, reject) => {
+    outputStream.write(jsonContent, 'utf-8', (err) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve({
+          findingsCount: findings.length,
+          rulesCount:sarif.runs[0]?.tool?.driver?.rules?.length || 0,
+          generatedAt: new Date().toISOString()
+        });
+      }
+    });
+  });
+}
+
+function getSarifSummary(sarif) {
+  const summary = {
+    version: sarif.version,
+    runs: sarif.runs.length,
+    totalResults: 0,
+    resultsBySeverity: {},
+    resultsByRule: {},
+    rulesCount: 0
+  };
+
+  for (const run of sarif.runs) {
+    summary.rulesCount += run.tool?.driver?.rules?.length || 0;
+    summary.totalResults += run.results?.length || 0;
+
+    for (const result of run.results || []) {
+      const severity = result.level || 'warning';
+      summary.resultsBySeverity[severity] = (summary.resultsBySeverity[severity] || 0) + 1;
+
+      if (result.ruleId) {
+        summary.resultsByRule[result.ruleId] = (summary.resultsByRule[result.ruleId] || 0) + 1;
+      }
+    }
+  }
+
+  return summary;
+}
+
+export {
+  writeSarifReport,
+  writeSarifReportStream,
+  convertToSarif,
+  getSarifSummary,
+  SARIF_SEVERITY,
+  SARIF_LEVEL
+};

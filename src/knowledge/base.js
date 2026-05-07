@@ -1,1 +1,1 @@
-export { KnowledgeDocument, KnowledgeCategory, Severity } from './frameworks.js';
+export { KnowledgeDocument, KnowledgeCategory, Severity, Profile, LabelType, GuidelineType } from './frameworks.js';

@@ -14,6 +14,29 @@ const KnowledgeCategory = {
   COMPLIANCE: "compliance"
 };
 
+const Profile = {
+  DEFAULT: 'default',
+  SECURITY: 'security',
+  SENSITIVE: 'sensitive',
+  PORTABILITY: 'portability',
+  EXTREME: 'extreme'
+};
+
+const LabelType = {
+  SEVERITY: 'severity',
+  PROFILE: 'profile',
+  GUIDELINE: 'guideline',
+  CATEGORY: 'category'
+};
+
+const GuidelineType = {
+  CWE: 'cwe',
+  OWASP: 'owasp',
+  GBT: 'gbt',
+  SEI_CERT: 'sei-cert',
+  MISRA: 'misra'
+};
+
 class KnowledgeDocument {
   constructor({
     id,

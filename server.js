@@ -7,13 +7,13 @@ import { LocalRepoScoutAgent } from "./src/agents/localRepoScoutAgent.js";
 import { GitUrlScoutAgent } from "./src/agents/gitUrlScoutAgent.js";
 import { ZipUploadScoutAgent } from "./src/agents/zipUploadScoutAgent.js";
 import { AuditAnalystAgent } from "./src/agents/auditAnalystAgent.js";
-import { getAuditSkillCatalog } from "./src/config/auditSkills.js";
+import { getAuditSkillCatalog, getAllProfiles, getSkillsByProfile, getProfileConfig } from "./src/config/auditSkills.js";
 import { getProviderPreset, maskSecret, resolveLlmConfig } from "./src/config/llmProviders.js";
 import { buildEnvironmentReport } from "./src/services/environmentReport.js";
 import { DefensiveLlmReviewer } from "./src/services/llmReviewService.js";
 import { createMemoryStore } from "./src/services/memoryStore.js";
 import { createFingerprintService } from "./src/services/fingerprintService.js";
-import { writeAuditHtmlReport } from "./src/services/reportWriter.js";
+import { writeAuditHtmlReport, writeSarifReport } from "./src/services/reportWriter.js";
 import { createSettingsStore } from "./src/services/settingsStore.js";
 import { createTaskStore } from "./src/store/taskStore.js";
 import { recordRequest, getPerformanceMetrics, getCache, setCache, withCache, measurePerformance } from "./src/core/performance.js";
@@ -76,6 +76,26 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/api/audit-skills") {
       const skills = getAuditSkillCatalog();
+      recordRequest(url.pathname, performance.now() - start, true);
+      return sendJson(res, 200, skills);
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/profiles") {
+      const profiles = getAllProfiles();
+      recordRequest(url.pathname, performance.now() - start, true);
+      return sendJson(res, 200, profiles);
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/profile-config") {
+      const profileName = url.searchParams.get("name") || "default";
+      const config = getProfileConfig(profileName);
+      recordRequest(url.pathname, performance.now() - start, true);
+      return sendJson(res, 200, config);
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/skills-by-profile") {
+      const profile = url.searchParams.get("profile") || null;
+      const skills = getSkillsByProfile(profile);
       recordRequest(url.pathname, performance.now() - start, true);
       return sendJson(res, 200, skills);
     }
@@ -415,6 +435,53 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname.startsWith("/reports/")) {
       return serveFile(res, path.join(reportsDir, decodeURIComponent(url.pathname.replace("/reports/", ""))));
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/export-sarif") {
+      const taskId = url.searchParams.get("taskId");
+      if (!taskId) {
+        return sendJson(res, 400, { error: "Missing taskId parameter" });
+      }
+
+      const task = tasks.getTask(taskId);
+      if (!task) {
+        return sendJson(res, 404, { error: "Task not found" });
+      }
+
+      const auditResult = task.auditResult;
+      if (!auditResult) {
+        return sendJson(res, 404, { error: "Audit result not found" });
+      }
+
+      const allFindings = [];
+      for (const project of auditResult.projects || []) {
+        for (const finding of project.heuristicFindings || []) {
+          allFindings.push(finding);
+        }
+        for (const finding of project.llmAudit?.findings || []) {
+          allFindings.push(finding);
+        }
+      }
+
+      const sarifFileName = `sarif-report-${taskId}.json`;
+      const sarifFilePath = path.join(reportsDir, sarifFileName);
+
+      try {
+        await writeSarifReport(allFindings, sarifFilePath, {
+          toolName: 'GBT CodeAgent',
+          toolVersion: '1.0.0',
+          toolInformationUri: 'https://gbt-codeagent.com'
+        });
+
+        return sendJson(res, 200, {
+          success: true,
+          fileName: sarifFileName,
+          downloadPath: `/reports/${sarifFileName}`,
+          findingsCount: allFindings.length
+        });
+      } catch (err) {
+        return sendJson(res, 500, { error: "Failed to generate SARIF report", detail: err.message });
+      }
     }
 
     if (req.method === "GET") {

@@ -1,8 +1,8 @@
 import { promises as fs } from "node:fs";
 import path from "path";
-import { inferFenceLanguage } from "../utils/fileUtils.js";
+import { inferFenceLanguage, collectFiles } from "../utils/fileUtils.js";
 import { jsonrepair } from "jsonrepair";
-import { withRetry, CircuitBreaker, CircuitBreakerConfig, createReActAuditor, PromptCacheManager } from "../core/index.js";
+import { withRetry, withRetryWithFallback, createRetryDecorator, CircuitBreaker, CircuitBreakerConfig, createReActAuditor, PromptCacheManager } from "../core/index.js";
 import { createLocalToolExecutor } from "../tools/localToolExecutor.js";
 import { buildReActSystemPrompt, buildReActInitialPrompt } from "../core/reactPrompts.js";
 import { ragService } from "./ragService.js";
@@ -10,6 +10,7 @@ import { streamService } from "./streamService.js";
 import { estimateTokens, countTokensTiktoken, getModelMaxTokens, PromptCompressor, IncrementalSummary, ContextConfig } from "../utils/contextManager.js";
 import { fetchWithTimeout, globalLLMFactory } from "./llmFactory.js";
 import { CodeRetriever } from "./retriever.js";
+import { deduplicateAndSort, severityScore } from "../utils/findingsUtils.js";
 
 const MAX_BATCHES = 16;
 const MAX_FILES_PER_BATCH = 4;
@@ -368,7 +369,7 @@ export class DefensiveLlmReviewer {
     }
 
     const sourceRoot = path.join(process.cwd(), "workspace", "downloads", project.id);
-    const files = await collectFiles(sourceRoot);
+    const files = await collectFilesWithContent(sourceRoot);
     if (!files.length) {
       return {
         status: "skipped",
@@ -416,13 +417,20 @@ export class DefensiveLlmReviewer {
       });
 
       try {
-        const responseText = await withRetry(() => llmCircuitBreaker.call(() =>
+        const healthScore = llmCircuitBreaker.getHealthScore?.();
+        console.debug(`[LLM审计] 熔断器健康评分: ${healthScore}`);
+
+        const responseText = await withReviewRetry(() => llmCircuitBreaker.callWithFallback(() =>
           requestStructuredReview({
             llmConfig,
             systemPrompt,
             userPrompt: buildUserPrompt({ project, selectedSkills, heuristicFindings, batch })
-          })
-        ), { maxAttempts: 2, baseDelay: 1000 });
+          }),
+          () => {
+            console.warn('[LLM审计] LLM服务熔断，使用降级方案');
+            return JSON.stringify({ findings: [] });
+          }
+        ));
 
         const parsed = parseJsonResponse(responseText);
         const normalized = normalizeFindings(parsed?.findings, selectedSkills);
@@ -475,7 +483,7 @@ export class DefensiveLlmReviewer {
       }
     }
 
-    const dedupedFindings = dedupeFindings(findings).slice(0, 12);
+    const dedupedFindings = deduplicateAndSort(findings).slice(0, 12);
     const truncated = prioritizedFiles.length > validBatches.flat().length;
 
     return {
@@ -508,7 +516,7 @@ export class DefensiveLlmReviewer {
     }
 
     const sourceRoot = path.join(process.cwd(), "workspace", "downloads", project.id);
-    const files = await collectFiles(sourceRoot);
+    const files = await collectFilesWithContent(sourceRoot);
     if (!files.length) {
       return {
         status: "skipped",
@@ -598,13 +606,20 @@ export class DefensiveLlmReviewer {
       const codeContext = await getCodeContextForBatch(batch, skillContext);
 
       try {
-        const responseText = await withRetry(() => llmCircuitBreaker.call(() =>
+        const healthScore = llmCircuitBreaker.getHealthScore?.();
+        console.debug(`[LLM审计] 熔断器健康评分: ${healthScore}`);
+
+        const responseText = await withReviewRetry(() => llmCircuitBreaker.callWithFallback(() =>
           requestStructuredReview({
             llmConfig,
             systemPrompt,
             userPrompt: buildUserPrompt({ project, selectedSkills, heuristicFindings: [], batch, codeContext })
-          })
-        ), { maxAttempts: 2, baseDelay: 1000 });
+          }),
+          () => {
+            console.warn('[LLM审计] LLM服务熔断，使用降级方案');
+            return JSON.stringify({ findings: [] });
+          }
+        ));
 
         const parsed = parseJsonResponse(responseText);
         const normalized = normalizeFindings(parsed?.findings, selectedSkills);
@@ -657,7 +672,7 @@ export class DefensiveLlmReviewer {
       }
     }
 
-    const dedupedFindings = dedupeFindings(findings).slice(0, 12);
+    const dedupedFindings = deduplicateAndSort(findings).slice(0, 12);
     const truncated = files.length > validBatches.flat().length;
     console.log(`[LLM审计] auditProject 完成 - 审计文件数: ${auditedFiles}, 审计批次: ${auditedBatches}, 发现问题数: ${dedupedFindings.length}, 警告数: ${warnings.length}`);
 
@@ -788,6 +803,14 @@ export class DefensiveLlmReviewer {
     }
   }
 }
+
+const withReviewRetry = createRetryDecorator({ 
+  maxAttempts: 2, 
+  baseDelay: 1000,
+  onRetry: (error, attempt, max) => {
+    console.warn(`[LLM审计] 请求重试 ${attempt}/${max}: ${error.message}`);
+  }
+});
 
 async function requestStructuredReview({ llmConfig, systemPrompt, userPrompt }) {
   const compatibility = llmConfig.compatibility || llmConfig.defaults?.compatibility || "openai";
@@ -986,10 +1009,17 @@ async function buildSystemPrompt(selectedSkills, auditKnowledge = {}, languages 
 
   // 添加 RAG 知识参考
   try {
-    const knowledgeContext = await ragService.buildAuditContext({
-      language: languages?.[0],
-      fileCount: 3
-    });
+    const knowledgeContext = await withRetryWithFallback(
+      () => ragService.buildAuditContext({
+        language: languages?.[0],
+        fileCount: 3
+      }),
+      () => {
+        console.warn('[LLM审计] RAG服务不可用，使用降级方案');
+        return null;
+      },
+      { maxAttempts: 2, baseDelay: 500 }
+    );
     if (knowledgeContext) {
       prompt.push("", knowledgeContext);
     }
@@ -1176,7 +1206,7 @@ function buildUserPrompt({ project, selectedSkills, heuristicFindings, batch, co
   return prompt.join("\n\n");
 }
 
-async function collectFiles(root) {
+async function collectFilesWithContent(root) {
   try {
     const output = [];
     await walk(root, root, output);
@@ -1429,22 +1459,6 @@ function normalizeFindings(findings, selectedSkills) {
   return normalized;
 }
 
-function dedupeFindings(findings) {
-  const seen = new Set();
-  const output = [];
-
-  for (const finding of findings) {
-    const key = `${finding.title}::${finding.location}`;
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    output.push(finding);
-  }
-
-  return output.sort((a, b) => severityScore(b.severity) - severityScore(a.severity) || b.confidence - a.confidence);
-}
-
 function buildSummary({ reviewedFiles, reviewedBatches, findings, truncated }) {
   const parts = [`LLM 已对 ${reviewedBatches} 个批次、${reviewedFiles} 个本地源码文件进行了二次复核。`];
   if (findings.length) {
@@ -1484,10 +1498,6 @@ function clampConfidence(value) {
 function safeString(value, fallback) {
   const text = String(value || "").trim();
   return text || fallback;
-}
-
-function severityScore(value) {
-  return value === "high" ? 3 : value === "medium" ? 2 : 1;
 }
 
 function clampCvssScore(value) {

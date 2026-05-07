@@ -7,13 +7,16 @@ import { StaticAnalyzer } from './staticAnalyzer.js';
 import { TaintAnalyzer } from './taintAnalyzer.js';
 import { PatternAnalyzer } from './patternAnalyzer.js';
 import { CompositeAnalyzer } from './compositeAnalyzer.js';
-import { RulesEngine, getRulesEngine } from './rulesEngine.js';
+import { BaseAnalyzer } from './baseAnalyzer.js';
+import { RulesEngine, getRulesEngine, resetRulesEngine } from './rulesEngine.js';
 
 export {
   StaticAnalyzer,
   TaintAnalyzer,
   PatternAnalyzer,
   CompositeAnalyzer,
+  BaseAnalyzer,
   RulesEngine,
-  getRulesEngine
+  getRulesEngine,
+  resetRulesEngine
 };

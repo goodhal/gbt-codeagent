@@ -12,6 +12,8 @@ export class RulesEngine {
     this.rules = null;
     this._cache = new Map();
     this._initialized = false;
+    this._regexCache = new Map();
+    this._patternStats = new Map();
   }
 
   async initialize(configPath = null) {
@@ -65,6 +67,9 @@ export class RulesEngine {
     this._sinkIndex = new Map();
     this._sanitizerIndex = new Map();
     this._ruleIndex = new Map();
+    this._labelIndex = new Map();
+    this._guidelineIndex = new Map();
+    this._profileIndex = new Map();
 
     for (const [lang, sources] of Object.entries(this.rules.taintTracking?.sources || {})) {
       for (const source of sources) {
@@ -80,6 +85,25 @@ export class RulesEngine {
         for (const pattern of sink.patterns || []) {
           const key = this._normalizePattern(pattern);
           this._sinkIndex.set(key, { lang, ...sink });
+        }
+
+        if (sink.id) {
+          this._labelIndex.set(sink.id, sink);
+          for (const profile of sink.profiles || []) {
+            if (!this._profileIndex.has(profile)) {
+              this._profileIndex.set(profile, []);
+            }
+            this._profileIndex.get(profile).push(sink);
+          }
+          for (const [glType, glValues] of Object.entries(sink.guidelines || {})) {
+            for (const glValue of glValues) {
+              const glKey = `${glType}:${glValue}`;
+              if (!this._guidelineIndex.has(glKey)) {
+                this._guidelineIndex.set(glKey, []);
+              }
+              this._guidelineIndex.get(glKey).push(sink);
+            }
+          }
         }
       }
     }
@@ -272,8 +296,14 @@ export class RulesEngine {
   }
 
   _createRegex(pattern) {
+    if (this._regexCache.has(pattern)) {
+      return this._regexCache.get(pattern);
+    }
+    
     try {
-      return new RegExp(pattern, 'gi');
+      const regex = new RegExp(pattern, 'gi');
+      this._regexCache.set(pattern, regex);
+      return regex;
     } catch {
       return null;
     }
@@ -281,6 +311,272 @@ export class RulesEngine {
 
   _getLineNumber(code, index) {
     return code.substring(0, index).split('\n').length;
+  }
+
+  _getLineContent(code, lineNumber) {
+    const lines = code.split('\n');
+    return lines[lineNumber - 1] || '';
+  }
+
+  matchWithContext(code, language, options = {}) {
+    const lang = language.toLowerCase();
+    const contextWindow = options.contextWindow || 3;
+    const results = [];
+
+    const sources = this.getTaintSources(lang);
+    const sinks = this.getTaintSinks(lang);
+
+    for (const source of sources) {
+      for (const pattern of source.patterns || []) {
+        const regex = this._createRegex(pattern);
+        let match;
+        while ((match = regex.exec(code)) !== null) {
+          const line = this._getLineNumber(code, match.index);
+          const context = this._getSurroundingContext(code, line, contextWindow);
+          
+          results.push({
+            type: 'source',
+            ...source,
+            pattern,
+            match: match[0],
+            index: match.index,
+            line,
+            context,
+            confidence: this._calculateConfidence(source, context)
+          });
+        }
+      }
+    }
+
+    for (const sink of sinks) {
+      for (const pattern of sink.patterns || []) {
+        const regex = this._createRegex(pattern);
+        let match;
+        while ((match = regex.exec(code)) !== null) {
+          const line = this._getLineNumber(code, match.index);
+          const context = this._getSurroundingContext(code, line, contextWindow);
+          
+          results.push({
+            type: 'sink',
+            ...sink,
+            pattern,
+            match: match[0],
+            index: match.index,
+            line,
+            context,
+            confidence: this._calculateConfidence(sink, context)
+          });
+        }
+      }
+    }
+
+    return results.sort((a, b) => b.confidence - a.confidence);
+  }
+
+  _getSurroundingContext(code, lineNumber, contextWindow) {
+    const lines = code.split('\n');
+    const start = Math.max(0, lineNumber - contextWindow - 1);
+    const end = Math.min(lines.length, lineNumber + contextWindow);
+    
+    const context = [];
+    for (let i = start; i < end; i++) {
+      context.push({
+        line: i + 1,
+        content: lines[i] || '',
+        isTarget: i + 1 === lineNumber
+      });
+    }
+    
+    return context;
+  }
+
+  _calculateConfidence(patternDef, context) {
+    let confidence = 0.7;
+    
+    if (patternDef.confidenceBoost) {
+      confidence += patternDef.confidenceBoost;
+    }
+    
+    const targetLine = context.find(c => c.isTarget);
+    if (targetLine) {
+      if (targetLine.content.trim().length > 0) {
+        confidence += 0.1;
+      }
+    }
+    
+    return Math.min(1.0, Math.max(0.0, confidence));
+  }
+
+  filterFalsePositives(findings, options = {}) {
+    const minConfidence = options.minConfidence || 0.5;
+    const enableHeuristic = options.enableHeuristic !== false;
+    
+    let filtered = findings.filter(f => f.confidence >= minConfidence);
+    
+    if (enableHeuristic) {
+      filtered = filtered.filter(f => !this._isHeuristicFalsePositive(f));
+    }
+    
+    return filtered;
+  }
+
+  _isHeuristicFalsePositive(finding) {
+    if (!finding.context || !finding.match) {
+      return false;
+    }
+    
+    const targetLine = finding.context.find(c => c.isTarget);
+    if (!targetLine) {
+      return false;
+    }
+    
+    const lineContent = targetLine.content.toLowerCase();
+    
+    const falsePositivePatterns = [
+      /test/i,
+      /mock/i,
+      /example/i,
+      /sample/i,
+      /demo/i,
+      /stub/i,
+      /placeholder/i,
+      /dummy/i
+    ];
+    
+    return falsePositivePatterns.some(pattern => pattern.test(lineContent));
+  }
+
+  clusterFindings(findings, options = {}) {
+    const threshold = options.similarityThreshold || 0.8;
+    const clusters = [];
+    const visited = new Set();
+    
+    for (let i = 0; i < findings.length; i++) {
+      if (visited.has(i)) continue;
+      
+      const cluster = [findings[i]];
+      visited.add(i);
+      
+      for (let j = i + 1; j < findings.length; j++) {
+        if (visited.has(j)) continue;
+        
+        if (this._isSimilar(findings[i], findings[j], threshold)) {
+          cluster.push(findings[j]);
+          visited.add(j);
+        }
+      }
+      
+      if (cluster.length > 1) {
+        clusters.push({
+          representative: cluster[0],
+          members: cluster,
+          count: cluster.length
+        });
+      }
+    }
+    
+    return clusters;
+  }
+
+  _isSimilar(finding1, finding2, threshold) {
+    if (finding1.ruleId !== finding2.ruleId) return false;
+    
+    const str1 = finding1.match || '';
+    const str2 = finding2.match || '';
+    
+    const similarity = this._levenshteinDistance(str1, str2) / Math.max(str1.length, str2.length);
+    return 1 - similarity >= threshold;
+  }
+
+  _levenshteinDistance(s1, s2) {
+    if (s1.length === 0) return s2.length;
+    if (s2.length === 0) return s1.length;
+    
+    const dp = Array(s1.length + 1).fill(null).map(() => Array(s2.length + 1).fill(0));
+    
+    for (let i = 0; i <= s1.length; i++) dp[i][0] = i;
+    for (let j = 0; j <= s2.length; j++) dp[0][j] = j;
+    
+    for (let i = 1; i <= s1.length; i++) {
+      for (let j = 1; j <= s2.length; j++) {
+        const cost = s1[i - 1] === s2[j - 1] ? 0 : 1;
+        dp[i][j] = Math.min(
+          dp[i - 1][j] + 1,
+          dp[i][j - 1] + 1,
+          dp[i - 1][j - 1] + cost
+        );
+      }
+    }
+    
+    return dp[s1.length][s2.length];
+  }
+
+  detectOWASPTop10(code, language) {
+    const lang = language.toLowerCase();
+    const findings = [];
+    
+    const owaspRules = this.findByLabels(['owasp:top10'], lang);
+    
+    for (const rule of owaspRules) {
+      const matches = this.matchVulnerability(code, rule.id, lang);
+      findings.push(...matches.map(m => ({
+        ...m,
+        category: 'OWASP Top 10',
+        owaspId: rule.guidelines?.owasp?.[0]
+      })));
+    }
+    
+    return findings;
+  }
+
+  detectGBTStandards(code, language) {
+    const lang = language.toLowerCase();
+    const findings = [];
+    
+    const gbtRules = this.findByLabels(['guideline:gbt'], lang);
+    
+    for (const rule of gbtRules) {
+      const matches = this.matchVulnerability(code, rule.id, lang);
+      findings.push(...matches.map(m => ({
+        ...m,
+        category: 'GB/T Standard',
+        gbtId: rule.guidelines?.gbt?.[0]
+      })));
+    }
+    
+    return findings;
+  }
+
+  analyzeCode(code, language, options = {}) {
+    const results = {
+      vulnerabilities: [],
+      sources: [],
+      sinks: [],
+      clusters: [],
+      summary: {
+        totalFindings: 0,
+        bySeverity: { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 },
+        byCategory: {}
+      }
+    };
+
+    results.vulnerabilities = this.matchWithContext(code, language, options);
+    results.sources = this.matchSources(code, language);
+    results.sinks = this.matchSinks(code, language);
+    
+    const allFindings = [...results.vulnerabilities];
+    results.clusters = this.clusterFindings(allFindings, options);
+    
+    results.summary.totalFindings = allFindings.length;
+    for (const finding of allFindings) {
+      const severity = finding.severity?.toUpperCase() || 'MEDIUM';
+      results.summary.bySeverity[severity] = (results.summary.bySeverity[severity] || 0) + 1;
+      
+      const category = finding.category || 'Other';
+      results.summary.byCategory[category] = (results.summary.byCategory[category] || 0) + 1;
+    }
+    
+    return results;
   }
 
   getSeverityScore(severity) {
@@ -302,6 +598,97 @@ export class RulesEngine {
 
   clearCache() {
     this._cache.clear();
+  }
+
+  static splitLabelKV(keyValue) {
+    const colonIndex = keyValue.indexOf(':');
+    if (colonIndex === -1) {
+      return [keyValue.trim(), ''];
+    }
+    return [keyValue.substring(0, colonIndex).trim(), keyValue.substring(colonIndex + 1).trim()];
+  }
+
+  findByLabels(filterLabels, language = null) {
+    if (!filterLabels || filterLabels.length === 0) {
+      return [];
+    }
+
+    const labelSet = new Set(filterLabels.map(l => RulesEngine.splitLabelKV(l).map(part => part.toLowerCase())).flat());
+
+    const results = [];
+
+    for (const [ruleId, rule] of this._labelIndex) {
+      if (language && rule.language && rule.language !== language.toLowerCase()) {
+        continue;
+      }
+
+      const ruleLabels = new Set();
+      if (rule.severity) {
+        ruleLabels.add(`severity:${rule.severity.toLowerCase()}`);
+      }
+      if (rule.category) {
+        ruleLabels.add(`category:${rule.category.toLowerCase()}`);
+      }
+      for (const profile of rule.profiles || []) {
+        ruleLabels.add(`profile:${profile.toLowerCase()}`);
+      }
+      for (const [glType, glValues] of Object.entries(rule.guidelines || {})) {
+        for (const glValue of glValues) {
+          ruleLabels.add(`${glType.toLowerCase()}:${glValue.toLowerCase()}`);
+        }
+      }
+
+      const intersection = [...labelSet].filter(label => ruleLabels.has(label));
+      if (intersection.length > 0) {
+        results.push({
+          ...rule,
+          matchedLabels: intersection
+        });
+      }
+    }
+
+    return results;
+  }
+
+  getRuleById(ruleId) {
+    return this._labelIndex.get(ruleId) || null;
+  }
+
+  getRulesByProfile(profile) {
+    return this._profileIndex.get(profile) || [];
+  }
+
+  getRulesByGuideline(guidelineType, guidelineValue) {
+    const glKey = `${guidelineType.toLowerCase()}:${guidelineValue.toLowerCase()}`;
+    return this._guidelineIndex.get(glKey) || [];
+  }
+
+  getRulesByCWE(cweId) {
+    return this.getRulesByGuideline('cwe', cweId);
+  }
+
+  getRulesByOWASP(owaspId) {
+    return this.getRulesByGuideline('owasp', owaspId);
+  }
+
+  getRulesByGBT(gbtId) {
+    return this.getRulesByGuideline('gbt', gbtId);
+  }
+
+  getLabelDescriptions() {
+    return this.rules?.labelDescriptions || {};
+  }
+
+  getProfileDescription(profile) {
+    return this.rules?.labelDescriptions?.profile?.[profile] || null;
+  }
+
+  getSeverityDescription(severity) {
+    return this.rules?.labelDescriptions?.severity?.[severity.toUpperCase()] || null;
+  }
+
+  getGuidelineDescription(guideline) {
+    return this.rules?.labelDescriptions?.guideline?.[guideline] || null;
   }
 }
 

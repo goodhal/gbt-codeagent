@@ -1,5 +1,18 @@
-export { withRetry, isRetryable, calculateDelay, RetryConfig } from './retry.js';
-export { CircuitBreaker, CircuitOpenError, CircuitState, CircuitStats, CircuitBreakerConfig } from './circuitBreaker.js';
+export { 
+  withRetry, 
+  withRetryWithFallback,
+  createRetryDecorator,
+  isRetryable, 
+  calculateDelay, 
+  RetryConfig 
+} from './retry.js';
+export { 
+  CircuitBreaker, 
+  CircuitOpenError, 
+  CircuitState, 
+  CircuitStats, 
+  CircuitBreakerConfig 
+} from './circuitBreaker.js';
 export { RateLimiterConfig, TokenBucketRateLimiter, RateLimiterRegistry, globalRateLimiterRegistry } from './rateLimiter.js';
 export { CacheStrategy, CacheConfig, CacheStats, CACHEABLE_MODELS, PromptCacheManager } from './promptCache.js';
 export { AgentStatus, AuditState, StatePersistence, CheckpointManager, globalStatePersistence, globalCheckpointManager } from './stateManager.js';

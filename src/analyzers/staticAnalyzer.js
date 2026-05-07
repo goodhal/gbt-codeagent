@@ -6,6 +6,7 @@
 import { AsyncBaseAnalyzer } from './baseAnalyzer.js';
 import { PatternAnalyzer } from './patternAnalyzer.js';
 import { TaintAnalyzer } from './taintAnalyzer.js';
+import { Semaphore } from '../utils/semaphore.js';
 
 export class StaticAnalyzer extends AsyncBaseAnalyzer {
   constructor(rulesEngine, options = {}) {
@@ -175,50 +176,6 @@ export class StaticAnalyzer extends AsyncBaseAnalyzer {
   }
 
   _detectLanguage(filePath) {
-    const ext = filePath.match(/\.[^.]+$/)?.[0] || '';
-    const map = {
-      '.py': 'python',
-      '.js': 'javascript',
-      '.ts': 'typescript',
-      '.jsx': 'javascript',
-      '.tsx': 'typescript',
-      '.java': 'java',
-      '.php': 'php',
-      '.go': 'go',
-      '.rb': 'ruby',
-      '.rs': 'rust',
-      '.c': 'c',
-      '.cpp': 'cpp',
-      '.cs': 'csharp'
-    };
-    return map[ext] || 'unknown';
-  }
-}
-
-class Semaphore {
-  constructor(max) {
-    this.max = max;
-    this.current = 0;
-    this.queue = [];
-  }
-
-  async acquire() {
-    if (this.current < this.max) {
-      this.current++;
-      return;
-    }
-
-    return new Promise(resolve => {
-      this.queue.push(resolve);
-    });
-  }
-
-  release() {
-    if (this.queue.length > 0) {
-      const resolve = this.queue.shift();
-      resolve();
-    } else {
-      this.current--;
-    }
+    return this._inferLanguage(filePath);
   }
 }

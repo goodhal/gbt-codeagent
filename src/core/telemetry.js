@@ -144,6 +144,175 @@ class Tracer {
     this.agentStatusCallback = null;
 
     this._enabled = true;
+
+    this.logLevel = options.logLevel || LogLevel.INFO;
+    this.auditEvents = [];
+    this.performanceMetrics = new PerformanceMetrics();
+    this.errorAggregator = new ErrorAggregator();
+    this._eventListeners = new Map();
+  }
+
+  setLogLevel(level) {
+    this.logLevel = level;
+  }
+
+  getLogLevel() {
+    return this.logLevel;
+  }
+
+  log(level, message, context = {}) {
+    if (level < this.logLevel) {
+      return;
+    }
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      level: LogLevelNames[level],
+      message,
+      context,
+      runId: this.runId
+    };
+    if (typeof console !== 'undefined') {
+      const prefix = `[${logEntry.level}]`;
+      if (level >= LogLevel.ERROR) {
+        console.error(prefix, message, context);
+      } else if (level >= LogLevel.WARN) {
+        console.warn(prefix, message, context);
+      } else {
+        console.log(prefix, message, context);
+      }
+    }
+    return logEntry;
+  }
+
+  debug(message, context = {}) {
+    return this.log(LogLevel.DEBUG, message, context);
+  }
+
+  info(message, context = {}) {
+    return this.log(LogLevel.INFO, message, context);
+  }
+
+  warn(message, context = {}) {
+    return this.log(LogLevel.WARN, message, context);
+  }
+
+  error(message, error = null, context = {}) {
+    if (error) {
+      this.errorAggregator.recordError(error, context);
+    }
+    return this.log(LogLevel.ERROR, message, { ...context, error: error?.message });
+  }
+
+  critical(message, error = null, context = {}) {
+    if (error) {
+      this.errorAggregator.recordError(error, context);
+    }
+    return this.log(LogLevel.CRITICAL, message, { ...context, error: error?.message });
+  }
+
+  recordAuditEvent(eventType, data = {}) {
+    const event = {
+      type: eventType,
+      timestamp: new Date().toISOString(),
+      runId: this.runId,
+      data
+    };
+    this.auditEvents.push(event);
+
+    const listeners = this._eventListeners.get(eventType) || [];
+    for (const listener of listeners) {
+      try {
+        listener(event);
+      } catch (e) {
+        this.error('Audit event listener error', e, { eventType });
+      }
+    }
+
+    if (eventType === AuditEventType.VULNERABILITY_FOUND) {
+      this.performanceMetrics.incrementCounter('vulnerabilities_found', 1, { severity: data.severity });
+    } else if (eventType === AuditEventType.FILE_SCANNED) {
+      this.performanceMetrics.incrementCounter('files_scanned', 1, { language: data.language });
+    } else if (eventType === AuditEventType.SUPPRESSION_APPLIED) {
+      this.performanceMetrics.incrementCounter('suppressions_applied', 1);
+    }
+
+    return event;
+  }
+
+  onAuditEvent(eventType, listener) {
+    if (!this._eventListeners.has(eventType)) {
+      this._eventListeners.set(eventType, []);
+    }
+    this._eventListeners.get(eventType).push(listener);
+  }
+
+  removeAuditEventListener(eventType, listener) {
+    const listeners = this._eventListeners.get(eventType) || [];
+    const index = listeners.indexOf(listener);
+    if (index > -1) {
+      listeners.splice(index, 1);
+    }
+  }
+
+  recordMetric(name, value, type = 'counter', labels = {}) {
+    switch (type) {
+      case 'counter':
+        this.performanceMetrics.incrementCounter(name, value, labels);
+        break;
+      case 'histogram':
+        this.performanceMetrics.recordHistogram(name, value, labels);
+        break;
+      case 'gauge':
+        this.performanceMetrics.setGauge(name, value, labels);
+        break;
+    }
+  }
+
+  startOperationTimer(name, labels = {}) {
+    this.performanceMetrics.startTimer(name, labels);
+  }
+
+  endOperationTimer(name, labels = {}) {
+    return this.performanceMetrics.endTimer(name, labels);
+  }
+
+  getPerformanceReport() {
+    const report = {
+      timestamp: new Date().toISOString(),
+      runId: this.runId,
+      counters: {},
+      histograms: {},
+      gauges: {}
+    };
+
+    for (const [name] of this.performanceMetrics.counters) {
+      report.counters[name] = this.performanceMetrics.counters.get(name);
+    }
+
+    for (const [name] of this.performanceMetrics.histograms) {
+      report.histograms[name] = this.performanceMetrics.getHistogramStats(name);
+    }
+
+    for (const [name] of this.performanceMetrics.gauges) {
+      report.gauges[name] = this.performanceMetrics.gauges.get(name);
+    }
+
+    return report;
+  }
+
+  getAuditEvents(eventType = null) {
+    if (eventType) {
+      return this.auditEvents.filter(e => e.type === eventType);
+    }
+    return this.auditEvents;
+  }
+
+  getErrorReport() {
+    return {
+      totalErrors: this.errorAggregator.errors.size,
+      topErrors: this.errorAggregator.getTopErrors(10),
+      allErrors: this.errorAggregator.getErrorGroups()
+    };
   }
 
   _generateRunId() {
@@ -365,7 +534,11 @@ class Tracer {
       spans: Array.from(this.spans.values()).map(s => s.toJSON()),
       scanConfig: this.scanConfig,
       scanResults: this.scanResults,
-      finalScanResult: this.finalScanResult
+      finalScanResult: this.finalScanResult,
+      auditEvents: this.auditEvents,
+      performanceMetrics: this.performanceMetrics.getAllMetrics(),
+      errorReport: this.getErrorReport(),
+      logLevel: this.logLevel
     };
 
     const jsonPath = path.join(runDir, "trace.json");
@@ -432,6 +605,172 @@ class Tracer {
 
 let globalTracer = null;
 
+const LogLevel = {
+  DEBUG: 0,
+  INFO: 1,
+  WARN: 2,
+  ERROR: 3,
+  CRITICAL: 4,
+  NONE: 5
+};
+
+const LogLevelNames = {
+  [LogLevel.DEBUG]: 'DEBUG',
+  [LogLevel.INFO]: 'INFO',
+  [LogLevel.WARN]: 'WARN',
+  [LogLevel.ERROR]: 'ERROR',
+  [LogLevel.CRITICAL]: 'CRITICAL',
+  [LogLevel.NONE]: 'NONE'
+};
+
+const AuditEventType = {
+  RULE_LOADED: 'rule_loaded',
+  RULE_MATCHED: 'rule_matched',
+  VULNERABILITY_FOUND: 'vulnerability_found',
+  VULNERABILITY_CONFIRMED: 'vulnerability_confirmed',
+  VULNERABILITY_FALSE_POSITIVE: 'vulnerability_false_positive',
+  SCAN_STARTED: 'scan_started',
+  SCAN_COMPLETED: 'scan_completed',
+  SCAN_FAILED: 'scan_failed',
+  FILE_SCANNED: 'file_scanned',
+  SUPPRESSION_APPLIED: 'suppression_applied',
+  GUIDELINE_VIOLATION: 'guideline_violation',
+  COMPLIANCE_CHECK: 'compliance_check'
+};
+
+class PerformanceMetrics {
+  constructor() {
+    this.counters = new Map();
+    this.histograms = new Map();
+    this.gauges = new Map();
+    this.timers = new Map();
+  }
+
+  incrementCounter(name, value = 1, labels = {}) {
+    const key = this._makeKey(name, labels);
+    const current = this.counters.get(key) || 0;
+    this.counters.set(key, current + value);
+  }
+
+  recordHistogram(name, value, labels = {}) {
+    const key = this._makeKey(name, labels);
+    if (!this.histograms.has(key)) {
+      this.histograms.set(key, []);
+    }
+    this.histograms.get(key).push(value);
+  }
+
+  setGauge(name, value, labels = {}) {
+    const key = this._makeKey(name, labels);
+    this.gauges.set(key, { value, timestamp: new Date().toISOString() });
+  }
+
+  startTimer(name, labels = {}) {
+    const key = this._makeKey(name, labels);
+    this.timers.set(key, Date.now());
+  }
+
+  endTimer(name, labels = {}) {
+    const key = this._makeKey(name, labels);
+    const startTime = this.timers.get(key);
+    if (startTime) {
+      const duration = Date.now() - startTime;
+      this.timers.delete(key);
+      this.recordHistogram(name, duration, labels);
+      return duration;
+    }
+    return null;
+  }
+
+  getHistogramStats(name, labels = {}) {
+    const key = this._makeKey(name, labels);
+    const values = this.histograms.get(key) || [];
+    if (values.length === 0) {
+      return null;
+    }
+    const sorted = [...values].sort((a, b) => a - b);
+    const sum = values.reduce((a, b) => a + b, 0);
+    return {
+      count: values.length,
+      sum,
+      min: sorted[0],
+      max: sorted[sorted.length - 1],
+      mean: sum / values.length,
+      p50: sorted[Math.floor(sorted.length * 0.5)],
+      p90: sorted[Math.floor(sorted.length * 0.9)],
+      p95: sorted[Math.floor(sorted.length * 0.95)],
+      p99: sorted[Math.floor(sorted.length * 0.99)]
+    };
+  }
+
+  _makeKey(name, labels) {
+    if (Object.keys(labels).length === 0) {
+      return name;
+    }
+    const labelStr = Object.entries(labels)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${k}=${v}`)
+      .join(',');
+    return `${name}{${labelStr}}`;
+  }
+
+  getAllMetrics() {
+    return {
+      counters: Object.fromEntries(this.counters),
+      histograms: Object.fromEntries(this.histograms),
+      gauges: Object.fromEntries(this.gauges)
+    };
+  }
+}
+
+class ErrorAggregator {
+  constructor() {
+    this.errors = new Map();
+    this.errorGroups = new Map();
+  }
+
+  recordError(error, context = {}) {
+    const signature = this._computeSignature(error);
+    const existing = this.errors.get(signature);
+
+    if (existing) {
+      existing.count++;
+      existing.lastSeen = new Date().toISOString();
+      existing.contexts.push(context);
+    } else {
+      this.errors.set(signature, {
+        signature,
+        message: error.message || String(error),
+        stack: error.stack,
+        count: 1,
+        firstSeen: new Date().toISOString(),
+        lastSeen: new Date().toISOString(),
+        contexts: [context]
+      });
+    }
+  }
+
+  getErrorGroups() {
+    return Array.from(this.errors.values());
+  }
+
+  getTopErrors(limit = 10) {
+    return Array.from(this.errors.values())
+      .sort((a, b) => b.count - a.count)
+      .slice(0, limit);
+  }
+
+  _computeSignature(error) {
+    const msg = error.message || String(error);
+    const stack = error.stack || '';
+    const match = stack.match(/\/([^:/]+):(\d+):(\d+)/);
+    if (match) {
+      return `${msg}@${match[1]}:${match[2]}`;
+    }
+    return `${msg}@${stack.split('\n')[1] || 'unknown'}`;
+  }
+}
+
 function getGlobalTracer() {
   if (!globalTracer) {
     globalTracer = new Tracer();
@@ -452,6 +791,11 @@ export {
   SpanKind,
   Span,
   Tracer,
+  LogLevel,
+  LogLevelNames,
+  AuditEventType,
+  PerformanceMetrics,
+  ErrorAggregator,
   getGlobalTracer,
   setGlobalTracer,
   createTracer

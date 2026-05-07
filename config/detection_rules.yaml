@@ -3,6 +3,34 @@
 
 version: "1.0"
 
+# 标签描述定义
+# 用于组织和管理检测规则的元数据
+labelDescriptions:
+  profile:
+    default: "高质量标准检查，低误报率"
+    sensitive: "默认检查 + 更全面的检查，低误报率"
+    security: "针对潜在漏洞代码的检查，包含所有 SEI Cert 规则"
+    portability: "检测平台差异带来的代码问题（如32位和64位架构）"
+    extreme: "敏感检查 + 更全面的检查，可接受的误报率"
+  severity:
+    CRITICAL: "表示编译错误或会导致运行时错误的真正漏洞"
+    HIGH: "真正漏洞表示源代码将导致运行时错误"
+    MEDIUM: "真正漏洞表示源代码可能不会导致运行时错误（但违反直觉，容易出错）"
+    LOW: "真正漏洞表示源代码难以阅读/理解或可轻松优化"
+    INFO: "信息性发现，不一定是漏洞"
+    UNSPECIFIED: "未指定严重级别"
+  guideline:
+    cwe-top-25-2024: "https://cwe.mitre.org/top25/"
+    sei-cert-c: "https://wiki.sei.cmu.edu/confluence/display/c/SEI+CERT+C+Coding+Standard"
+    sei-cert-cpp: "https://wiki.sei.cmu.edu/confluence/pages/viewpage.action?pageId=88046682"
+    misra-c: "https://www.misra.org.uk/"
+    memory-safety: "https://cwe.mitre.org/data/definitions/1399.html"
+    owasp-top-10-2021: "https://owasp.org/Top10/2021/"
+    gbt-34943: "GB/T 34943-2017 C/C++ 语言源代码漏洞测试规范"
+    gbt-34944: "GB/T 34944-2017 Java 语言源代码漏洞测试规范"
+    gbt-34946: "GB/T 34946-2017 C# 语言源代码漏洞测试规范"
+    gbt-39412: "GB/T 39412-2020 网络安全技术 源代码漏洞检测规则"
+
 # 支持的编程语言
 supportedLanguages:
   - python
@@ -153,7 +181,8 @@ taintTracking:
   # 危险函数 - 污点汇
   sinks:
     python:
-      - name: "Command Execution"
+      - id: "SEC-CMD-001"
+        name: "Command Execution"
         patterns:
           - "os.system"
           - "os.popen"
@@ -164,8 +193,17 @@ taintTracking:
           - "eval("
         category: "command_exec"
         severity: "CRITICAL"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-78"]
+          owasp: ["A03:2021"]
+          gbt: ["GB/T34944-6.1.1.6", "GB/T34943-6.1.1.6"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/command-injection"
 
-      - name: "SQL Execution"
+      - id: "SEC-SQL-001"
+        name: "SQL Execution"
         patterns:
           - "cursor.execute"
           - "cursor.executemany"
@@ -174,16 +212,34 @@ taintTracking:
           - "raw("
         category: "sql_injection"
         severity: "HIGH"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-89"]
+          owasp: ["A03:2021"]
+          gbt: ["GB/T34944-6.1.1.1", "GB/T34943-6.1.1.1", "GB/T34946-6.1.1.1"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/sql-injection"
 
-      - name: "Code Execution"
+      - id: "SEC-CODE-001"
+        name: "Code Execution"
         patterns:
           - "eval("
           - "exec("
           - "compile("
         category: "code_injection"
         severity: "CRITICAL"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-94"]
+          owasp: ["A03:2021"]
+          gbt: ["GB/T34944-6.1.1.3"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/code-injection"
 
-      - name: "File Operation"
+      - id: "SEC-FILE-001"
+        name: "File Operation"
         patterns:
           - "open("
           - "file_put_contents"
@@ -191,8 +247,16 @@ taintTracking:
           - "os.rename"
         category: "file_operation"
         severity: "MEDIUM"
+        profiles:
+          - "portability"
+          - "default"
+        guidelines:
+          cwe: ["CWE-22"]
+          gbt: ["GB/T34944-6.1.1.4"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/path-traversal"
 
-      - name: "Deserialization"
+      - id: "SEC-DES-001"
+        name: "Deserialization"
         patterns:
           - "pickle.loads"
           - "yaml.load"
@@ -200,9 +264,18 @@ taintTracking:
           - "shelve"
         category: "deserialization"
         severity: "HIGH"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-502"]
+          owasp: ["A03:2021"]
+          gbt: ["GB/T34944-6.1.1.7"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/deserialization"
 
     javascript:
-      - name: "Code Execution"
+      - id: "SEC-CODE-002"
+        name: "Code Execution"
         patterns:
           - "eval("
           - "Function("
@@ -211,8 +284,16 @@ taintTracking:
           - "new Function"
         category: "code_injection"
         severity: "CRITICAL"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-94"]
+          owasp: ["A03:2021"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/code-injection"
 
-      - name: "DOM Manipulation"
+      - id: "SEC-XSS-001"
+        name: "DOM Manipulation"
         patterns:
           - "innerHTML"
           - "outerHTML"
@@ -220,16 +301,33 @@ taintTracking:
           - "document.write"
         category: "xss"
         severity: "HIGH"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-79"]
+          owasp: ["A03:2021"]
+          gbt: ["GB/T34946-6.1.1.2"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/xss"
 
-      - name: "Network Request"
+      - id: "SEC-SSRF-001"
+        name: "Network Request"
         patterns:
           - "fetch("
           - "XMLHttpRequest"
           - "axios("
         category: "ssrf"
         severity: "MEDIUM"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-918"]
+          owasp: ["A03:2021"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/ssrf"
 
-      - name: "XML Processing"
+      - id: "SEC-XXE-001"
+        name: "XML Processing"
         patterns:
           - "DOMParser"
           - "xmldom"
@@ -239,34 +337,68 @@ taintTracking:
           - "xmlbuilder"
         category: "xxe"
         severity: "HIGH"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-611"]
+          owasp: ["A03:2021"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/xxe"
 
     java:
-      - name: "Command Execution"
+      - id: "SEC-CMD-002"
+        name: "Command Execution"
         patterns:
           - "Runtime.exec"
           - "ProcessBuilder"
           - "java.lang.Runtime"
         category: "command_exec"
         severity: "CRITICAL"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-78"]
+          owasp: ["A03:2021"]
+          gbt: ["GB/T34944-6.1.1.6"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/command-injection"
 
-      - name: "SQL Execution"
+      - id: "SEC-SQL-002"
+        name: "SQL Execution"
         patterns:
           - "Statement.execute"
           - "Statement.executeQuery"
           - "Statement.executeUpdate"
         category: "sql_injection"
         severity: "HIGH"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-89"]
+          owasp: ["A03:2021"]
+          gbt: ["GB/T34944-6.1.1.1"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/sql-injection"
 
-      - name: "XML Processing"
+      - id: "SEC-XXE-002"
+        name: "XML Processing"
         patterns:
           - "DocumentBuilder.parse"
           - "SAXParser.parse"
           - "XMLReader.parse"
         category: "xxe"
         severity: "HIGH"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-611"]
+          owasp: ["A03:2021"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/xxe"
 
     php:
-      - name: "Command Execution"
+      - id: "SEC-CMD-003"
+        name: "Command Execution"
         patterns:
           - "system("
           - "exec("
@@ -277,8 +409,16 @@ taintTracking:
           - "pcntl_exec("
         category: "command_exec"
         severity: "CRITICAL"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-78"]
+          owasp: ["A03:2021"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/command-injection"
 
-      - name: "SQL Execution"
+      - id: "SEC-SQL-003"
+        name: "SQL Execution"
         patterns:
           - "mysql_query("
           - "mysqli_query("
@@ -286,16 +426,32 @@ taintTracking:
           - "mysqli_real_query("
         category: "sql_injection"
         severity: "HIGH"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-89"]
+          owasp: ["A03:2021"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/sql-injection"
 
-      - name: "Code Execution"
+      - id: "SEC-CODE-003"
+        name: "Code Execution"
         patterns:
           - "eval("
           - "assert("
           - "create_function("
         category: "code_injection"
         severity: "CRITICAL"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-94"]
+          owasp: ["A03:2021"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/code-injection"
 
-      - name: "File Operation"
+      - id: "SEC-FILE-002"
+        name: "File Operation"
         patterns:
           - "include("
           - "require("
@@ -304,30 +460,61 @@ taintTracking:
           - "file_put_contents"
         category: "file_operation"
         severity: "MEDIUM"
+        profiles:
+          - "portability"
+          - "default"
+        guidelines:
+          cwe: ["CWE-22"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/path-traversal"
 
-      - name: "Deserialization"
+      - id: "SEC-DES-002"
+        name: "Deserialization"
         patterns:
           - "unserialize("
         category: "deserialization"
         severity: "HIGH"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-502"]
+          owasp: ["A03:2021"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/deserialization"
 
-      - name: "XML Processing"
-        positions:
+      - id: "SEC-XXE-003"
+        name: "XML Processing"
+        patterns:
           - "simplexml_load_string"
           - "simplexml_load_file"
           - "DOMDocument.loadXML"
         category: "xxe"
         severity: "HIGH"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-611"]
+          owasp: ["A03:2021"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/xxe"
 
     go:
-      - name: "Command Execution"
+      - id: "SEC-CMD-004"
+        name: "Command Execution"
         patterns:
           - "exec.Command"
           - "os/exec"
         category: "command_exec"
         severity: "CRITICAL"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-78"]
+          owasp: ["A03:2021"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/command-injection"
 
-      - name: "SQL Execution"
+      - id: "SEC-SQL-004"
+        name: "SQL Execution"
         patterns:
           - "db.Query"
           - "db.Exec"
@@ -335,24 +522,47 @@ taintTracking:
           - "sql.Exec"
         category: "sql_injection"
         severity: "HIGH"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-89"]
+          owasp: ["A03:2021"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/sql-injection"
 
-      - name: "Code Execution"
+      - id: "SEC-CODE-004"
+        name: "Code Execution"
         patterns:
           - "reflect.ValueOf"
           - "unsafe.Pointer"
         category: "code_injection"
         severity: "HIGH"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-94"]
+          owasp: ["A03:2021"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/code-injection"
 
-      - name: "File Operation"
+      - id: "SEC-FILE-003"
+        name: "File Operation"
         patterns:
           - "os.Open"
           - "ioutil.ReadFile"
           - "ioutil.WriteFile"
         category: "file_operation"
         severity: "MEDIUM"
+        profiles:
+          - "portability"
+          - "default"
+        guidelines:
+          cwe: ["CWE-22"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/path-traversal"
 
     ruby:
-      - name: "Command Execution"
+      - id: "SEC-CMD-005"
+        name: "Command Execution"
         patterns:
           - "system("
           - "`"
@@ -360,16 +570,32 @@ taintTracking:
           - "spawn("
         category: "command_exec"
         severity: "CRITICAL"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-78"]
+          owasp: ["A03:2021"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/command-injection"
 
-      - name: "SQL Execution"
+      - id: "SEC-SQL-005"
+        name: "SQL Execution"
         patterns:
           - "execute.*interpolate"
           - "find_by_sql"
           - "ActiveRecord::Base.connection.execute"
         category: "sql_injection"
         severity: "HIGH"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-89"]
+          owasp: ["A03:2021"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/sql-injection"
 
-      - name: "Code Execution"
+      - id: "SEC-CODE-005"
+        name: "Code Execution"
         patterns:
           - "eval("
           - "instance_eval"
@@ -377,40 +603,79 @@ taintTracking:
           - "send("
         category: "code_injection"
         severity: "CRITICAL"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-94"]
+          owasp: ["A03:2021"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/code-injection"
 
-      - name: "Deserialization"
+      - id: "SEC-DES-003"
+        name: "Deserialization"
         patterns:
           - "Marshal.load"
           - "YAML.load"
           - "Psych.load"
         category: "deserialization"
         severity: "HIGH"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-502"]
+          owasp: ["A03:2021"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/deserialization"
 
     rust:
-      - name: "Command Execution"
+      - id: "SEC-CMD-006"
+        name: "Command Execution"
         patterns:
           - "std::process::Command"
           - "Command::new"
         category: "command_exec"
         severity: "CRITICAL"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-78"]
+          owasp: ["A03:2021"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/command-injection"
 
-      - name: "File Operation"
+      - id: "SEC-FILE-004"
+        name: "File Operation"
         patterns:
           - "std::fs::read"
           - "std::fs::write"
           - "File::open"
         category: "file_operation"
         severity: "MEDIUM"
+        profiles:
+          - "portability"
+          - "default"
+        guidelines:
+          cwe: ["CWE-22"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/path-traversal"
 
-      - name: "Deserialization"
+      - id: "SEC-DES-004"
+        name: "Deserialization"
         patterns:
           - "serde::Deserialize"
           - "bincode::deserialize"
         category: "deserialization"
         severity: "MEDIUM"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-502"]
+          owasp: ["A03:2021"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/deserialization"
 
     cpp:
-      - name: "Command Execution"
+      - id: "SEC-CMD-007"
+        name: "Command Execution"
         patterns:
           - "system("
           - "popen("
@@ -420,16 +685,34 @@ taintTracking:
           - "execvp"
         category: "command_exec"
         severity: "CRITICAL"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-78"]
+          owasp: ["A03:2021"]
+          gbt: ["GB/T34943-6.1.1.6"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/command-injection"
 
-      - name: "SQL Execution"
+      - id: "SEC-SQL-007"
+        name: "SQL Execution"
         patterns:
           - "mysql_query"
           - "sqlite3_exec"
           - "PQexec"
         category: "sql_injection"
         severity: "HIGH"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-89"]
+          owasp: ["A03:2021"]
+          gbt: ["GB/T34943-6.1.1.1"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/sql-injection"
 
-      - name: "File Operation"
+      - id: "SEC-FILE-005"
+        name: "File Operation"
         patterns:
           - "fopen"
           - "ifstream"
@@ -437,24 +720,49 @@ taintTracking:
           - "freopen"
         category: "file_operation"
         severity: "MEDIUM"
+        profiles:
+          - "portability"
+          - "default"
+        guidelines:
+          cwe: ["CWE-22"]
+          gbt: ["GB/T34943-6.1.1.4"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/path-traversal"
 
-      - name: "Code Execution"
+      - id: "SEC-CODE-006"
+        name: "Code Execution"
         patterns:
           - "longjmp"
           - "setjmp"
         category: "code_injection"
         severity: "HIGH"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-94"]
+          gbt: ["GB/T34943-6.1.1.3"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/code-injection"
 
     csharp:
-      - name: "Command Execution"
+      - id: "SEC-CMD-008"
+        name: "Command Execution"
         patterns:
           - "Process.Start"
           - "Runtime.exec"
           - "ProcessStartInfo"
         category: "command_exec"
         severity: "CRITICAL"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-78"]
+          owasp: ["A03:2021"]
+          gbt: ["GB/T34946-6.1.1.6"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/command-injection"
 
-      - name: "SQL Execution"
+      - id: "SEC-SQL-008"
+        name: "SQL Execution"
         patterns:
           - "SqlCommand"
           - "ExecuteReader"
@@ -462,21 +770,46 @@ taintTracking:
           - "ExecuteScalar"
         category: "sql_injection"
         severity: "HIGH"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-89"]
+          owasp: ["A03:2021"]
+          gbt: ["GB/T34946-6.1.1.1"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/sql-injection"
 
-      - name: "Code Execution"
+      - id: "SEC-CODE-007"
+        name: "Code Execution"
         patterns:
           - "DynamicMethod"
           - "Assembly.Load"
         category: "code_injection"
         severity: "HIGH"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-94"]
+          gbt: ["GB/T34946-6.1.1.3"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/code-injection"
 
-      - name: "Deserialization"
+      - id: "SEC-DES-005"
+        name: "Deserialization"
         patterns:
           - "BinaryFormatter.Deserialize"
           - "LosFormatter.Deserialize"
           - "ObjectStateFormatter.Deserialize"
         category: "deserialization"
         severity: "CRITICAL"
+        profiles:
+          - "security"
+          - "default"
+        guidelines:
+          cwe: ["CWE-502"]
+          owasp: ["A03:2021"]
+          gbt: ["GB/T34946-6.1.1.7"]
+        doc_url: "https://docs.gbt-codeagent.com/rules/deserialization"
 
   # 安全函数 - 净化器
   sanitizers:

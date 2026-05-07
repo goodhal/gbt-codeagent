@@ -6,9 +6,12 @@
 import { StaticAnalyzer } from './staticAnalyzer.js';
 import { TaintAnalyzer } from './taintAnalyzer.js';
 import { PatternAnalyzer } from './patternAnalyzer.js';
+import { BaseAnalyzer } from './baseAnalyzer.js';
+import { Semaphore } from '../utils/semaphore.js';
 
-export class CompositeAnalyzer {
+export class CompositeAnalyzer extends BaseAnalyzer {
   constructor(rulesEngine, options = {}) {
+    super(rulesEngine, options);
     this.rulesEngine = rulesEngine;
     this.options = options;
 
@@ -203,34 +206,6 @@ export class CompositeAnalyzer {
       if (typeof analyzer.clearCache === 'function') {
         analyzer.clearCache();
       }
-    }
-  }
-}
-
-class Semaphore {
-  constructor(max) {
-    this.max = max;
-    this.current = 0;
-    this.queue = [];
-  }
-
-  async acquire() {
-    if (this.current < this.max) {
-      this.current++;
-      return;
-    }
-
-    return new Promise(resolve => {
-      this.queue.push(resolve);
-    });
-  }
-
-  release() {
-    if (this.queue.length > 0) {
-      const resolve = this.queue.shift();
-      resolve();
-    } else {
-      this.current--;
     }
   }
 }

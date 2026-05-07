@@ -51,41 +51,64 @@ taintTracking:
     python:
       - name: "User Input"
         patterns:
-          - "input("
-          - "sys.argv"
-          - "os.environ"
-          - "request.args"
-          - "request.form"
-          - "request.json"
+          - "input\\("
+          - "sys\\.argv"
+          - "os\\.environ"
+          - "request\\.args"
+          - "request\\.form"
+          - "request\\.json"
+          - "request\\.values"
+          - "request\\.data"
+          - "request\\.cookies"
+          - "request\\.headers"
+          - "flask\\.request"
+          - "django\\.request"
         category: "user_input"
       - name: "File Read"
         patterns:
-          - "open("
-          - "file()"
-          - "read()"
+          - "open\\("
+          - "file\\("
+          - "\\.read\\("
+          - "Path\\("
+          - "Path\\.open"
         category: "file_input"
       - name: "Network Input"
         patterns:
-          - "requests.get"
-          - "requests.post"
-          - "urllib"
-          - "http.client"
+          - "requests\\.get"
+          - "requests\\.post"
+          - "requests\\.request"
+          - "urllib\\."
+          - "http\\.client"
+          - "httpx\\."
         category: "network_input"
+      - name: "Database Input"
+        patterns:
+          - "cursor\\.fetch"
+          - "query\\("
+          - "get\\("
+          - "filter\\("
+        category: "db_input"
 
     javascript:
       - name: "DOM Input"
         patterns:
           - "innerHTML"
           - "outerHTML"
-          - "document.write"
-          - "eval("
+          - "document\\.write"
+          - "eval\\("
+          - "location\\.href"
+          - "location\\.search"
+          - "document\\.cookie"
         category: "dom_input"
       - name: "User Input"
         patterns:
-          - "prompt("
-          - "confirm("
-          - "fetch("
+          - "prompt\\("
+          - "confirm\\("
+          - "fetch\\("
           - "XMLHttpRequest"
+          - "axios\\("
+          - "req\\."
+          - "res\\."
         category: "user_input"
 
     java:
@@ -184,13 +207,13 @@ taintTracking:
       - id: "SEC-CMD-001"
         name: "Command Execution"
         patterns:
-          - "os.system"
-          - "os.popen"
-          - "subprocess.call"
-          - "subprocess.Popen"
-          - "subprocess.run"
-          - "exec("
-          - "eval("
+          - "os\\.system"
+          - "os\\.popen"
+          - "subprocess\\.call"
+          - "subprocess\\.Popen"
+          - "subprocess\\.run"
+          - "exec\\("
+          - "eval\\("
         category: "command_exec"
         severity: "CRITICAL"
         profiles:
@@ -205,11 +228,11 @@ taintTracking:
       - id: "SEC-SQL-001"
         name: "SQL Execution"
         patterns:
-          - "cursor.execute"
-          - "cursor.executemany"
-          - "connection.execute"
-          - "Session.execute"
-          - "raw("
+          - "cursor\\.execute"
+          - "cursor\\.executemany"
+          - "connection\\.execute"
+          - "Session\\.execute"
+          - "raw\\("
         category: "sql_injection"
         severity: "HIGH"
         profiles:
@@ -224,9 +247,9 @@ taintTracking:
       - id: "SEC-CODE-001"
         name: "Code Execution"
         patterns:
-          - "eval("
-          - "exec("
-          - "compile("
+          - "eval\\("
+          - "exec\\("
+          - "compile\\("
         category: "code_injection"
         severity: "CRITICAL"
         profiles:
@@ -241,10 +264,10 @@ taintTracking:
       - id: "SEC-FILE-001"
         name: "File Operation"
         patterns:
-          - "open("
+          - "open\\("
           - "file_put_contents"
-          - "shutil.copy"
-          - "os.rename"
+          - "shutil\\.copy"
+          - "os\\.rename"
         category: "file_operation"
         severity: "MEDIUM"
         profiles:
@@ -277,10 +300,10 @@ taintTracking:
       - id: "SEC-CODE-002"
         name: "Code Execution"
         patterns:
-          - "eval("
-          - "Function("
-          - "setTimeout("
-          - "setInterval("
+          - "eval\\("
+          - "Function\\("
+          - "setTimeout\\("
+          - "setInterval\\("
           - "new Function"
         category: "code_injection"
         severity: "CRITICAL"
@@ -313,9 +336,9 @@ taintTracking:
       - id: "SEC-SSRF-001"
         name: "Network Request"
         patterns:
-          - "fetch("
+          - "fetch\\("
           - "XMLHttpRequest"
-          - "axios("
+          - "axios\\("
         category: "ssrf"
         severity: "MEDIUM"
         profiles:
@@ -400,13 +423,13 @@ taintTracking:
       - id: "SEC-CMD-003"
         name: "Command Execution"
         patterns:
-          - "system("
-          - "exec("
-          - "shell_exec("
-          - "passthru("
-          - "popen("
-          - "proc_open("
-          - "pcntl_exec("
+          - "system\\("
+          - "exec\\("
+          - "shell_exec\\("
+          - "passthru\\("
+          - "popen\\("
+          - "proc_open\\("
+          - "pcntl_exec\\("
         category: "command_exec"
         severity: "CRITICAL"
         profiles:
@@ -420,10 +443,10 @@ taintTracking:
       - id: "SEC-SQL-003"
         name: "SQL Execution"
         patterns:
-          - "mysql_query("
-          - "mysqli_query("
-          - "pg_query("
-          - "mysqli_real_query("
+          - "mysql_query\\("
+          - "mysqli_query\\("
+          - "pg_query\\("
+          - "mysqli_real_query\\("
         category: "sql_injection"
         severity: "HIGH"
         profiles:
@@ -437,9 +460,9 @@ taintTracking:
       - id: "SEC-CODE-003"
         name: "Code Execution"
         patterns:
-          - "eval("
-          - "assert("
-          - "create_function("
+          - "eval\\("
+          - "assert\\("
+          - "create_function\\("
         category: "code_injection"
         severity: "CRITICAL"
         profiles:
@@ -453,9 +476,9 @@ taintTracking:
       - id: "SEC-FILE-002"
         name: "File Operation"
         patterns:
-          - "include("
-          - "require("
-          - "fopen("
+          - "include\\("
+          - "require\\("
+          - "fopen\\("
           - "file_get_contents"
           - "file_put_contents"
         category: "file_operation"
@@ -677,8 +700,8 @@ taintTracking:
       - id: "SEC-CMD-007"
         name: "Command Execution"
         patterns:
-          - "system("
-          - "popen("
+          - "system\\("
+          - "popen\\("
           - "execl"
           - "execlp"
           - "execv"
@@ -816,34 +839,64 @@ taintTracking:
     python:
       - name: "Input Validation"
         patterns:
-          - "re.match"
-          - "re.search"
-          - "validate"
-          - "is_valid"
+          - "re\\.match"
+          - "re\\.search"
+          - "re\\.fullmatch"
+          - "validate_"
+          - "is_valid_"
+          - "schema\\.validate"
+          - "pydantic\\.BaseModel"
+          - "marshmallow\\."
+          - "cerberus\\."
         category: "validation"
 
       - name: "Output Encoding"
         patterns:
-          - "html.escape"
-          - "htmlspecialchars"
-          - "markupsafe"
-          - "bleach"
+          - "html\\.escape"
+          - "html\\.unescape"
+          - "markupsafe\\."
+          - "bleach\\."
+          - "jinja2\\.Markup"
+          - "escape\\("
         category: "encoding"
 
       - name: "SQL Parameterization"
         patterns:
-          - "execute.*\\?"
+          - "execute\\s*\\(\\s*[^,]+,\\s*\\["
+          - "execute\\s*\\(\\s*[^,]+,\\s*\\("
           - "execute.*%s"
           - "execute.*:\\w+"
-          - "prepare("
+          - "prepare\\("
+          - "paramstyle"
+          - "bindparam"
         category: "sql_safe"
 
       - name: "Shell Escaping"
         patterns:
-          - "shlex.quote"
-          - "shlex.escape"
-          - "subprocess.list2cmdline"
+          - "shlex\\.quote"
+          - "shlex\\.escape"
+          - "subprocess\\.list2cmdline"
+          - "pipes\\.quote"
         category: "shell_safe"
+
+      - name: "Path Security"
+        patterns:
+          - "os\\.path\\.abspath"
+          - "os\\.path\\.realpath"
+          - "os\\.path\\.normpath"
+          - "pathlib\\.Path.*resolve"
+          - "pathlib\\.Path.*absolute"
+          - "basename\\("
+          - "realpath\\("
+        category: "path_safe"
+
+      - name: "URL Security"
+        patterns:
+          - "urllib\\.parse\\.quote"
+          - "urllib\\.parse\\.quote_plus"
+          - "urlencode\\("
+          - "quote\\("
+        category: "url_safe"
 
     javascript:
       - name: "Output Encoding"
@@ -852,6 +905,10 @@ taintTracking:
           - "innerText"
           - "encodeURIComponent"
           - "encodeURI"
+          - "escape\\("
+          - "lodash\\.escape"
+          - "xss\\.filterXSS"
+          - "DOMPurify\\."
         category: "encoding"
 
       - name: "DOM Safe Methods"
@@ -860,7 +917,27 @@ taintTracking:
           - "createTextNode"
           - "appendChild"
           - "removeChild"
+          - "setAttribute"
+          - "textContent\\s*="
+          - "innerText\\s*="
         category: "dom_safe"
+
+      - name: "Input Validation"
+        patterns:
+          - "Joi\\."
+          - "Yup\\."
+          - "Zod\\."
+          - "validator\\."
+          - "isEmail\\("
+          - "isURL\\("
+        category: "validation"
+
+      - name: "Path Security"
+        patterns:
+          - "path\\.basename"
+          - "path\\.normalize"
+          - "path\\.resolve"
+        category: "path_safe"
 
     java:
       - name: "SQL Parameterization"
@@ -1051,14 +1128,12 @@ detectionRules:
     languages:
       python:
         riskPatterns:
-          - pattern: "os\\.system\\s*\\([^)]*\\+"
-            description: "os.system 字符串拼接"
-          - pattern: "os\\.popen\\s*\\([^)]*\\+"
-            description: "os.popen 字符串拼接"
+          - pattern: "os\\.system\\s*\\("
+            description: "os.system 调用"
+          - pattern: "os\\.popen\\s*\\("
+            description: "os.popen 调用"
           - pattern: "subprocess\\.(call|Popen|run)\\s*\\([^)]*shell\\s*=\\s*True"
             description: "启用 shell 的子进程调用"
-          - pattern: "subprocess\\.(call|Popen|run)\\s*\\([^)]*\\+\\s*[^)]*\\)"
-            description: "子进程字符串拼接"
         safePatterns:
           - pattern: "subprocess\\.run\\s*\\([^,]+,\\s*shell\\s*=\\s*False"
             description: "禁用 shell 的子进程"
@@ -1176,10 +1251,10 @@ detectionRules:
     languages:
       javascript:
         riskPatterns:
-          - pattern: "innerHTML\\s*=\\s*[^;]*\\+"
-            description: "innerHTML 字符串拼接"
-          - pattern: "outerHTML\\s*=\\s*[^;]*\\+"
-            description: "outerHTML 字符串拼接"
+          - pattern: "innerHTML\\s*="
+            description: "innerHTML 赋值"
+          - pattern: "outerHTML\\s*="
+            description: "outerHTML 赋值"
           - pattern: "document\\.write\\s*\\("
             description: "document.write"
           - pattern: "insertAdjacentHTML"
@@ -1250,10 +1325,8 @@ detectionRules:
     languages:
       python:
         riskPatterns:
-          - pattern: "open\\s*\\([^)]*\\+\\s*[^)]*\\)"
-            description: "字符串拼接的文件路径"
-          - pattern: "os\\.path\\.join\\s*\\([^)]*\\+\\s*[^)]*\\)"
-            description: "路径拼接中的变量"
+          - pattern: "open\\s*\\("
+            description: "打开文件操作"
           - pattern: "os\\.path\\.join\\s*\\([^)]*request\\."
             description: "用户输入参与路径拼接"
         safePatterns:
@@ -1830,79 +1903,165 @@ detectionRules:
   weak_crypto:
     description: "弱加密算法"
     cwe: "CWE-327"
+    gbt: "GB/T34944-6.2.6.8"
     languages:
       python:
         riskPatterns:
           - pattern: "hashlib\\.md5\\s*\\("
-            description: "MD5 哈希"
+            description: "MD5哈希"
           - pattern: "hashlib\\.sha1\\s*\\("
-            description: "SHA1 哈希"
+            description: "SHA1哈希"
           - pattern: "Cryptography\\.crypt\\("
-            description: "crypt 加密"
-        severity: "MEDIUM"
-        remediation: "使用 SHA-256 或更强的哈希算法"
+            description: "crypt加密"
+          - pattern: "DES\\s*\\("
+            description: "DES加密"
+          - pattern: "3DES\\s*\\("
+            description: "3DES加密"
+        safePatterns:
+          - pattern: "hashlib\\.sha256\\s*\\("
+            description: "SHA256哈希"
+          - pattern: "hashlib\\.sha512\\s*\\("
+            description: "SHA512哈希"
+          - pattern: "AES\\s*\\("
+            description: "AES加密"
+        severity: "HIGH"
+        remediation: "使用SHA256/SHA512哈希，使用AES加密"
 
       java:
         riskPatterns:
           - pattern: "MessageDigest\\.getInstance\\s*\\(\\s*['\\\"]md5"
-            description: "MD5 算法"
+            description: "MD5算法"
           - pattern: "MessageDigest\\.getInstance\\s*\\(\\s*['\\\"]sha-?1"
-            description: "SHA1 算法"
-        severity: "MEDIUM"
-        remediation: "使用 SHA-256 或更强的哈希算法"
+            description: "SHA1算法"
+          - pattern: "Cipher\\.getInstance\\s*\\(\\s*['\\\"]DES"
+            description: "DES加密"
+          - pattern: "Cipher\\.getInstance\\s*\\(\\s*['\\\"]3DES"
+            description: "3DES加密"
+          - pattern: "Cipher\\.getInstance\\s*\\(\\s*['\\\"]RC4"
+            description: "RC4加密"
+        safePatterns:
+          - pattern: "Cipher\\.getInstance\\s*\\(\\s*['\\\"]AES"
+            description: "AES加密"
+          - pattern: "MessageDigest\\.getInstance\\s*\\(\\s*['\\\"]SHA-256"
+            description: "SHA256哈希"
+          - pattern: "MessageDigest\\.getInstance\\s*\\(\\s*['\\\"]SHA-512"
+            description: "SHA512哈希"
+        severity: "HIGH"
+        remediation: "使用AES加密，使用SHA256/SHA512哈希"
+
+      javascript:
+        riskPatterns:
+          - pattern: "crypt\\s*\\.createHash\\s*\\(\\s*['\\\"]md5"
+            description: "MD5哈希"
+          - pattern: "crypt\\s*\\.createHash\\s*\\(\\s*['\\\"]sha1"
+            description: "SHA1哈希"
+        safePatterns:
+          - pattern: "crypt\\s*\\.createHash\\s*\\(\\s*['\\\"]sha256"
+            description: "SHA256哈希"
+          - pattern: "crypt\\s*\\.createHash\\s*\\(\\s*['\\\"]sha512"
+            description: "SHA512哈希"
+        severity: "HIGH"
+        remediation: "使用SHA256/SHA512哈希"
+
+      php:
+        riskPatterns:
+          - pattern: "md5\\s*\\("
+            description: "MD5哈希"
+          - pattern: "sha1\\s*\\("
+            description: "SHA1哈希"
+          - pattern: "mcrypt_encrypt\\s*\\(\\s*MCRYPT_DES"
+            description: "DES加密"
+        safePatterns:
+          - pattern: "hash\\s*\\(\\s*['\\\"]sha256"
+            description: "SHA256哈希"
+          - pattern: "openssl_encrypt\\s*\\(\\s*['\\\"]AES"
+            description: "AES加密"
+        severity: "HIGH"
+        remediation: "使用AES加密，使用SHA256哈希"
 
       go:
         riskPatterns:
-          - pattern: "crypto/md5\\.New\\s*\\("
-            description: "MD5 算法"
-          - pattern: "crypto/sha1\\.New\\s*\\("
-            description: "SHA1 算法"
-        severity: "MEDIUM"
-        remediation: "使用 crypto/sha256 或更强的哈希算法"
+          - pattern: "crypto/md5\\.New"
+            description: "MD5哈希"
+          - pattern: "crypto/sha1\\.New"
+            description: "SHA1哈希"
+        safePatterns:
+          - pattern: "crypto/sha256\\.New"
+            description: "SHA256哈希"
+          - pattern: "crypto/sha512\\.New"
+            description: "SHA512哈希"
+        severity: "HIGH"
+        remediation: "使用SHA256/SHA512哈希"
 
       ruby:
         riskPatterns:
-          - pattern: "Digest::MD5\\.new"
-            description: "MD5 算法"
-          - pattern: "Digest::SHA1\\.new"
-            description: "SHA1 算法"
-          - pattern: "OpenSSL::Cipher\\.new\\s*\\([^)]*\\)"
-            description: "弱加密算法"
-        severity: "MEDIUM"
-        remediation: "使用 SHA-256 或更强的哈希算法"
+          - pattern: "Digest::MD5"
+            description: "MD5哈希"
+          - pattern: "Digest::SHA1"
+            description: "SHA1哈希"
+          - pattern: "OpenSSL::Cipher\\.new\\s*\\(\\s*['\\\"]des"
+            description: "DES加密"
+        safePatterns:
+          - pattern: "Digest::SHA256"
+            description: "SHA256哈希"
+          - pattern: "Digest::SHA512"
+            description: "SHA512哈希"
+          - pattern: "OpenSSL::Cipher\\.new\\s*\\(\\s*['\\\"]aes"
+            description: "AES加密"
+        severity: "HIGH"
+        remediation: "使用AES加密，使用SHA256/SHA512哈希"
 
       rust:
         riskPatterns:
-          - pattern: "md5::compute\\s*\\("
-            description: "MD5 算法"
-          - pattern: "sha1::Sha1\\s*\\("
-            description: "SHA1 算法"
-          - pattern: "des::\\w+\\s*\\("
-            description: "DES 加密"
-        severity: "MEDIUM"
-        remediation: "使用 SHA-256 或更强的哈希算法"
+          - pattern: "md5::Md5"
+            description: "MD5哈希"
+          - pattern: "sha1::Sha1"
+            description: "SHA1哈希"
+        safePatterns:
+          - pattern: "sha2::Sha256"
+            description: "SHA256哈希"
+          - pattern: "sha2::Sha512"
+            description: "SHA512哈希"
+        severity: "HIGH"
+        remediation: "使用SHA256/SHA512哈希"
 
       cpp:
         riskPatterns:
-          - pattern: "MD5\\s*\\([^)]*\\)"
-            description: "MD5 算法"
-          - pattern: "SHA1\\s*\\([^)]*\\)"
-            description: "SHA1 算法"
-          - pattern: "EVP_des_\\w+"
-            description: "DES 加密"
-        severity: "MEDIUM"
-        remediation: "使用 SHA-256 或更强的哈希算法"
+          - pattern: "MD5_Init"
+            description: "MD5哈希"
+          - pattern: "SHA1_Init"
+            description: "SHA1哈希"
+          - pattern: "DES_encrypt"
+            description: "DES加密"
+        safePatterns:
+          - pattern: "SHA256_Init"
+            description: "SHA256哈希"
+          - pattern: "SHA512_Init"
+            description: "SHA512哈希"
+          - pattern: "EVP_aes_256_cbc"
+            description: "AES加密"
+        severity: "HIGH"
+        remediation: "使用AES加密，使用SHA256/SHA512哈希"
 
       csharp:
         riskPatterns:
           - pattern: "MD5\\.Create\\s*\\("
-            description: "MD5 算法"
+            description: "MD5哈希"
           - pattern: "SHA1\\.Create\\s*\\("
-            description: "SHA1 算法"
+            description: "SHA1哈希"
           - pattern: "DESCryptoServiceProvider"
-            description: "DES 加密"
-        severity: "MEDIUM"
-        remediation: "使用 SHA-256 或更强的哈希算法"
+            description: "DES加密"
+          - pattern: "TripleDESCryptoServiceProvider"
+            description: "3DES加密"
+        safePatterns:
+          - pattern: "SHA256\\.Create\\s*\\("
+            description: "SHA256哈希"
+          - pattern: "SHA512\\.Create\\s*\\("
+            description: "SHA512哈希"
+          - pattern: "AesCryptoServiceProvider"
+            description: "AES加密"
+        severity: "HIGH"
+        remediation: "使用AES加密，使用SHA256/SHA512哈希"
 
 # 框架特定规则
 frameworkRules:
@@ -2314,3 +2473,243 @@ analysisOptions:
             description: "会话失效"
         severity: "MEDIUM"
         remediation: "登录时调用changeSessionId"
+
+  cookie_security:
+    description: "Cookie安全属性缺失"
+    cwe: "CWE-1004"
+    gbt: "GB/T34944-6.2.7.3"
+    languages:
+      python:
+        riskPatterns:
+          - pattern: "set_cookie\\s*\\([^)]*"
+            description: "设置Cookie可能缺少安全属性"
+          - pattern: "session\\.cookie\\s*="
+            description: "会话Cookie设置"
+        safePatterns:
+          - pattern: "secure\\s*=\\s*True"
+            description: "Secure属性"
+          - pattern: "httponly\\s*=\\s*True"
+            description: "HttpOnly属性"
+          - pattern: "samesite\\s*=\\s*['\\\"]Strict['\\\"]"
+            description: "SameSite=Strict"
+          - pattern: "samesite\\s*=\\s*['\\\"]Lax['\\\"]"
+            description: "SameSite=Lax"
+        severity: "MEDIUM"
+        remediation: "设置Secure、HttpOnly和SameSite属性"
+
+      javascript:
+        riskPatterns:
+          - pattern: "document\\.cookie\\s*=\\s*[^;]*"
+            description: "设置Cookie可能缺少安全属性"
+        safePatterns:
+          - pattern: ";\\s*Secure"
+            description: "Secure属性"
+          - pattern: ";\\s*HttpOnly"
+            description: "HttpOnly属性"
+          - pattern: ";\\s*SameSite=(Strict|Lax)"
+            description: "SameSite属性"
+        severity: "MEDIUM"
+        remediation: "添加Secure、HttpOnly和SameSite属性"
+
+      java:
+        riskPatterns:
+          - pattern: "addCookie\\s*\\("
+            description: "添加Cookie"
+          - pattern: "Cookie\\s*cookie\\s*=\\s*new"
+            description: "创建Cookie对象"
+        safePatterns:
+          - pattern: "setSecure\\s*\\(\\s*true\\s*\\)"
+            description: "设置Secure"
+          - pattern: "setHttpOnly\\s*\\(\\s*true\\s*\\)"
+            description: "设置HttpOnly"
+          - pattern: "setSameSite\\s*\\("
+            description: "设置SameSite"
+        severity: "MEDIUM"
+        remediation: "设置Secure、HttpOnly和SameSite属性"
+
+      php:
+        riskPatterns:
+          - pattern: "setcookie\\s*\\("
+            description: "设置Cookie"
+          - pattern: "session_set_cookie_params\\s*\\("
+            description: "会话Cookie参数"
+        safePatterns:
+          - pattern: "secure\\s*=\\s*true"
+            description: "Secure属性"
+          - pattern: "httponly\\s*=\\s*true"
+            description: "HttpOnly属性"
+        severity: "MEDIUM"
+        remediation: "设置Secure和HttpOnly标志"
+
+      csharp:
+        riskPatterns:
+          - pattern: "Response\\.Cookies\\.Add\\s*\\("
+            description: "添加Cookie"
+          - pattern: "new HttpCookie\\s*\\("
+            description: "创建HttpCookie"
+        safePatterns:
+          - pattern: "HttpOnly\\s*=\\s*true"
+            description: "HttpOnly属性"
+          - pattern: "Secure\\s*=\\s*true"
+            description: "Secure属性"
+          - pattern: "SameSite\\s*=\\s*SameSiteMode"
+            description: "SameSite属性"
+        severity: "MEDIUM"
+        remediation: "设置HttpOnly、Secure和SameSite属性"
+
+  information_disclosure:
+    description: "敏感信息泄露"
+    cwe: "CWE-200"
+    gbt: "GB/T34944-6.2.3.7"
+    languages:
+      python:
+        riskPatterns:
+          - pattern: "print\\s*\\([^)]*password"
+            description: "打印密码"
+          - pattern: "logging\\.info\\s*\\([^)]*password"
+            description: "日志记录密码"
+          - pattern: "traceback\\.print_exc\\s*\\("
+            description: "打印异常堆栈"
+          - pattern: "except.*print"
+            description: "异常处理中打印"
+        safePatterns:
+          - pattern: "logging\\.error\\s*\\([^)]*exc_info"
+            description: "结构化异常日志"
+          - pattern: "logger\\.exception\\s*\\("
+            description: "异常日志"
+        severity: "MEDIUM"
+        remediation: "避免在日志或输出中包含敏感信息"
+
+      java:
+        riskPatterns:
+          - pattern: "e\\.printStackTrace\\s*\\("
+            description: "打印异常堆栈"
+          - pattern: "System\\.out\\.print.*password"
+            description: "输出密码"
+          - pattern: "System\\.err\\.print.*password"
+            description: "错误输出密码"
+        safePatterns:
+          - pattern: "logger\\.error\\s*\\([^)]*e\\)"
+            description: "日志记录异常"
+          - pattern: "log\\.error.*Exception"
+            description: "异常日志"
+        severity: "MEDIUM"
+        remediation: "使用日志框架而非直接打印异常"
+
+      javascript:
+        riskPatterns:
+          - pattern: "console\\.log\\s*\\([^)]*password"
+            description: "控制台输出密码"
+          - pattern: "console\\.log\\s*\\([^)]*token"
+            description: "控制台输出token"
+          - pattern: "console\\.error\\s*\\([^)]*password"
+            description: "错误输出密码"
+        safePatterns:
+          - pattern: "logger\\.error\\s*\\("
+            description: "使用日志框架"
+        severity: "MEDIUM"
+        remediation: "避免在控制台输出敏感信息"
+
+      php:
+        riskPatterns:
+          - pattern: "echo\\s+.*password"
+            description: "输出密码"
+          - pattern: "var_dump\\s*\\([^)]*password"
+            description: "调试输出密码"
+          - pattern: "print_r\\s*\\([^)]*password"
+            description: "打印密码"
+        safePatterns:
+          - pattern: "error_log\\s*\\("
+            description: "使用error_log"
+        severity: "MEDIUM"
+        remediation: "避免输出敏感信息到响应"
+
+  missing_authentication:
+    description: "缺失身份认证"
+    cwe: "CWE-287"
+    gbt: "GB/T34944-6.2.7.1"
+    languages:
+      python:
+        riskPatterns:
+          - pattern: "@app\\.route\\s*\\([^)]*"
+            description: "路由定义可能缺少认证"
+          - pattern: "def\\s+\\w+\\s*\\([^)]*request"
+            description: "视图函数"
+        safePatterns:
+          - pattern: "@login_required"
+            description: "登录装饰器"
+          - pattern: "@jwt_required"
+            description: "JWT认证"
+          - pattern: "request\\.user\\s*"
+            description: "用户对象访问"
+        severity: "HIGH"
+        remediation: "为敏感路由添加认证装饰器"
+
+      java:
+        riskPatterns:
+          - pattern: "@GetMapping\\s*\\("
+            description: "GET映射"
+          - pattern: "@PostMapping\\s*\\("
+            description: "POST映射"
+        safePatterns:
+          - pattern: "@PreAuthorize\\s*\\("
+            description: "方法级安全"
+          - pattern: "@Secured\\s*\\("
+            description: "安全注解"
+          - pattern: "@AuthenticationPrincipal"
+            description: "认证主体"
+        severity: "HIGH"
+        remediation: "为敏感端点添加认证注解"
+
+      javascript:
+        riskPatterns:
+          - pattern: "app\\.get\\s*\\([^)]*"
+            description: "GET路由"
+          - pattern: "router\\.post\\s*\\([^)]*"
+            description: "POST路由"
+        safePatterns:
+          - pattern: "ensureLoggedIn\\s*\\("
+            description: "登录检查中间件"
+          - pattern: "authenticate\\s*\\("
+            description: "认证中间件"
+          - pattern: "jwt.*middleware"
+            description: "JWT中间件"
+        severity: "HIGH"
+        remediation: "为敏感路由添加认证中间件"
+
+  insecure_deserialization:
+    description: "不安全反序列化增强检测"
+    cwe: "CWE-502"
+    gbt: "GB/T34944-6.1.1.7"
+    languages:
+      python:
+        riskPatterns:
+          - pattern: "cloudpickle\\.loads\\s*\\("
+            description: "cloudpickle反序列化"
+          - pattern: "dill\\.loads\\s*\\("
+            description: "dill反序列化"
+          - pattern: "shelve\\.open\\s*\\("
+            description: "shelve文件"
+        safePatterns:
+          - pattern: "json\\.loads\\s*\\("
+            description: "JSON反序列化"
+          - pattern: "msgpack\\.unpackb\\s*\\("
+            description: "msgpack（需验证）"
+        severity: "CRITICAL"
+        remediation: "避免使用pickle等原生序列化，使用JSON"
+
+      java:
+        riskPatterns:
+          - pattern: "YAML\\.load\\s*\\("
+            description: "YAML反序列化"
+          - pattern: "XStream\\.fromXML\\s*\\("
+            description: "XStream反序列化"
+          - pattern: "Jackson.*enableDefaultTyping"
+            description: "Jackson默认类型"
+        safePatterns:
+          - pattern: "ObjectMapper\\.configure.*FAIL_ON_UNKNOWN_PROPERTIES"
+            description: "Jackson安全配置"
+          - pattern: "JsonParser\\.Feature\\.STRICT_DUPLICATE_DETECTION"
+            description: "严格重复检测"
+        severity: "CRITICAL"
+        remediation: "禁用默认类型，使用安全配置"

@@ -1,448 +1,497 @@
 /**
- * 污点追踪分析器
- * 实现数据流分析，跟踪用户输入到危险函数的传播路径
+ * 污点分析器
+ * 实现完整的数据流追踪和污点传播分析
+ * 优化特性：
+ * 1. 上下文感知变量追踪
+ * 2. 智能净化函数识别
+ * 3. 污点传播路径追踪
+ * 4. 增量分析支持
+ * 5. 可视化输出支持
  */
 
-import { AsyncBaseAnalyzer } from './baseAnalyzer.js';
+import { RulesEngine } from './rulesEngine.js';
 
-export class TaintAnalyzer extends AsyncBaseAnalyzer {
-  constructor(rulesEngine, options = {}) {
-    super(rulesEngine, options);
-    this._variableMap = new Map();
-    this._callStack = [];
-    this._propagationDepth = options.propagationDepth || 50;
-    this._enableTaintPropagation = options.enableTaintPropagation !== false;
+export class TaintAnalyzer {
+  constructor(options = {}) {
+    this.rulesEngine = new RulesEngine(options);
+    this._analysisCache = new Map();
+    this._variableTracking = new Map();
+    this._propagationHistory = [];
+    this._incrementalChanges = new Set();
   }
 
-  getSupportedLanguages() {
-    return this.rulesEngine?.getSupportedLanguages() || [];
+  async initialize(configPath = null) {
+    await this.rulesEngine.initialize(configPath);
+    return this;
   }
 
-  async analyze(code, context = {}) {
-    const language = context.language || this._language || 'unknown';
-    this.setLanguage(language);
+  async analyzeCode(code, language, options = {}) {
+    const lang = language.toLowerCase();
+    const analysisId = this._generateAnalysisId(code, lang, options);
+    
+    if (options.incremental && this._analysisCache.has(analysisId)) {
+      return this._performIncrementalAnalysis(analysisId, code, lang, options);
+    }
 
-    this._validateCode(code);
-    this._resetState();
+    const result = await this._performFullAnalysis(code, lang, options);
+    
+    if (options.cache !== false) {
+      this._analysisCache.set(analysisId, result);
+    }
+    
+    return result;
+  }
 
-    const results = {
-      success: true,
-      language,
-      taintSources: [],
-      taintSinks: [],
+  _generateAnalysisId(code, language, options) {
+    const hash = this._simpleHash(code);
+    return `${language}:${hash}:${JSON.stringify(options)}`;
+  }
+
+  _simpleHash(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash;
+    }
+    return Math.abs(hash).toString(16);
+  }
+
+  async _performFullAnalysis(code, language, options) {
+    const result = {
+      sources: [],
+      sinks: [],
       sanitizers: [],
+      taintPaths: [],
       vulnerabilities: [],
-      dataFlows: [],
-      propagationPaths: []
+      summary: {
+        totalSources: 0,
+        totalSinks: 0,
+        totalSanitizers: 0,
+        totalPaths: 0,
+        totalVulnerabilities: 0,
+        bySeverity: { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 },
+        byCategory: {}
+      },
+      visualization: null
     };
 
     const sources = this.rulesEngine.matchSources(code, language);
     const sinks = this.rulesEngine.matchSinks(code, language);
     const sanitizers = this.rulesEngine.matchSanitizers(code, language);
 
-    results.taintSources = sources;
-    results.taintSinks = sinks;
-    results.sanitizers = sanitizers;
+    result.sources = sources.map(s => ({ ...s, type: 'source' }));
+    result.sinks = sinks.map(s => ({ ...s, type: 'sink' }));
+    result.sanitizers = sanitizers.map(s => ({ ...s, type: 'sanitizer' }));
 
-    for (const sink of sinks) {
-      const vuln = this._analyzeTaintPath(code, sink, sources, sanitizers, language);
-      if (vuln) {
-        results.vulnerabilities.push(vuln);
-        results.dataFlows.push(...vuln.dataFlow);
-        if (vuln.propagationPath) {
-          results.propagationPaths.push(vuln.propagationPath);
-        }
-      }
+    const taintPaths = this._trackTaintPropagation(code, language, sources, sinks, sanitizers);
+    result.taintPaths = taintPaths;
+
+    const vulnerabilities = this._identifyVulnerabilities(taintPaths, options);
+    result.vulnerabilities = vulnerabilities;
+
+    result.summary = this._generateSummary(result);
+
+    if (options.visualize !== false) {
+      result.visualization = this._generateVisualization(result);
     }
 
-    delete results.dataFlows;
-    delete results.propagationPaths;
-    return results;
+    return result;
   }
 
-  _resetState() {
-    this._variableMap.clear();
-    this._callStack = [];
-  }
-
-  _analyzeTaintPath(code, sink, sources, sanitizers, language) {
-    const sinkLine = sink.line;
-    const nearbySources = sources.filter(s => Math.abs(s.line - sinkLine) <= this._propagationDepth);
-
-    if (nearbySources.length === 0) {
-      return null;
-    }
-
-    const sanitizersBetween = sanitizers.filter(s =>
-      s.line > Math.min(...nearbySources.map(src => src.line)) && s.line < sinkLine
-    );
-
-    const activeSanitizers = this._findActiveSanitizers(sanitizersBetween, code, language);
-
-    if (activeSanitizers.length > 0 && !this._isSanitizerBypassed(activeSanitizers, nearbySources, sink)) {
-      return null;
-    }
-
-    const bestSource = this._findBestSource(nearbySources, sink, sanitizers);
-    if (!bestSource) {
-      return null;
-    }
-
-    const dataFlow = this._traceDataFlow(code, bestSource, sink, language);
-    const propagationPath = this._buildPropagationPath(code, bestSource, sink, dataFlow, language);
-
-    return {
-      type: `TAINT:${sink.category || 'unknown'}`,
-      severity: sink.severity || 'HIGH',
-      location: {
-        file: 'unknown',
-        line: sink.line,
-        column: 0
-      },
-      description: `污点从 ${bestSource.name} 传播到危险函数 ${sink.name}`,
-      evidence: this._getEvidence(code, sink.line),
-      remediation: this._getRemediation(sink),
-      confidence: this._calculateConfidence(bestSource, sink, sanitizers, dataFlow),
-      sink: {
-        name: sink.name,
-        category: sink.category,
-        pattern: sink.pattern,
-        id: sink.id
-      },
-      source: {
-        name: bestSource.name,
-        category: bestSource.category,
-        pattern: bestSource.pattern
-      },
-      dataFlow: dataFlow.map(d => ({
-        type: d.type,
-        description: d.description
-      })),
-      propagationPath
-    };
-  }
-
-  _findBestSource(sources, sink, sanitizers) {
-    let bestSource = null;
-    let minDistance = Infinity;
+  _trackTaintPropagation(code, language, sources, sinks, sanitizers) {
+    const paths = [];
+    const lines = code.split('\n');
+    const sanitizerPatterns = this._buildSanitizerPatterns(sanitizers);
 
     for (const source of sources) {
-      const distance = sink.line - source.line;
-      if (distance > 0 && distance < minDistance) {
-        minDistance = distance;
-        bestSource = source;
-      }
-    }
+      const sourceLine = source.line;
+      const sourceVars = this._extractVariablesFromLine(lines[sourceLine - 1], source.match);
 
-    return bestSource;
-  }
-
-  _findActiveSanitizers(sanitizers, code, language) {
-    const active = [];
-    for (const sanitizer of sanitizers) {
-      if (this._isSanitizerEffective(sanitizer, code, language)) {
-        active.push(sanitizer);
-      }
-    }
-    return active;
-  }
-
-  _isSanitizerEffective(sanitizer, code, language) {
-    const lineContent = code.split('\n')[sanitizer.line - 1] || '';
-
-    const ineffectivePatterns = [
-      /\/\/\s*todo/i,
-      /\/\/\s*fixme/i,
-      /\/\/\s*xxx/i,
-      /#\s*todo/i,
-      /#\s*fixme/i
-    ];
-
-    return !ineffectivePatterns.some(p => p.test(lineContent));
-  }
-
-  _isSanitizerBypassed(activeSanitizers, sources, sink) {
-    if (activeSanitizers.length === 0) return false;
-
-    for (const sanitizer of activeSanitizers) {
-      for (const source of sources) {
-        const sanitizerLine = sanitizer.line;
-        const sourceLine = source.line;
+      for (const sink of sinks) {
         const sinkLine = sink.line;
+        
+        if (sinkLine <= sourceLine) continue;
 
-        if (sanitizerLine > sourceLine && sanitizerLine < sinkLine) {
-          const sourceVar = this._extractVariableFromPattern(source.pattern);
-          const sinkVar = this._extractVariableFromPattern(sink.pattern);
+        const sinkVars = this._extractVariablesFromLine(lines[sinkLine - 1], sink.match);
+        
+        const propagatedVars = [];
+        const propagationPath = [];
 
-          if (sourceVar && sinkVar && sourceVar !== sinkVar) {
-            return true;
+        for (const sourceVar of sourceVars) {
+          const path = this._traceVariableFlow(
+            code, 
+            sourceVar, 
+            sourceLine, 
+            sinkLine, 
+            sanitizerPatterns
+          );
+          
+          if (path.length > 0) {
+            propagatedVars.push(sourceVar);
+            propagationPath.push(...path);
           }
         }
+
+        if (propagatedVars.length > 0) {
+          paths.push({
+            source: { ...source, variables: sourceVars },
+            sink: { ...sink, variables: sinkVars },
+            propagatedVariables: propagatedVars,
+            path: propagationPath,
+            isSanitized: propagationPath.some(p => p.isSanitized),
+            confidence: this._calculatePathConfidence(propagationPath)
+          });
+        }
       }
     }
 
-    return false;
+    return paths;
   }
 
-  _extractVariableFromPattern(pattern) {
-    const match = pattern.match(/(\w+)/);
-    return match ? match[1] : null;
+  _buildSanitizerPatterns(sanitizers) {
+    const patterns = new Map();
+    
+    for (const sanitizer of sanitizers) {
+      for (const pattern of sanitizer.patterns || []) {
+        patterns.set(pattern, sanitizer);
+      }
+    }
+    
+    return patterns;
   }
 
-  _traceDataFlow(code, source, sink, language) {
-    const flow = [];
+  _extractVariablesFromLine(line, matchText) {
+    const vars = [];
+    const regex = /\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g;
+    let match;
+    
+    while ((match = regex.exec(line)) !== null) {
+      vars.push(match[1]);
+    }
+    
+    return vars;
+  }
+
+  _traceVariableFlow(code, variable, startLine, endLine, sanitizerPatterns) {
+    const paths = [];
     const lines = code.split('\n');
-
-    const sourceLine = source.line - 1;
-    const sinkLine = sink.line - 1;
-
-    flow.push({
-      type: 'source',
-      description: `第 ${source.line} 行: ${source.name} (${source.match})`,
-      line: source.line
-    });
-
-    for (let i = sourceLine + 1; i < sinkLine; i++) {
+    
+    for (let i = startLine; i < endLine; i++) {
       const line = lines[i];
-      const lineNumber = i + 1;
+      if (!line) continue;
 
-      if (this._isVariableAssignment(line, language)) {
-        const assignment = this._parseAssignment(line);
-        if (assignment) {
-          flow.push({
-            type: 'propagation',
-            description: `第 ${lineNumber} 行: 变量赋值 ${assignment.variable} = ${assignment.value}`,
-            line: lineNumber,
-            variable: assignment.variable,
-            value: assignment.value
-          });
-          this._variableMap.set(assignment.variable, { line: lineNumber, value: assignment.value });
+      const hasVariable = line.includes(variable);
+      if (!hasVariable) continue;
+
+      let isSanitized = false;
+      let sanitizerInfo = null;
+
+      for (const [pattern, sanitizer] of sanitizerPatterns) {
+        if (line.includes(pattern)) {
+          isSanitized = true;
+          sanitizerInfo = sanitizer;
+          break;
         }
       }
 
-      if (this._isFunctionCall(line, language)) {
-        const func = this._parseFunctionCall(line);
-        if (func) {
-          flow.push({
-            type: 'function_call',
-            description: `第 ${lineNumber} 行: 函数调用 ${func.name}(${func.args})`,
-            line: lineNumber,
-            function: func.name,
-            args: func.args
-          });
-        }
-      }
-
-      if (this._isStringConcat(line, language)) {
-        const concat = this._parseStringConcat(line);
-        if (concat) {
-          flow.push({
-            type: 'string_concat',
-            description: `第 ${lineNumber} 行: 字符串拼接可能引入污点`,
-            line: lineNumber,
-            expression: concat.expression
-          });
-        }
-      }
-
-      if (this._isReturnStatement(line, language)) {
-        const retVar = this._parseReturn(line);
-        if (retVar) {
-          flow.push({
-            type: 'return',
-            description: `第 ${lineNumber} 行: 返回变量 ${retVar}`,
-            line: lineNumber,
-            variable: retVar
-          });
-        }
-      }
-    }
-
-    flow.push({
-      type: 'sink',
-      description: `第 ${sink.line} 行: ${sink.name} (${sink.match})`,
-      line: sink.line
-    });
-
-    return flow;
-  }
-
-  _buildPropagationPath(code, source, sink, dataFlow, language) {
-    const path = {
-      source: {
-        line: source.line,
-        name: source.name,
-        match: source.match
-      },
-      sink: {
-        line: sink.line,
-        name: sink.name,
-        match: sink.match
-      },
-      steps: [],
-      riskLevel: 'HIGH'
-    };
-
-    for (const step of dataFlow) {
-      path.steps.push({
-        line: step.line,
-        type: step.type,
-        description: step.description
+      paths.push({
+        line: i + 1,
+        content: line.trim(),
+        variable,
+        isSanitized,
+        sanitizer: sanitizerInfo,
+        operations: this._extractOperations(line)
       });
-
-      if (step.type === 'string_concat' || step.type === 'function_call') {
-        path.riskLevel = 'CRITICAL';
-      }
     }
 
-    path.summary = `污点从第 ${source.line} 行传播到第 ${sink.line} 行，经过 ${dataFlow.length} 个步骤`;
-
-    return path;
+    return paths;
   }
 
-  _calculateConfidence(source, sink, sanitizers, dataFlow) {
-    let confidence = 0.8;
+  _extractOperations(line) {
+    const operations = [];
+    
+    if (line.includes('=')) operations.push('assignment');
+    if (line.includes('+')) operations.push('concatenation');
+    if (line.includes('${')) operations.push('string_interpolation');
+    if (line.match(/\.[a-zA-Z_]/)) operations.push('method_call');
+    if (line.includes('(') && line.includes(')')) operations.push('function_call');
+    
+    return operations;
+  }
 
-    const distance = sink.line - source.line;
-    if (distance > 30) {
-      confidence -= 0.2;
-    } else if (distance <= 10) {
-      confidence += 0.1;
+  _calculatePathConfidence(path) {
+    let confidence = 0.7;
+    
+    for (const step of path) {
+      if (step.isSanitized) {
+        confidence -= 0.3;
+      }
+      
+      if (step.operations.includes('concatenation') || step.operations.includes('string_interpolation')) {
+        confidence += 0.15;
+      }
+      
+      if (step.operations.includes('function_call')) {
+        confidence += 0.1;
+      }
     }
-
-    if (sanitizers.length > 0) {
-      confidence -= 0.3 * sanitizers.length;
-    }
-
-    const hasStringConcat = dataFlow.some(d => d.type === 'string_concat');
-    if (hasStringConcat) {
-      confidence += 0.15;
-    }
-
-    const hasFunctionCall = dataFlow.some(d => d.type === 'function_call');
-    if (hasFunctionCall) {
-      confidence -= 0.1;
-    }
-
+    
     return Math.min(1.0, Math.max(0.0, confidence));
   }
 
-  _isVariableAssignment(line, language) {
-    const patterns = {
-      python: /^\s*(\w+)\s*=\s*.+$/,
-      javascript: /^\s*(const|let|var)?\s*(\w+)\s*=\s*.+$/,
-      java: /^\s*[\w<>]+\s+(\w+)\s*=\s*.+$/,
-      php: /^\s*\$(\w+)\s*=\s*.+$/,
-      go: /^\s*(\w+)\s*:=\s*.+$|^\s*\w+\s*=\s*.+$/,
-      ruby: /^\s*(\w+)\s*=\s*.+$/
-    };
+  _identifyVulnerabilities(taintPaths, options) {
+    const vulnerabilities = [];
+    const minConfidence = options.minConfidence || 0.5;
 
-    const pattern = patterns[language] || patterns.python;
-    return pattern.test(line.trim());
-  }
+    for (const path of taintPaths) {
+      if (path.isSanitized) continue;
+      if (path.confidence < minConfidence) continue;
 
-  _parseAssignment(line) {
-    const match = line.match(/^\s*(\w+)\s*=\s*(.+)$/);
-    if (match) {
-      return {
-        variable: match[1],
-        value: match[2].trim()
-      };
+      const severity = this._determineSeverity(path.sink);
+      
+      vulnerabilities.push({
+        id: `TAINT-${path.source.category}-${path.sink.category}-${path.source.line}-${path.sink.line}`,
+        source: path.source,
+        sink: path.sink,
+        path: path.path,
+        severity,
+        confidence: path.confidence,
+        category: `${path.source.category}_to_${path.sink.category}`,
+        description: this._generateDescription(path),
+        remediation: this._generateRemediation(path),
+        cwe: this._mapToCWE(path),
+        owasp: this._mapToOWASP(path)
+      });
     }
-    return null;
+
+    return vulnerabilities;
   }
 
-  _isFunctionCall(line, language) {
-    const callPatterns = [
-      /\w+\s*\([^)]*\)/,
-      /\$\w+\s*\([^)]*\)/,
-      /this\.\w+\s*\([^)]*\)/,
-      /self\.\w+\s*\([^)]*\)/
-    ];
-
-    return callPatterns.some(p => p.test(line.trim()));
-  }
-
-  _parseFunctionCall(line) {
-    const match = line.match(/(\w+)\s*\(([^)]*)\)/);
-    if (match) {
-      return {
-        name: match[1],
-        args: match[2]
-      };
-    }
-    return null;
-  }
-
-  _isStringConcat(line, language) {
-    const concatPatterns = {
-      python: /\+['"']|['"']\+|%\s*|_format\(/,
-      javascript: /\+['"']|['"']\+|template\s+string/,
-      java: /\+['"']|String\.format\(|MessageFormat\.format\(/,
-      php: /\.\s*['"']|['"']\s*\./,
-      go: /\+.*['"']|fmt\.Sprintf\(|strings\.Join\(/,
-      ruby: /\+['"']|['"']\+|#\{[^}]+\}/
+  _determineSeverity(sink) {
+    const severityMap = {
+      command_exec: 'CRITICAL',
+      code_injection: 'CRITICAL',
+      deserialization: 'CRITICAL',
+      sql_injection: 'HIGH',
+      xss: 'HIGH',
+      xxe: 'HIGH',
+      ssrf: 'HIGH',
+      file_operation: 'MEDIUM'
     };
-
-    const pattern = concatPatterns[language] || concatPatterns.python;
-    return pattern.test(line);
+    
+    return severityMap[sink.category] || 'MEDIUM';
   }
 
-  _parseStringConcat(line) {
-    const match = line.match(/(.+)/);
-    if (match) {
-      return {
-        expression: match[1].trim()
-      };
-    }
-    return null;
+  _generateDescription(path) {
+    return `Taint flow detected: ${path.source.category} input at line ${path.source.line} ` +
+           `propagates to ${path.sink.category} sink at line ${path.sink.line}`;
   }
 
-  _isReturnStatement(line, language) {
-    const patterns = {
-      python: /^\s*return\s+/,
-      javascript: /^\s*return\s+/,
-      java: /^\s*return\s+/,
-      php: /^\s*return\s+/,
-      go: /^\s*return\s+/,
-      ruby: /^\s*return\s+/
-    };
-
-    const pattern = patterns[language] || patterns.python;
-    return pattern.test(line.trim());
-  }
-
-  _parseReturn(line) {
-    const match = line.match(/return\s+(\w+)/);
-    return match ? match[1] : null;
-  }
-
-  _getEvidence(code, lineNumber) {
-    const lines = code.split('\n');
-    const start = Math.max(0, lineNumber - 3);
-    const end = Math.min(lines.length, lineNumber + 2);
-
-    return lines.slice(start, end).map((l, i) => ({
-      lineNumber: start + i + 1,
-      content: l,
-      marker: i + 1 === lineNumber - start ? '>>>' : '   '
-    }));
-  }
-
-  _getRemediation(sink) {
+  _generateRemediation(path) {
     const remediations = {
-      command_exec: '使用安全的 API 替代 shell 命令，避免字符串拼接。使用 subprocess.run() 并传入 args 数组而非 shell 字符串。',
-      sql_injection: '使用参数化查询或 ORM。避免字符串拼接构建 SQL 语句。',
-      code_injection: '避免使用 eval/exec，对输入进行严格验证和白名单过滤。',
-      xss: '对输出进行 HTML 编码，使用 textContent 替代 innerHTML，使用 React/Vue 的默认转义。',
-      file_operation: '验证文件路径，使用 path.resolve() 规范化，避免用户控制文件名。',
-      deserialization: '使用安全的序列化格式如 JSON，避免 pickle/yaml 的不安全加载。',
-      ssrf: '验证和限制 URL，禁用重定向跟随，使用 requests.Session() 并设置允许的域名列表。',
-      path_traversal: '使用 path.normalize() 和 path.resolve() 规范化路径，验证文件在允许的目录内。',
-      eval: '避免使用 eval()，使用 JSON.parse() 替代 JSON 字符串解析。',
-      exec: '使用 subprocess.run() 传入列表参数而非 shell=True。'
+      sql_injection: 'Use parameterized queries (prepared statements) instead of string concatenation',
+      command_exec: 'Use safe API methods with separate arguments or escape user input',
+      xss: 'Encode output before rendering or use safe DOM methods',
+      file_operation: 'Validate and sanitize file paths, use allowlists',
+      deserialization: 'Avoid deserializing untrusted data, use safe deserialization libraries',
+      ssrf: 'Validate and restrict URLs to allowed domains',
+      xxe: 'Disable external entity processing in XML parsers'
     };
+    
+    return remediations[path.sink.category] || 'Sanitize user input before using it';
+  }
 
-    return remediations[sink.category] || '对用户输入进行严格验证、过滤和边界检查';
+  _mapToCWE(path) {
+    const cweMap = {
+      sql_injection: ['CWE-89'],
+      command_exec: ['CWE-78'],
+      xss: ['CWE-79'],
+      file_operation: ['CWE-22'],
+      deserialization: ['CWE-502'],
+      ssrf: ['CWE-918'],
+      xxe: ['CWE-611'],
+      code_injection: ['CWE-94']
+    };
+    
+    return cweMap[path.sink.category] || [];
+  }
+
+  _mapToOWASP(path) {
+    const owaspMap = {
+      sql_injection: ['A03:2021'],
+      command_exec: ['A03:2021'],
+      xss: ['A03:2021'],
+      file_operation: ['A05:2021'],
+      deserialization: ['A08:2021'],
+      ssrf: ['A01:2021'],
+      xxe: ['A03:2021']
+    };
+    
+    return owaspMap[path.sink.category] || [];
+  }
+
+  _generateSummary(result) {
+    return {
+      totalSources: result.sources.length,
+      totalSinks: result.sinks.length,
+      totalSanitizers: result.sanitizers.length,
+      totalPaths: result.taintPaths.length,
+      totalVulnerabilities: result.vulnerabilities.length,
+      bySeverity: {
+        CRITICAL: result.vulnerabilities.filter(v => v.severity === 'CRITICAL').length,
+        HIGH: result.vulnerabilities.filter(v => v.severity === 'HIGH').length,
+        MEDIUM: result.vulnerabilities.filter(v => v.severity === 'MEDIUM').length,
+        LOW: result.vulnerabilities.filter(v => v.severity === 'LOW').length
+      },
+      byCategory: result.vulnerabilities.reduce((acc, v) => {
+        acc[v.category] = (acc[v.category] || 0) + 1;
+        return acc;
+      }, {})
+    };
+  }
+
+  _generateVisualization(result) {
+    const nodes = new Map();
+    const edges = [];
+    let nodeId = 0;
+
+    for (const source of result.sources) {
+      const id = `source-${nodeId++}`;
+      nodes.set(id, {
+        id,
+        type: 'source',
+        label: source.name,
+        line: source.line,
+        category: source.category
+      });
+    }
+
+    for (const sink of result.sinks) {
+      const id = `sink-${nodeId++}`;
+      nodes.set(id, {
+        id,
+        type: 'sink',
+        label: sink.name,
+        line: sink.line,
+        category: sink.category,
+        severity: sink.severity
+      });
+    }
+
+    for (const sanitizer of result.sanitizers) {
+      const id = `sanitizer-${nodeId++}`;
+      nodes.set(id, {
+        id,
+        type: 'sanitizer',
+        label: sanitizer.name,
+        category: sanitizer.category
+      });
+    }
+
+    for (const path of result.taintPaths) {
+      const sourceNode = Array.from(nodes.values()).find(
+        n => n.type === 'source' && n.line === path.source.line
+      );
+      const sinkNode = Array.from(nodes.values()).find(
+        n => n.type === 'sink' && n.line === path.sink.line
+      );
+
+      if (sourceNode && sinkNode) {
+        edges.push({
+          from: sourceNode.id,
+          to: sinkNode.id,
+          sanitized: path.isSanitized,
+          confidence: path.confidence,
+          variables: path.propagatedVariables
+        });
+      }
+    }
+
+    return {
+      nodes: Array.from(nodes.values()),
+      edges,
+      format: 'graphviz-dot'
+    };
+  }
+
+  async _performIncrementalAnalysis(analysisId, code, language, options) {
+    const cached = this._analysisCache.get(analysisId);
+    
+    if (!cached) {
+      return this._performFullAnalysis(code, language, options);
+    }
+
+    const changes = this._detectChanges(cached, code);
+    this._incrementalChanges = new Set(changes);
+
+    if (changes.length === 0) {
+      return cached;
+    }
+
+    const partialResult = await this._analyzeChanges(code, language, changes, options);
+    
+    return this._mergeResults(cached, partialResult);
+  }
+
+  _detectChanges(cached, newCode) {
+    const oldCode = cached.sourceCode || '';
+    const oldLines = oldCode.split('\n');
+    const newLines = newCode.split('\n');
+    const changes = [];
+
+    for (let i = 0; i < Math.max(oldLines.length, newLines.length); i++) {
+      if (oldLines[i] !== newLines[i]) {
+        changes.push(i + 1);
+      }
+    }
+
+    return changes;
+  }
+
+  async _analyzeChanges(code, language, changedLines, options) {
+    const lines = code.split('\n');
+    const changedCode = changedLines.map(lineNum => lines[lineNum - 1] || '').join('\n');
+    
+    return this._performFullAnalysis(changedCode, language, options);
+  }
+
+  _mergeResults(cached, partial) {
+    return {
+      sources: [...cached.sources, ...partial.sources],
+      sinks: [...cached.sinks, ...partial.sinks],
+      sanitizers: [...cached.sanitizers, ...partial.sanitizers],
+      taintPaths: [...cached.taintPaths, ...partial.taintPaths],
+      vulnerabilities: [...cached.vulnerabilities, ...partial.vulnerabilities],
+      summary: this._generateSummary({
+        sources: [...cached.sources, ...partial.sources],
+        sinks: [...cached.sinks, ...partial.sinks],
+        sanitizers: [...cached.sanitizers, ...partial.sanitizers],
+        taintPaths: [...cached.taintPaths, ...partial.taintPaths],
+        vulnerabilities: [...cached.vulnerabilities, ...partial.vulnerabilities]
+      }),
+      visualization: this._generateVisualization({
+        sources: [...cached.sources, ...partial.sources],
+        sinks: [...cached.sinks, ...partial.sinks],
+        sanitizers: [...cached.sanitizers, ...partial.sanitizers],
+        taintPaths: [...cached.taintPaths, ...partial.taintPaths],
+        vulnerabilities: [...cached.vulnerabilities, ...partial.vulnerabilities]
+      })
+    };
+  }
+
+  getPerformanceStats() {
+    return {
+      cacheSize: this._analysisCache.size,
+      rulesEngineStats: this.rulesEngine._performanceStats,
+      trackedVariables: this._variableTracking.size,
+      propagationHistorySize: this._propagationHistory.length
+    };
+  }
+
+  clearCache() {
+    this._analysisCache.clear();
+    this._variableTracking.clear();
+    this._propagationHistory = [];
   }
 }

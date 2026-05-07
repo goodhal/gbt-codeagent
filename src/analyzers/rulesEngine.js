@@ -1,19 +1,83 @@
 /**
  * 规则引擎
  * 负责加载和管理 YAML 配置的检测规则
+ * 优化特性：
+ * 1. LRU 正则缓存机制（防止内存溢出）
+ * 2. 增强误报过滤（上下文感知、自定义排除模式）
+ * 3. 智能置信度计算（代码复杂度、历史数据）
+ * 4. 规则版本管理
+ * 5. 并行规则匹配
  */
 
 import { promises as fs } from 'node:fs';
 import path from 'path';
 import yaml from 'yaml';
 
+class LRUCache {
+  constructor(maxSize = 1000) {
+    this.cache = new Map();
+    this.maxSize = maxSize;
+    this.accessOrder = [];
+  }
+
+  get(key) {
+    if (!this.cache.has(key)) {
+      return undefined;
+    }
+    const index = this.accessOrder.indexOf(key);
+    if (index !== -1) {
+      this.accessOrder.splice(index, 1);
+    }
+    this.accessOrder.push(key);
+    return this.cache.get(key);
+  }
+
+  set(key, value) {
+    if (this.cache.size >= this.maxSize) {
+      const oldest = this.accessOrder.shift();
+      this.cache.delete(oldest);
+    }
+    this.cache.set(key, value);
+    const index = this.accessOrder.indexOf(key);
+    if (index !== -1) {
+      this.accessOrder.splice(index, 1);
+    }
+    this.accessOrder.push(key);
+  }
+
+  has(key) {
+    return this.cache.has(key);
+  }
+
+  clear() {
+    this.cache.clear();
+    this.accessOrder = [];
+  }
+
+  get size() {
+    return this.cache.size;
+  }
+}
+
 export class RulesEngine {
-  constructor() {
+  constructor(options = {}) {
     this.rules = null;
     this._cache = new Map();
     this._initialized = false;
-    this._regexCache = new Map();
+    this._regexCache = new LRUCache(options.regexCacheSize || 2000);
     this._patternStats = new Map();
+    this._falsePositiveHistory = new Map();
+    this._performanceStats = {
+      cacheHits: 0,
+      cacheMisses: 0,
+      totalMatches: 0,
+      totalFalsePositives: 0
+    };
+    
+    this._customFalsePositivePatterns = [];
+    this._testFilePatterns = [
+      /test/i, /spec/i, /mock/i, /fixture/i, /example/i, /sample/i, /demo/i, /stub/i, /placeholder/i, /dummy/i
+    ];
   }
 
   async initialize(configPath = null) {
@@ -36,6 +100,11 @@ export class RulesEngine {
       const content = await fs.readFile(filepath, 'utf-8');
       this.rules = yaml.parse(content);
       this._buildIndex();
+      
+      if (this.rules.version) {
+        console.log(`[RulesEngine] Loaded rules version: ${this.rules.version}`);
+      }
+      
       return this.rules;
     } catch (error) {
       console.error(`[RulesEngine] Failed to load rules from ${filepath}:`, error);
@@ -46,6 +115,7 @@ export class RulesEngine {
 
   _createDefaultRules() {
     this.rules = {
+      version: '1.0.0',
       taintTracking: {
         sources: {},
         sinks: {},
@@ -54,11 +124,12 @@ export class RulesEngine {
       detectionRules: {},
       frameworkRules: {},
       severityLevels: {
-        CRITICAL: { score: 9.5 },
-        HIGH: { score: 7.5 },
-        MEDIUM: { score: 5.0 },
-        LOW: { score: 2.5 }
-      }
+        CRITICAL: { score: 9.5, description: '危急漏洞，可导致系统完全被控' },
+        HIGH: { score: 7.5, description: '高危漏洞，可导致数据泄露或权限提升' },
+        MEDIUM: { score: 5.0, description: '中危漏洞，可导致部分功能受影响' },
+        LOW: { score: 2.5, description: '低危漏洞，潜在风险或代码质量问题' }
+      },
+      falsePositiveExclusions: []
     };
   }
 
@@ -120,6 +191,8 @@ export class RulesEngine {
     for (const [ruleId, rule] of Object.entries(this.rules.detectionRules || {})) {
       this._ruleIndex.set(ruleId, rule);
     }
+
+    this._customFalsePositivePatterns = this.rules.falsePositiveExclusions || [];
   }
 
   _normalizePattern(pattern) {
@@ -168,63 +241,33 @@ export class RulesEngine {
   matchSources(code, language) {
     const lang = language.toLowerCase();
     const sources = this.getTaintSources(lang);
-    const matches = [];
-
-    for (const source of sources) {
-      for (const pattern of source.patterns || []) {
-        const regex = this._createRegex(pattern);
-        let match;
-        while ((match = regex.exec(code)) !== null) {
-          matches.push({
-            ...source,
-            pattern,
-            match: match[0],
-            index: match.index,
-            line: this._getLineNumber(code, match.index)
-          });
-        }
-      }
-    }
-
-    return matches;
+    return this._matchPatterns(code, sources);
   }
 
   matchSinks(code, language) {
     const lang = language.toLowerCase();
     const sinks = this.getTaintSinks(lang);
-    const matches = [];
-
-    for (const sink of sinks) {
-      for (const pattern of sink.patterns || []) {
-        const regex = this._createRegex(pattern);
-        let match;
-        while ((match = regex.exec(code)) !== null) {
-          matches.push({
-            ...sink,
-            pattern,
-            match: match[0],
-            index: match.index,
-            line: this._getLineNumber(code, match.index)
-          });
-        }
-      }
-    }
-
-    return matches;
+    return this._matchPatterns(code, sinks);
   }
 
   matchSanitizers(code, language) {
     const lang = language.toLowerCase();
     const sanitizers = this.getSanitizers(lang);
+    return this._matchPatterns(code, sanitizers);
+  }
+
+  _matchPatterns(code, patternDefs) {
     const matches = [];
 
-    for (const sanitizer of sanitizers) {
-      for (const pattern of sanitizer.patterns || []) {
+    for (const def of patternDefs) {
+      for (const pattern of def.patterns || []) {
         const regex = this._createRegex(pattern);
+        if (!regex) continue;
+        
         let match;
         while ((match = regex.exec(code)) !== null) {
           matches.push({
-            ...sanitizer,
+            ...def,
             pattern,
             match: match[0],
             index: match.index,
@@ -237,7 +280,7 @@ export class RulesEngine {
     return matches;
   }
 
-  matchVulnerability(code, ruleId, language) {
+  async matchVulnerability(code, ruleId, language) {
     const lang = language.toLowerCase();
     const rule = this._ruleIndex.get(ruleId);
     if (!rule || !rule.languages || !rule.languages[lang]) {
@@ -250,12 +293,17 @@ export class RulesEngine {
     for (const patternDef of langRule.riskPatterns || []) {
       const pattern = typeof patternDef === 'string' ? patternDef : patternDef.pattern;
       const regex = this._createRegex(pattern);
+      if (!regex) continue;
+      
       let match;
 
       while ((match = regex.exec(code)) !== null) {
         if (this._isSafeMatch(code, match, langRule.safePatterns, lang)) {
           continue;
         }
+
+        const context = this._getSurroundingContext(code, this._getLineNumber(code, match.index), 3);
+        const confidence = this._calculateConfidence(patternDef, context, code);
 
         matches.push({
           ruleId,
@@ -267,7 +315,9 @@ export class RulesEngine {
           pattern,
           match: match[0],
           index: match.index,
-          line: this._getLineNumber(code, match.index)
+          line: this._getLineNumber(code, match.index),
+          context,
+          confidence
         });
       }
     }
@@ -280,14 +330,14 @@ export class RulesEngine {
       return false;
     }
 
-    const contextStart = Math.max(0, match.index - 100);
-    const contextEnd = Math.min(code.length, match.index + match[0].length + 100);
+    const contextStart = Math.max(0, match.index - 150);
+    const contextEnd = Math.min(code.length, match.index + match[0].length + 150);
     const context = code.substring(contextStart, contextEnd);
 
     for (const safeDef of safePatterns) {
       const safePattern = typeof safeDef === 'string' ? safeDef : safeDef.pattern;
       const regex = this._createRegex(safePattern);
-      if (regex.test(context)) {
+      if (regex && regex.test(context)) {
         return true;
       }
     }
@@ -297,14 +347,18 @@ export class RulesEngine {
 
   _createRegex(pattern) {
     if (this._regexCache.has(pattern)) {
+      this._performanceStats.cacheHits++;
       return this._regexCache.get(pattern);
     }
+    
+    this._performanceStats.cacheMisses++;
     
     try {
       const regex = new RegExp(pattern, 'gi');
       this._regexCache.set(pattern, regex);
       return regex;
-    } catch {
+    } catch (e) {
+      console.warn(`[RulesEngine] Invalid regex pattern: ${pattern}`);
       return null;
     }
   }
@@ -316,61 +370,6 @@ export class RulesEngine {
   _getLineContent(code, lineNumber) {
     const lines = code.split('\n');
     return lines[lineNumber - 1] || '';
-  }
-
-  matchWithContext(code, language, options = {}) {
-    const lang = language.toLowerCase();
-    const contextWindow = options.contextWindow || 3;
-    const results = [];
-
-    const sources = this.getTaintSources(lang);
-    const sinks = this.getTaintSinks(lang);
-
-    for (const source of sources) {
-      for (const pattern of source.patterns || []) {
-        const regex = this._createRegex(pattern);
-        let match;
-        while ((match = regex.exec(code)) !== null) {
-          const line = this._getLineNumber(code, match.index);
-          const context = this._getSurroundingContext(code, line, contextWindow);
-          
-          results.push({
-            type: 'source',
-            ...source,
-            pattern,
-            match: match[0],
-            index: match.index,
-            line,
-            context,
-            confidence: this._calculateConfidence(source, context)
-          });
-        }
-      }
-    }
-
-    for (const sink of sinks) {
-      for (const pattern of sink.patterns || []) {
-        const regex = this._createRegex(pattern);
-        let match;
-        while ((match = regex.exec(code)) !== null) {
-          const line = this._getLineNumber(code, match.index);
-          const context = this._getSurroundingContext(code, line, contextWindow);
-          
-          results.push({
-            type: 'sink',
-            ...sink,
-            pattern,
-            match: match[0],
-            index: match.index,
-            line,
-            context,
-            confidence: this._calculateConfidence(sink, context)
-          });
-        }
-      }
-    }
-
-    return results.sort((a, b) => b.confidence - a.confidence);
   }
 
   _getSurroundingContext(code, lineNumber, contextWindow) {
@@ -390,8 +389,8 @@ export class RulesEngine {
     return context;
   }
 
-  _calculateConfidence(patternDef, context) {
-    let confidence = 0.7;
+  _calculateConfidence(patternDef, context, fullCode = '') {
+    let confidence = 0.6;
     
     if (patternDef.confidenceBoost) {
       confidence += patternDef.confidenceBoost;
@@ -399,30 +398,88 @@ export class RulesEngine {
     
     const targetLine = context.find(c => c.isTarget);
     if (targetLine) {
-      if (targetLine.content.trim().length > 0) {
+      const lineContent = targetLine.content.trim();
+      
+      if (lineContent.length > 0) {
+        confidence += 0.05;
+      }
+      
+      if (lineContent.length > 50) {
+        confidence += 0.05;
+      }
+      
+      if (!this._looksLikeTestCode(lineContent)) {
         confidence += 0.1;
       }
+      
+      const complexity = this._calculateLineComplexity(lineContent);
+      if (complexity > 0.5) {
+        confidence -= 0.1;
+      }
+    }
+
+    const codeComplexity = this._calculateCodeComplexity(fullCode);
+    if (codeComplexity < 0.3) {
+      confidence -= 0.05;
+    }
+    
+    const ruleId = patternDef.id || patternDef.ruleId;
+    if (ruleId && this._falsePositiveHistory.has(ruleId)) {
+      const fpRate = this._falsePositiveHistory.get(ruleId);
+      confidence *= (1 - fpRate * 0.5);
     }
     
     return Math.min(1.0, Math.max(0.0, confidence));
   }
 
+  _calculateLineComplexity(line) {
+    if (!line) return 0;
+    
+    const operators = line.split(/[+\-*/%=<>!&|]+/).length - 1;
+    const nestedParens = (line.match(/\(/g) || []).length;
+    const length = line.length;
+    
+    return Math.min(1.0, (operators * 0.1 + nestedParens * 0.1 + Math.min(length / 100, 0.5)));
+  }
+
+  _calculateCodeComplexity(code) {
+    if (!code) return 0;
+    
+    const lines = code.split('\n').filter(l => l.trim().length > 0);
+    const avgLength = lines.reduce((sum, l) => sum + l.length, 0) / lines.length;
+    const keywordCount = (code.match(/\b(function|class|if|else|for|while|switch|case|return)\b/gi) || []).length;
+    
+    return Math.min(1.0, (avgLength / 80 + keywordCount / lines.length) / 2);
+  }
+
+  _looksLikeTestCode(content) {
+    const lowerContent = content.toLowerCase();
+    return this._testFilePatterns.some(pattern => pattern.test(lowerContent));
+  }
+
   filterFalsePositives(findings, options = {}) {
     const minConfidence = options.minConfidence || 0.5;
     const enableHeuristic = options.enableHeuristic !== false;
+    const filePath = options.filePath || '';
     
     let filtered = findings.filter(f => f.confidence >= minConfidence);
     
     if (enableHeuristic) {
-      filtered = filtered.filter(f => !this._isHeuristicFalsePositive(f));
+      filtered = filtered.filter(f => !this._isHeuristicFalsePositive(f, filePath));
     }
+    
+    this._performanceStats.totalFalsePositives += findings.length - filtered.length;
     
     return filtered;
   }
 
-  _isHeuristicFalsePositive(finding) {
+  _isHeuristicFalsePositive(finding, filePath = '') {
     if (!finding.context || !finding.match) {
       return false;
+    }
+    
+    if (this._isTestFile(filePath)) {
+      return true;
     }
     
     const targetLine = finding.context.find(c => c.isTarget);
@@ -432,18 +489,47 @@ export class RulesEngine {
     
     const lineContent = targetLine.content.toLowerCase();
     
-    const falsePositivePatterns = [
-      /test/i,
-      /mock/i,
-      /example/i,
-      /sample/i,
-      /demo/i,
-      /stub/i,
-      /placeholder/i,
-      /dummy/i
-    ];
+    if (this._looksLikeTestCode(lineContent)) {
+      return true;
+    }
     
-    return falsePositivePatterns.some(pattern => pattern.test(lineContent));
+    for (const exclusionPattern of this._customFalsePositivePatterns) {
+      const regex = this._createRegex(exclusionPattern);
+      if (regex && regex.test(lineContent)) {
+        return true;
+      }
+    }
+    
+    const surroundingContent = finding.context.map(c => c.content.toLowerCase()).join(' ');
+    if (this._looksLikeTestCode(surroundingContent)) {
+      return true;
+    }
+    
+    return false;
+  }
+
+  _isTestFile(filePath) {
+    const testPatterns = [
+      /test/i, /spec/i, /__tests__/, /_test\./, /\.test\./, /\.spec\./
+    ];
+    return testPatterns.some(pattern => pattern.test(filePath));
+  }
+
+  addCustomFalsePositivePattern(pattern) {
+    this._customFalsePositivePatterns.push(pattern);
+  }
+
+  recordFalsePositive(ruleId) {
+    const current = this._falsePositiveHistory.get(ruleId) || { count: 0, total: 0 };
+    current.count++;
+    current.total++;
+    this._falsePositiveHistory.set(ruleId, current);
+  }
+
+  recordTruePositive(ruleId) {
+    const current = this._falsePositiveHistory.get(ruleId) || { count: 0, total: 0 };
+    current.total++;
+    this._falsePositiveHistory.set(ruleId, current);
   }
 
   clusterFindings(findings, options = {}) {
@@ -470,7 +556,8 @@ export class RulesEngine {
         clusters.push({
           representative: cluster[0],
           members: cluster,
-          count: cluster.length
+          count: cluster.length,
+          severity: cluster[0].severity
         });
       }
     }
@@ -511,6 +598,147 @@ export class RulesEngine {
     return dp[s1.length][s2.length];
   }
 
+  matchWithContext(code, language, options = {}) {
+    const lang = language.toLowerCase();
+    const contextWindow = options.contextWindow || 3;
+    const results = [];
+
+    const sources = this.getTaintSources(lang);
+    const sinks = this.getTaintSinks(lang);
+
+    for (const source of sources) {
+      for (const pattern of source.patterns || []) {
+        const regex = this._createRegex(pattern);
+        if (!regex) continue;
+        
+        let match;
+        while ((match = regex.exec(code)) !== null) {
+          const line = this._getLineNumber(code, match.index);
+          const context = this._getSurroundingContext(code, line, contextWindow);
+          
+          results.push({
+            type: 'source',
+            ...source,
+            pattern,
+            match: match[0],
+            index: match.index,
+            line,
+            context,
+            confidence: this._calculateConfidence(source, context, code)
+          });
+        }
+      }
+    }
+
+    for (const sink of sinks) {
+      for (const pattern of sink.patterns || []) {
+        const regex = this._createRegex(pattern);
+        if (!regex) continue;
+        
+        let match;
+        while ((match = regex.exec(code)) !== null) {
+          const line = this._getLineNumber(code, match.index);
+          const context = this._getSurroundingContext(code, line, contextWindow);
+          
+          results.push({
+            type: 'sink',
+            ...sink,
+            pattern,
+            match: match[0],
+            index: match.index,
+            line,
+            context,
+            confidence: this._calculateConfidence(sink, context, code)
+          });
+        }
+      }
+    }
+
+    return results.sort((a, b) => b.confidence - a.confidence);
+  }
+
+  async analyzeCodeParallel(code, language, options = {}) {
+    const lang = language.toLowerCase();
+    const rules = this.getRulesForLanguage(lang);
+    
+    const results = {
+      vulnerabilities: [],
+      sources: [],
+      sinks: [],
+      clusters: [],
+      summary: {
+        totalFindings: 0,
+        bySeverity: { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 },
+        byCategory: {}
+      }
+    };
+
+    const promises = rules.map(rule => 
+      this.matchVulnerability(code, rule.id, lang)
+    );
+
+    const allMatches = await Promise.all(promises);
+    const vulnerabilities = allMatches.flat();
+    
+    results.vulnerabilities = this.filterFalsePositives(vulnerabilities, {
+      minConfidence: options.minConfidence,
+      filePath: options.filePath
+    });
+    
+    results.sources = this.matchSources(code, lang);
+    results.sinks = this.matchSinks(code, lang);
+    results.clusters = this.clusterFindings(results.vulnerabilities, options);
+    
+    results.summary.totalFindings = results.vulnerabilities.length;
+    for (const finding of results.vulnerabilities) {
+      const severity = finding.severity?.toUpperCase() || 'MEDIUM';
+      results.summary.bySeverity[severity] = (results.summary.bySeverity[severity] || 0) + 1;
+      
+      const category = finding.category || 'Other';
+      results.summary.byCategory[category] = (results.summary.byCategory[category] || 0) + 1;
+    }
+    
+    return results;
+  }
+
+  analyzeCode(code, language, options = {}) {
+    const useParallel = options.parallel !== false;
+    
+    if (useParallel) {
+      return this.analyzeCodeParallel(code, language, options);
+    }
+    
+    const results = {
+      vulnerabilities: [],
+      sources: [],
+      sinks: [],
+      clusters: [],
+      summary: {
+        totalFindings: 0,
+        bySeverity: { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 },
+        byCategory: {}
+      }
+    };
+
+    results.vulnerabilities = this.matchWithContext(code, language, options);
+    results.sources = this.matchSources(code, language);
+    results.sinks = this.matchSinks(code, language);
+    
+    const allFindings = [...results.vulnerabilities];
+    results.clusters = this.clusterFindings(allFindings, options);
+    
+    results.summary.totalFindings = allFindings.length;
+    for (const finding of allFindings) {
+      const severity = finding.severity?.toUpperCase() || 'MEDIUM';
+      results.summary.bySeverity[severity] = (results.summary.bySeverity[severity] || 0) + 1;
+      
+      const category = finding.category || 'Other';
+      results.summary.byCategory[category] = (results.summary.byCategory[category] || 0) + 1;
+    }
+    
+    return results;
+  }
+
   detectOWASPTop10(code, language) {
     const lang = language.toLowerCase();
     const findings = [];
@@ -547,38 +775,6 @@ export class RulesEngine {
     return findings;
   }
 
-  analyzeCode(code, language, options = {}) {
-    const results = {
-      vulnerabilities: [],
-      sources: [],
-      sinks: [],
-      clusters: [],
-      summary: {
-        totalFindings: 0,
-        bySeverity: { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 },
-        byCategory: {}
-      }
-    };
-
-    results.vulnerabilities = this.matchWithContext(code, language, options);
-    results.sources = this.matchSources(code, language);
-    results.sinks = this.matchSinks(code, language);
-    
-    const allFindings = [...results.vulnerabilities];
-    results.clusters = this.clusterFindings(allFindings, options);
-    
-    results.summary.totalFindings = allFindings.length;
-    for (const finding of allFindings) {
-      const severity = finding.severity?.toUpperCase() || 'MEDIUM';
-      results.summary.bySeverity[severity] = (results.summary.bySeverity[severity] || 0) + 1;
-      
-      const category = finding.category || 'Other';
-      results.summary.byCategory[category] = (results.summary.byCategory[category] || 0) + 1;
-    }
-    
-    return results;
-  }
-
   getSeverityScore(severity) {
     const level = this.rules?.severityLevels?.[severity.toUpperCase()];
     return level?.score || 5.0;
@@ -598,6 +794,21 @@ export class RulesEngine {
 
   clearCache() {
     this._cache.clear();
+    this._regexCache.clear();
+  }
+
+  getPerformanceStats() {
+    return { ...this._performanceStats };
+  }
+
+  getVersion() {
+    return this.rules?.version || '1.0.0';
+  }
+
+  updateRuleVersion(newVersion) {
+    if (this.rules) {
+      this.rules.version = newVersion;
+    }
   }
 
   static splitLabelKV(keyValue) {
@@ -705,3 +916,5 @@ export async function getRulesEngine(configPath = null) {
 export function resetRulesEngine() {
   globalRulesEngine = null;
 }
+
+export { LRUCache };

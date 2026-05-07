@@ -875,7 +875,8 @@ function renderProjectReview(project) {
           ${renderFindingList(project.heuristicFindings, "规则层暂未保留高置信度结果。")}
         </section>
         <section class="review-pane">
-          <h5>LLM 复核</h5>
+          <h5>LLM 复核 ${project.llmAudit?.cached ? '<span class="badge badge-cache">使用缓存</span>' : ''}</h5>
+          ${project.llmAudit?.skipReason ? '<p class="note">跳过原因: ' + escapeHtml(project.llmAudit.skipReason) + '</p>' : ''}
           <p>${escapeHtml(project.llmAudit?.summary || "暂无 LLM 复核结果。")}</p>
           ${renderFindingList(project.llmAudit?.findings || [], "LLM 本次没有额外保留高置信度结果。")}
         </section>

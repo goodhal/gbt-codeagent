@@ -443,6 +443,19 @@ export class DefensiveLlmReviewer {
     const vulnerabilityTypes = [...new Set(heuristicFindings.map(f => f.vulnType).filter(Boolean))];
     const auditKnowledge = await loadAuditKnowledge({ languages, vulnerabilityTypes });
     const systemPrompt = await buildSystemPrompt(selectedSkills, auditKnowledge, languages);
+    const enhancedPrompt = createEnhancedPrompt({
+      includeContextAnalysis: true,
+      includeBusinessLogic: true,
+      includeAttackChain: true,
+      strictMode: true
+    });
+    const fullSystemPrompt = systemPrompt + '\n\n' + enhancedPrompt;
+
+    let incrementalPrompt = '';
+    if (cachedResult?.changedFiles?.length > 0) {
+      incrementalPrompt = createIncrementalAuditPrompt(cachedResult.changedFiles);
+    }
+
     const validBatches = batches.slice(0, MAX_BATCHES);
 
     onProgress?.({
@@ -473,8 +486,8 @@ export class DefensiveLlmReviewer {
         const responseText = await withReviewRetry(() => llmCircuitBreaker.callWithFallback(() =>
           requestStructuredReview({
             llmConfig,
-            systemPrompt,
-            userPrompt: buildUserPrompt({ project, selectedSkills, heuristicFindings, batch })
+            systemPrompt: fullSystemPrompt,
+            userPrompt: buildUserPrompt({ project, selectedSkills, heuristicFindings, batch, incrementalPrompt })
           }),
           () => {
             console.warn('[LLM审计] LLM服务熔断，使用降级方案');
@@ -1177,7 +1190,7 @@ async function buildSystemPrompt(selectedSkills, auditKnowledge = {}, languages 
   return prompt.join("\n");
 }
 
-function buildUserPrompt({ project, selectedSkills, heuristicFindings, batch, codeContext = "" }) {
+function buildUserPrompt({ project, selectedSkills, heuristicFindings, batch, codeContext = "", incrementalPrompt = "" }) {
   const gbtSkill = selectedSkills.find(skill => skill.id === "gbt-code-audit");
   const isGbtAudit = gbtSkill !== undefined;
 
@@ -1189,6 +1202,10 @@ function buildUserPrompt({ project, selectedSkills, heuristicFindings, batch, co
 
   if (codeContext) {
     prompt.push(codeContext);
+  }
+
+  if (incrementalPrompt) {
+    prompt.push("", incrementalPrompt);
   }
 
   if (isGbtAudit) {

@@ -1,0 +1,31 @@
+{
+  "entries": [
+    [
+      "a4aa3dac1aad26debbf119d00a17a658",
+      {
+        "projectHash": "a4aa3dac1aad26debbf119d00a17a658",
+        "fileHashes": [
+          "src/auth/login.py:b92efac2d864224d",
+          "src/api/user.py:56d473fd96f6e969",
+          "tests/test_auth.py:05a32ce3e9df86c7"
+        ],
+        "findings": [
+          {
+            "title": "SQL注入",
+            "location": "src/api/user.py:2",
+            "confidence": 0.9
+          },
+          {
+            "title": "硬编码密码",
+            "location": "src/auth/login.py:1",
+            "confidence": 0.85
+          }
+        ],
+        "cachedAt": "2026-05-07T15:53:04.183Z",
+        "version": "1.0"
+      }
+    ]
+  ],
+  "history": [],
+  "savedAt": "2026-05-07T15:53:04.189Z"
+}

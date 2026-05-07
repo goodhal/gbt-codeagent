@@ -1984,3 +1984,333 @@ analysisOptions:
     - ".c"
     - ".cpp"
     - ".cs"
+
+  csrf:
+    description: "跨站请求伪造 (CSRF)"
+    cwe: "CWE-352"
+    languages:
+      python:
+        riskPatterns:
+          - pattern: "@app\\.route.*methods.*POST"
+            description: "POST路由缺少CSRF保护"
+          - pattern: "session\\.get\\s*\\("
+            description: "使用session但未验证CSRF"
+        safePatterns:
+          - pattern: "csrf_token"
+            description: "CSRF token验证"
+          - pattern: "CSRFProtect"
+            description: "Flask-WTF CSRF保护"
+        severity: "MEDIUM"
+        remediation: "为所有状态变更操作添加CSRF token验证"
+
+      javascript:
+        riskPatterns:
+          - pattern: "fetch\\s*\\([^)]*\\)"
+            description: "fetch请求可能缺少CSRF保护"
+          - pattern: "axios\\.post\\s*\\([^)]*\\)"
+            description: "axios POST请求可能缺少CSRF保护"
+        safePatterns:
+          - pattern: "xsrfToken"
+            description: "XSRF token"
+          - pattern: "__RequestVerificationToken"
+            description: "ASP.NET CSRF token"
+        severity: "MEDIUM"
+        remediation: "添加SameSite cookie和CSRF token"
+
+      java:
+        riskPatterns:
+          - pattern: "@PostMapping"
+            description: "POST映射缺少CSRF验证"
+          - pattern: "@RequestMapping.*method.*POST"
+            description: "状态变更端点缺少CSRF保护"
+        safePatterns:
+          - pattern: "CsrfToken"
+            description: "Spring Security CSRF"
+          - pattern: "@EnableCsrf"
+            description: "CSRF保护启用"
+        severity: "MEDIUM"
+        remediation: "启用Spring Security CSRF保护"
+
+      php:
+        riskPatterns:
+          - pattern: "\\$_POST\\s*\\["
+            description: "直接使用POST参数"
+          - pattern: "\\$_GET\\s*\\["
+            description: "使用GET处理状态变更"
+        safePatterns:
+          - pattern: "csrf_token"
+            description: "CSRF token验证"
+          - pattern: "SESSION\\.verify"
+            description: "会话验证"
+        severity: "MEDIUM"
+        remediation: "使用CSRF token和保护cookie"
+
+  open_redirect:
+    description: "开放重定向漏洞"
+    cwe: "CWE-601"
+    languages:
+      python:
+        riskPatterns:
+          - pattern: "redirect\\s*\\([^)]*\\+"
+            description: "重定向使用字符串拼接"
+          - pattern: "return\\s+redirect\\([^)]*request\\."
+            description: "用户输入控制重定向目标"
+        safePatterns:
+          - pattern: "is_safe_url"
+            description: "URL安全验证"
+          - pattern: "url_for\\s*\\("
+            description: "使用url_for生成URL"
+        severity: "MEDIUM"
+        remediation: "验证重定向URL，使用白名单机制"
+
+      javascript:
+        riskPatterns:
+          - pattern: "window\\.location\\s*=\\s*[^;]*\\+"
+            description: "客户端重定向使用拼接"
+          - pattern: "window\\.open\\s*\\([^)]*\\+"
+            description: "window.open使用拼接"
+          - pattern: "window\\.location\\.href\\s*=\\s*[^;]*\\+"
+            description: "location.href使用拼接"
+        safePatterns:
+          - pattern: "new URL\\s*\\([^)]*\\)"
+            description: "URL解析验证"
+          - pattern: "URL\\.origin"
+            description: "检查URL来源"
+        severity: "MEDIUM"
+        remediation: "验证重定向目标，使用白名单"
+
+      php:
+        riskPatterns:
+          - pattern: "header\\s*\\(\\s*['\\\"]Location:"
+            description: "使用header重定向"
+          - pattern: "header\\s*\\(\\s*\\$_GET"
+            description: "用户输入控制重定向"
+          - pattern: "header\\s*\\(\\s*\\$_POST"
+            description: "用户输入控制重定向"
+        safePatterns:
+          - pattern: "filter_var.*FILTER_VALIDATE_URL"
+            description: "URL验证"
+          - pattern: "parse_url.*allowed_hosts"
+            description: "白名单验证"
+        severity: "MEDIUM"
+        remediation: "验证重定向URL，禁止外部URL"
+
+      java:
+        riskPatterns:
+          - pattern: "sendRedirect\\s*\\([^)]*\\+"
+            description: "重定向使用拼接"
+          - pattern: "redirect\\s*\\([^)]*\\+"
+            description: "重定向使用拼接"
+        safePatterns:
+          - pattern: "UriBuilder.*build.*isHierarchical"
+            description: "URL验证"
+          - pattern: "redirect.*mvcView"
+            description: "使用视图名称"
+        severity: "MEDIUM"
+        remediation: "验证重定向URL，使用白名单"
+
+  regex_dos:
+    description: "正则表达式拒绝服务 (ReDoS)"
+    cwe: "CWE-1333"
+    languages:
+      python:
+        riskPatterns:
+          - pattern: "\\(\\.[\\*\\+\\]\\)\\+\\("
+            description: "嵌套量词可能导致ReDoS"
+          - pattern: "\\([^)]*[\\*\\+]\\)\\s*\\([\\*\\+]"
+            description: "灾难性回溯"
+        safePatterns:
+          - pattern: "re\\.compile.*timeout"
+            description: "使用超时"
+          - pattern: "regex\\.compile"
+            description: "使用regex库支持超时"
+        severity: "MEDIUM"
+        remediation: "避免嵌套量词，使用超时机制"
+
+      javascript:
+        riskPatterns:
+          - pattern: "/\\([^)]*[\\*\\+]\\)\\s*\\([\\*\\+]/g"
+            description: "灾难性回溯"
+          - pattern: "/\\.[\\*\\+\\]\\{1,\\d+\\}/"
+            description: "大数值量词"
+        safePatterns:
+          - pattern: "safe-regex"
+            description: "使用safe-regex验证"
+          - pattern: "re2"
+            description: "使用re2库"
+        severity: "MEDIUM"
+        remediation: "使用安全的正则表达式库"
+
+      java:
+        riskPatterns:
+          - pattern: "Pattern\\.compile\\([^)]*[\\*\\+]\\{2,"
+            description: "嵌套量词"
+          - pattern: "Pattern\\.compile\\([^)]*\\)\\s*\\.matcher.*[\\*\\+]"
+            description: "可能导致回溯"
+        safePatterns:
+          - pattern: "Pattern\\.compile.*COMMENTS"
+            description: "使用编译标志"
+        severity: "MEDIUM"
+        remediation: "避免灾难性回溯，使用测试工具验证"
+
+  insecure_random:
+    description: "不安全的随机数"
+    cwe: "CWE-338"
+    languages:
+      python:
+        riskPatterns:
+          - pattern: "random\\.random\\s*\\("
+            description: "使用random模块生成安全随机数"
+          - pattern: "random\\.randint\\s*\\("
+            description: "random.randint不安全"
+          - pattern: "random\\.choice\\s*\\("
+            description: "random.choice不安全"
+        safePatterns:
+          - pattern: "secrets\\.\\w+\\s*\\("
+            description: "使用secrets模块"
+          - pattern: "os\\.urandom\\s*\\("
+            description: "使用os.urandom"
+        severity: "MEDIUM"
+        remediation: "安全场景使用 secrets 模块"
+
+      javascript:
+        riskPatterns:
+          - pattern: "Math\\.random\\s*\\("
+            description: "Math.random不安全"
+        safePatterns:
+          - pattern: "crypto\\.randomBytes"
+            description: "使用crypto.randomBytes"
+          - pattern: "window\\.crypto\\.getRandomValues"
+            description: "使用Web Crypto API"
+        severity: "MEDIUM"
+        remediation: "安全场景使用crypto.randomBytes"
+
+      java:
+        riskPatterns:
+          - pattern: "new Random\\s*\\("
+            description: "java.util.Random不安全"
+          - pattern: "Math\\.random\\s*\\("
+            description: "Math.random不安全"
+        safePatterns:
+          - pattern: "SecureRandom\\s*\\("
+            description: "使用SecureRandom"
+          - pattern: "new\\s+SecureRandom\\(\\)"
+            description: "实例化SecureRandom"
+        severity: "MEDIUM"
+        remediation: "安全场景使用SecureRandom"
+
+      go:
+        riskPatterns:
+          - pattern: "rand\\.Int\\d*\\s*\\("
+            description: "math/rand不安全"
+          - pattern: "rand\\.Read\\s*\\("
+            description: "math/rand不安全"
+        safePatterns:
+          - pattern: "crypto/rand\\.Read\\s*\\("
+            description: "使用crypto/rand"
+        severity: "MEDIUM"
+        remediation: "安全场景使用crypto/rand"
+
+  jwt_vulnerabilities:
+    description: "JWT相关漏洞"
+    cwe: "CWE-345"
+    languages:
+      javascript:
+        riskPatterns:
+          - pattern: "jwt\\.decode\\s*\\("
+            description: "解码但不验证JWT"
+          - pattern: "algorithm.*none"
+            description: "JWT使用none算法"
+          - pattern: "verify.*false"
+            description: "JWT验证被禁用"
+        safePatterns:
+          - pattern: "jwt\\.verify\\s*\\("
+            description: "验证JWT"
+          - pattern: "algorithm.*HS256"
+            description: "指定算法"
+        severity: "HIGH"
+        remediation: "始终验证JWT，指定安全算法"
+
+      python:
+        riskPatterns:
+          - pattern: "jwt\\.decode\\s*\\([^)]*verify\\s*=\\s*False"
+            description: "JWT验证被禁用"
+          - pattern: "jwt\\.decode\\s*\\([^)]*algorithms\\s*=\\s*\\[\\s*['\\\"]none['\\\"]"
+            description: "JWT使用none算法"
+        safePatterns:
+          - pattern: "jwt\\.decode\\s*\\([^)]*verify\\s*=\\s*True"
+            description: "JWT验证启用"
+        severity: "HIGH"
+        remediation: "始终验证JWT，使用强算法"
+
+      java:
+        riskPatterns:
+          - pattern: "Algorithm\\.none\\s*\\("
+            description: "JWT使用none算法"
+          - pattern: "JWVerifier.*setVerify\\s*\\(\\s*false\\s*\\)"
+            description: "JWT验证被禁用"
+        safePatterns:
+          - pattern: "Algorithm\\.HS256"
+            description: "使用HS256"
+          - pattern: "RS256"
+            description: "使用RS256"
+        severity: "HIGH"
+        remediation: "禁用none算法，始终验证签名"
+
+  session_fixation:
+    description: "会话固定漏洞"
+    cwe: "CWE-384"
+    languages:
+      python:
+        riskPatterns:
+          - pattern: "session\\[.*\\]\\s*=\\s*request\\."
+            description: "直接使用用户输入设置session"
+        safePatterns:
+          - pattern: "session\\.regenerate_id\\s*\\("
+            description: "会话ID轮换"
+          - pattern: "logout.*session\\.clear"
+            description: "登出清除会话"
+        severity: "MEDIUM"
+        remediation: "用户登录时重置会话ID"
+
+      javascript:
+        riskPatterns:
+          - pattern: "sessionStorage\\.setItem\\s*\\([^)]*\\)"
+            description: "可能使用固定会话"
+          - pattern: "document\\.cookie.*session_id"
+            description: "URL传递会话ID"
+        safePatterns:
+          - pattern: "sessionStorage\\.clear\\s*\\("
+            description: "清除会话存储"
+          - pattern: "crypto.randomUUID"
+            description: "生成随机会话ID"
+        severity: "MEDIUM"
+        remediation: "使用安全会话管理机制"
+
+      php:
+        riskPatterns:
+          - pattern: "session_id\\s*\\(\\s*\\$_GET"
+            description: "从URL设置会话ID"
+          - pattern: "session_id\\s*\\(\\s*\\$_POST"
+            description: "从POST设置会话ID"
+        safePatterns:
+          - pattern: "session_regenerate_id\\s*\\(\\s*true\\s*\\)"
+            description: "安全会话ID轮换"
+          - pattern: "session_destroy\\s*\\("
+            description: "会话销毁"
+        severity: "MEDIUM"
+        remediation: "登录时调用session_regenerate_id"
+
+      java:
+        riskPatterns:
+          - pattern: "request\\.getSession\\s*\\(\\s*false\\s*\\)"
+            description: "不创建新会话"
+          - pattern: "session\\.setAttribute.*request\\."
+            description: "直接设置会话属性"
+        safePatterns:
+          - pattern: "request\\.changeSessionId\\s*\\("
+            description: "会话ID轮换"
+          - pattern: "session\\.invalidate\\s*\\("
+            description: "会话失效"
+        severity: "MEDIUM"
+        remediation: "登录时调用changeSessionId"

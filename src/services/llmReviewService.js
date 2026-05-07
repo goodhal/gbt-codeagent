@@ -12,6 +12,7 @@ import { estimateTokens, countTokensTiktoken, getModelMaxTokens, PromptCompresso
 import { fetchWithTimeout, globalLLMFactory } from "./llmFactory.js";
 import { CodeRetriever } from "./retriever.js";
 import { deduplicateAndSort, severityScore } from "../utils/findingsUtils.js";
+import { LLMOptimizer, createEnhancedPrompt, createIncrementalAuditPrompt } from "./llmOptimizer.js";
 
 const MAX_BATCHES = 16;
 const MAX_FILES_PER_BATCH = 4;
@@ -29,6 +30,8 @@ const incrementalSummary = new IncrementalSummary();
 const llmLimit = pLimit(3);
 const promptCompressor = new PromptCompressor();
 const promptCacheManager = new PromptCacheManager();
+const llmOptimizer = new LLMOptimizer();
+llmOptimizer.initialize().catch(err => console.warn('[LLM审计] 优化器初始化失败:', err.message));
 
 // 初始化 RAG 服务
 async function initializeRAG() {
@@ -383,7 +386,52 @@ export class DefensiveLlmReviewer {
       };
     }
 
-    const prioritizedFiles = rankFiles(files, heuristicFindings, selectedSkills);
+    const projectHash = llmOptimizer.computeProjectHash(files);
+    const cachedResult = llmOptimizer.getCachedResults(projectHash, files);
+
+    if (cachedResult?.isCacheHit) {
+      console.log(`[LLM优化] 缓存命中，返回 ${cachedResult.cachedFindings.length} 条缓存结果`);
+      await llmOptimizer.recordAuditResult(project.id, cachedResult.cachedFindings, true);
+      return {
+        status: "completed",
+        called: true,
+        skipReason: "cache-hit",
+        summary: `使用缓存结果（${cachedResult.cachedFindings.length}条），无需调用LLM`,
+        findings: cachedResult.cachedFindings.map(f => ({ ...f, source: "llm" })),
+        warnings: [],
+        cached: true
+      };
+    }
+
+    let filesToAudit = files;
+    if (cachedResult?.changedFiles?.length > 0) {
+      console.log(`[LLM优化] 检测到 ${cachedResult.changedFiles.length} 个变更文件，进行增量审计`);
+      filesToAudit = llmOptimizer.filterUnchangedFiles(files, cachedResult.changedFiles);
+      filesToAudit = llmOptimizer.prioritizeFiles(filesToAudit, heuristicFindings);
+
+      const incrementalPrompt = createIncrementalAuditPrompt(cachedResult.changedFiles);
+      if (filesToAudit.length === 0) {
+        console.log(`[LLM优化] 所有文件未变更，使用缓存结果`);
+        return {
+          status: "completed",
+          called: true,
+          skipReason: "incremental-no-changes",
+          summary: "所有文件无变更，使用缓存结果",
+          findings: cachedResult.cachedFindings.map(f => ({ ...f, source: "llm" })),
+          warnings: [],
+          cached: true
+        };
+      }
+    } else {
+      filesToAudit = llmOptimizer.prioritizeFiles(files, heuristicFindings);
+    }
+
+    const tokenBudget = llmOptimizer.calculateTokenBudget(filesToAudit);
+    if (tokenBudget.needsCompression) {
+      console.log(`[LLM优化] Token超预算，需要压缩 (${tokenBudget.compressionRatio * 100}%)`);
+    }
+
+    const prioritizedFiles = rankFiles(filesToAudit, heuristicFindings, selectedSkills);
     const batches = buildBatches(prioritizedFiles);
     const findings = [];
     const warnings = [];
@@ -485,8 +533,25 @@ export class DefensiveLlmReviewer {
       }
     }
 
-    const dedupedFindings = deduplicateAndSort(findings).slice(0, 12);
+    const filteredFindings = findings.map(f => {
+      const validation = llmOptimizer.validateFinding(f);
+      if (!validation.isValid) {
+        console.log(`[LLM优化] 发现无效结果: ${f.title}, 问题: ${validation.issues.join(', ')}`);
+      }
+      return llmOptimizer.enhanceFindingWithContext(f, { projectId: project.id });
+    });
+
+    const validFindings = filteredFindings.filter(f => {
+      const fp = llmOptimizer.isFalsePositive(f, { filePath: f.location });
+      return !fp.isFP;
+    });
+
+    const dedupedFindings = llmOptimizer.deduplicateFindings(validFindings);
+    const rankedFindings = llmOptimizer.rankFindings(dedupedFindings).slice(0, 12);
     const truncated = prioritizedFiles.length > validBatches.flat().length;
+
+    llmOptimizer.cacheResults(projectHash, files, rankedFindings);
+    await llmOptimizer.recordAuditResult(project.id, rankedFindings, true);
 
     return {
       status: warnings.length && !reviewedBatches ? "failed" : warnings.length ? "partial" : "completed",
@@ -498,9 +563,9 @@ export class DefensiveLlmReviewer {
       totalCandidateFiles: prioritizedFiles.length,
       reviewedBatches,
       skillsUsed: selectedSkills.map((skill) => skill.id),
-      summary: buildSummary({ reviewedFiles, reviewedBatches, findings: dedupedFindings, truncated }),
+      summary: buildSummary({ reviewedFiles, reviewedBatches, findings: rankedFindings, truncated }),
       warnings,
-      findings: dedupedFindings.map((finding) => ({ ...finding, source: "llm" }))
+      findings: rankedFindings.map((finding) => ({ ...finding, source: "llm" }))
     };
   }
 

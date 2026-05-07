@@ -559,12 +559,19 @@ export class DefensiveLlmReviewer {
       return !fp.isFP;
     });
 
-    const dedupedFindings = llmOptimizer.deduplicateFindings(validFindings);
+    const confidenceFiltered = llmOptimizer.filterByConfidence(validFindings, 0.5);
+    const dedupedFindings = llmOptimizer.deduplicateFindings(confidenceFiltered);
     const rankedFindings = llmOptimizer.rankFindings(dedupedFindings).slice(0, 12);
     const truncated = prioritizedFiles.length > validBatches.flat().length;
 
     llmOptimizer.cacheResults(projectHash, files, rankedFindings);
     await llmOptimizer.recordAuditResult(project.id, rankedFindings, true);
+
+    const optimizationReport = llmOptimizer.generateAuditReport({
+      cachedFindings: cachedResult?.cachedFindings?.length || 0,
+      changedFiles: cachedResult?.changedFiles || [],
+      findings: rankedFindings
+    });
 
     return {
       status: warnings.length && !reviewedBatches ? "failed" : warnings.length ? "partial" : "completed",
@@ -578,7 +585,8 @@ export class DefensiveLlmReviewer {
       skillsUsed: selectedSkills.map((skill) => skill.id),
       summary: buildSummary({ reviewedFiles, reviewedBatches, findings: rankedFindings, truncated }),
       warnings,
-      findings: rankedFindings.map((finding) => ({ ...finding, source: "llm" }))
+      findings: rankedFindings.map((finding) => ({ ...finding, source: "llm" })),
+      optimizerReport
     };
   }
 

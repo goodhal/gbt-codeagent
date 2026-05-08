@@ -5,8 +5,9 @@ workspace/
 
 .env
 .env.*
-
-
+debug*
+test/
+test*.*
 *.log
 *.pid
 *.seed

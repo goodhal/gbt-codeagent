@@ -105,7 +105,6 @@
 - **[SKILL.md](docs/gbt-audit/skill.md)** - 主技能文档，包含审计原则、流程、质量标准
 - **[LLM 审计执行指南](docs/gbt-audit/workflow/audit_workflow.md)** - LLM 审计执行流程和验证机制
 - **[输出质量检查标准](docs/gbt-audit/workflow/quality_standards.md)** - 修复方案编写要求和验证机制
-- **[审计覆盖率检查工具](src/tools/auditCoverageChecker.js)** - 验证审计完整性的工具
 
 ### 核心工具
 
@@ -117,6 +116,7 @@
 | `DefensiveLlmReviewer` | LLM 深度审计服务（语义分析 + 漏洞验证 + 代码检索增强） | `src/services/llmReviewService.js` |
 | `LLMFactory` | LLM 适配器工厂（OpenAI/Anthropic/Gemini） | `src/services/llmFactory.js` |
 | `AuditCoverageChecker` | 审计覆盖率检查工具 | `src/tools/auditCoverageChecker.js` |
+| `LocalToolExecutor` | 本地工具执行器 | `src/tools/localToolExecutor.js` |
 | `writeAuditHtmlReport` | HTML 报告生成 | `src/services/reportWriter.js` |
 | `VectorStore` | 向量数据库服务（代码语义检索） | `src/services/vectorStore.js` |
 | `EmbeddingsService` | 嵌入服务（代码向量化） | `src/services/embeddings.js` |
@@ -171,20 +171,24 @@ gbt-codeagent/
 ├── src/
 │   ├── agents/                  # 候选发现、本地导入、审计分析智能体
 │   ├── analyzers/               # 模块化分析器（静态分析、污点追踪、模式匹配）
-│   ├── config/                  # LLM 提供商配置、审计 Skill 配置、检测规则
+│   ├── config/                  # LLM 提供商配置、审计 Skill 配置、检测规则、OWASP 映射
 │   ├── core/                    # 核心基础设施（熔断器、限流器、重试、状态管理、遥测）
 │   ├── knowledge/               # 知识库（框架识别、漏洞知识）
 │   ├── services/                # LLM 复核、报告生成、快速扫描、验证、向量存储等服务
 │   ├── store/                   # 任务状态存储
 │   ├── tools/                   # 审计覆盖率检查等工具
 │   └── utils/                   # 文件工具、上下文管理
-├── docs/
+├── docs/                        # 项目文档
 │   ├── gbt-audit/               # GBT 国标代码安全审计文档
 │   │   ├── reference/           # 国标参考文件
 │   │   ├── vulnerabilities/     # 漏洞知识库
 │   │   └── workflow/            # 审计工作流与质量标准
 │   └── screenshots/             # 页面截图
-└── test-samples/                # 测试样本文件
+├── audit_checkpoints/           # 审计检查点，用于断点恢复
+├── cache/                       # 缓存目录（AST、向量等）
+├── config/                      # 配置文件目录
+├── data/                        # 数据存储目录
+├── workspace/                   # 工作区目录（下载、报告等）
 ```
 
 ## 本地运行

@@ -35,6 +35,20 @@ export function createTaskStore({ workspaceDir } = {}) {
             const taskFile = path.join(tasksDir, file);
             const content = await fs.readFile(taskFile, "utf8");
             const task = JSON.parse(content);
+
+            if (task.status === "running") {
+              task.status = "paused";
+              task.message = task.message || "服务器重启，任务已暂停";
+              task.updatedAt = new Date().toISOString();
+              task.progress = {
+                ...task.progress,
+                stage: "paused",
+                label: "服务器重启，任务已暂停，可手动恢复"
+              };
+              await fs.writeFile(taskFile, JSON.stringify(task, null, 2), "utf8");
+              console.log(`[taskStore] 将 running 任务 ${task.id} 自动转为 paused（服务器重启恢复）`);
+            }
+
             tasks.set(task.id, task);
             console.log(`Loaded task ${task.id} (status: ${task.status}) from disk`);
           } catch (error) {

@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { deduplicateAndSort } from "../utils/findingsUtils.js";
+import OWASP_MAPPING from "../config/owaspMapping.js";
 
 const LANGUAGE_EXTENSIONS = {
   "java": [".java"],
@@ -706,6 +707,7 @@ export class QuickScanService {
             const vulnId = this.getVulnId(vulnType, severity);
             const cvssDetails = this.calculateCVSSDetailed(vulnType, severity);
 
+            const owaspIds = OWASP_MAPPING[vulnType] || [];
             findings.push({
               source: "quick_scan",
               skillId: "gbt-code-audit",
@@ -719,6 +721,8 @@ export class QuickScanService {
               line: lineNum + 1,
               vulnType,
               cwe,
+              owaspIds,
+              owasp: owaspIds.join(", "),
               language,
               gbtMapping: this.getGbtMapping(vulnType, language),
               cvssScore: cvssDetails.cvss,

@@ -25,7 +25,7 @@ export class CompositeAnalyzer extends BaseAnalyzer {
     }
 
     if (options.enableTaint !== false) {
-      this.analyzers.set('taint', new TaintAnalyzer(this.rulesEngine, options));
+      this.analyzers.set('taint', new TaintAnalyzer(options));
     }
 
     if (options.enablePattern !== false) {

@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "path";
 import { inferFenceLanguage, collectFiles } from "../utils/fileUtils.js";
 import { jsonrepair } from "jsonrepair";
-import { withRetry, withRetryWithFallback, createRetryDecorator, CircuitBreaker, CircuitBreakerConfig, createReActAuditor, PromptCacheManager } from "../core/index.js";
+import { withRetry, withRetryWithFallback, CircuitBreaker, CircuitBreakerConfig, createReActAuditor, PromptCacheManager } from "../core/index.js";
 import { createLocalToolExecutor } from "../tools/localToolExecutor.js";
 import { buildReActSystemPrompt, buildReActInitialPrompt } from "../core/reactPrompts.js";
 import { ragService } from "./ragService.js";
@@ -13,6 +13,7 @@ import { fetchWithTimeout, globalLLMFactory } from "./llmFactory.js";
 import { CodeRetriever } from "./retriever.js";
 import { deduplicateAndSort, severityScore } from "../utils/findingsUtils.js";
 import { LLMOptimizer, createEnhancedPrompt, createIncrementalAuditPrompt } from "./llmOptimizer.js";
+import OWASP_MAPPING from "../config/owaspMapping.js";
 
 const MAX_BATCHES = 16;
 const MAX_FILES_PER_BATCH = 4;
@@ -99,6 +100,50 @@ const CORE_SECURITY_PRINCIPLES = `
    - 高置信度发现优于低置信度猜测
    - 提供明确的证据和复现步骤
    - 给出实际可行的修复建议`;
+
+const SEVERITY_CLASSIFICATION_GUIDE = `
+【严重级别判定标准 - 必须严格区分】
+
+🔴 critical（严重）- 仅以下情况：
+- 可直接通过网络远程利用，无需认证
+- 可导致远程代码执行(RCE)、系统完全控制
+- 可导致任意文件读取/写入
+- 可绕过身份认证直接访问核心功能
+- 明确的命令注入、SQL注入且用户输入未经任何过滤直接到达危险函数
+- 硬编码的生产环境密钥/凭证
+- ⚠️ critical 只能用于最严重的问题，不能滥用
+
+🟠 high（高危）- 以下情况：
+- 需要普通用户认证后可利用
+- 可导致重要数据泄露（用户密码、个人信息）
+- CSRF 可导致关键操作（修改密码、转账）
+- 反序列化漏洞（有实际风险）
+- SSRF 可访问内网
+- 权限控制缺失导致越权
+- 会话固定、敏感信息在日志中泄露
+
+🟡 medium（中危）- 以下情况：
+- 需要特定条件才能利用（如需要管理员权限）
+- 信息泄露但影响范围有限（如版本号、路径泄露）
+- 配置不当但不直接导致安全漏洞
+- 弱加密算法但仍需要其他条件才能利用
+- 输入验证不足但已有部分防护
+- 仅测试/开发环境风险
+- 竞争条件但利用难度大
+
+🟢 low（低危）- 以下情况：
+- 几乎无法实际利用
+- 仅理论风险，缺乏实际攻击路径
+- 代码风格问题不直接导致安全漏洞
+- 已废弃但未删除的调试代码（不影响生产）
+- 框架已默认防护的潜在风险
+- low 用于信息性发现，置信度应设为 0.3-0.5
+
+⚠️ 判定原则：
+- 不确定时应降级而非升级：有疑问时选较低级别
+- 需要认证或特定条件才能利用的，不应评为 critical
+- 仅理论风险无实际攻击路径的，评为 low
+- 如果所有发现都是同一级别，说明判定标准有问题，请重新审视`;
 
 const FILE_VALIDATION_RULES = `
 【文件路径验证规则 - 防止幻觉】
@@ -586,7 +631,7 @@ export class DefensiveLlmReviewer {
       summary: buildSummary({ reviewedFiles, reviewedBatches, findings: rankedFindings, truncated }),
       warnings,
       findings: rankedFindings.map((finding) => ({ ...finding, source: "llm" })),
-      optimizerReport
+      optimizerReport: optimizationReport
     };
   }
 
@@ -617,22 +662,46 @@ export class DefensiveLlmReviewer {
     }
 
     // 初始化代码检索器，建立项目代码索引
+    // 自动判断：小项目（≤50文件）跳过索引，收益小而开销大
+    const EMBEDDING_MAX_CONCURRENCY = 5;
+    const CODE_INDEX_MIN_FILES = 50;
     let codeRetriever = null;
-    try {
-      codeRetriever = new CodeRetriever({ maxChunkSize: 800, overlap: 50 });
-      await codeRetriever.initialize();
-      console.log(`[LLM审计] 开始索引项目代码: ${files.length} 个文件`);
-      for (const file of files.slice(0, 100)) {
-        try {
-          const content = await fs.readFile(file.path, "utf8");
-          await codeRetriever.indexFile(file.path, content, file.language);
-        } catch (e) {
-        }
+
+    if (files.length >= CODE_INDEX_MIN_FILES) {
+      try {
+        codeRetriever = new CodeRetriever({ maxChunkSize: 800, overlap: 50 });
+        await codeRetriever.initialize();
+        console.log(`[LLM审计] 开始并行索引项目代码: ${files.length} 个文件 (并发 ${EMBEDDING_MAX_CONCURRENCY})`);
+        const filesToIndex = files.slice(0, 100);
+        const indexLimit = pLimit(EMBEDDING_MAX_CONCURRENCY);
+        let indexedCount = 0;
+
+        const tasks = filesToIndex.map((file) =>
+          indexLimit(async () => {
+            try {
+              await codeRetriever.indexFile(file.fullPath, file.content, file.language);
+            } catch (e) {
+            }
+            indexedCount++;
+            if (indexedCount % 10 === 0 || indexedCount === filesToIndex.length) {
+              onProgress?.({
+                type: "llm-indexing",
+                totalFiles: files.length,
+                indexedFiles: indexedCount,
+                label: `正在索引项目代码：${indexedCount} / ${filesToIndex.length} 个文件`
+              });
+            }
+          })
+        );
+
+        await Promise.all(tasks);
+        console.log(`[LLM审计] 代码索引完成，已索引 ${codeRetriever.chunks.size} 个代码块`);
+      } catch (error) {
+        console.warn(`[LLM审计] 代码索引失败: ${error.message}`);
+        codeRetriever = null;
       }
-      console.log(`[LLM审计] 代码索引完成，已索引 ${codeRetriever.chunks.size} 个代码块`);
-    } catch (error) {
-      console.warn(`[LLM审计] 代码索引失败: ${error.message}`);
-      codeRetriever = null;
+    } else {
+      console.log(`[LLM审计] 跳过代码索引：项目文件数 ${files.length} < 阈值 ${CODE_INDEX_MIN_FILES}`);
     }
 
     // 对于独立审计，我们处理所有文件，而不仅仅是排名靠前的文件
@@ -712,32 +781,9 @@ export class DefensiveLlmReviewer {
         const parsed = parseJsonResponse(responseText);
         const normalized = normalizeFindings(parsed?.findings, selectedSkills);
 
-        onProgress?.({
-          type: "llm-batch-complete",
-          currentBatch: batchIndex + 1,
-          totalBatches: validBatches.length,
-          batchSize: batch.length,
-          auditedFiles: auditedFiles + batch.length,
-          auditedBatches: completedBatches + 1,
-          totalFiles: files.length,
-          label: `LLM 已完成第 ${batchIndex + 1} 批审计`
-        });
-
         return { success: true, findings: normalized, batchSize: batch.length };
       } catch (error) {
         console.error(`[LLM审计] 批次 ${batchIndex + 1} 出现错误:`, error.message);
-
-        onProgress?.({
-          type: "llm-batch-error",
-          currentBatch: batchIndex + 1,
-          totalBatches: validBatches.length,
-          batchSize: batch.length,
-          auditedFiles,
-          auditedBatches: completedBatches,
-          totalFiles: files.length,
-          label: `LLM 第 ${batchIndex + 1} 批审计出现错误`
-        });
-
         return { success: false, error: error.message, batchSize: batch.length };
       }
     }
@@ -757,6 +803,15 @@ export class DefensiveLlmReviewer {
         }
         auditedBatches++;
         completedBatches++;
+
+        onProgress?.({
+          type: "llm-batch-complete",
+          currentBatch: completedBatches,
+          totalBatches: validBatches.length,
+          auditedFiles,
+          totalFiles: files.length,
+          label: `LLM 已审计 ${auditedFiles} / ${files.length} 个文件`
+        });
       }
     }
 
@@ -892,13 +947,15 @@ export class DefensiveLlmReviewer {
   }
 }
 
-const withReviewRetry = createRetryDecorator({ 
-  maxAttempts: 2, 
-  baseDelay: 1000,
-  onRetry: (error, attempt, max) => {
-    console.warn(`[LLM审计] 请求重试 ${attempt}/${max}: ${error.message}`);
-  }
-});
+const withReviewRetry = async (fn) => {
+  return await withRetry(fn, {
+    maxAttempts: 2,
+    baseDelay: 1000,
+    onRetry: (error, attempt, max) => {
+      console.warn(`[LLM审计] 请求重试 ${attempt}/${max}: ${error.message}`);
+    }
+  });
+};
 
 async function requestStructuredReview({ llmConfig, systemPrompt, userPrompt }) {
   const compatibility = llmConfig.compatibility || llmConfig.defaults?.compatibility || "openai";
@@ -1092,6 +1149,7 @@ async function buildSystemPrompt(selectedSkills, auditKnowledge = {}, languages 
     "如果证据不足，就降低置信度或不要报出该问题。",
     "请只返回 JSON 对象，不要输出额外说明。",
     CORE_SECURITY_PRINCIPLES,
+    SEVERITY_CLASSIFICATION_GUIDE,
     FILE_VALIDATION_RULES
   ];
 
@@ -1535,6 +1593,12 @@ function normalizeFindings(findings, selectedSkills) {
         normalized.gbtMapping = safeString(finding.gbtMapping, "GB/T39412-2020 通用基线");
         normalized.cvssScore = clampCvssScore(finding.cvssScore);
         normalized.language = safeString(finding.language, "unknown");
+        
+        // 添加 OWASP 字段
+        const vulnType = normalized.vulnType;
+        const owaspIds = OWASP_MAPPING[vulnType] || [];
+        normalized.owaspIds = owaspIds;
+        normalized.owasp = owaspIds.join(", ");
       }
 
       return normalized;
@@ -1569,8 +1633,19 @@ function stripTrailingSlash(value) {
 }
 
 function normalizeSeverity(value) {
-  const validSeverities = ["critical", "high", "medium", "low", "info"];
-  return validSeverities.includes(value) ? value : "low";
+  const mapping = {
+    "严重": "critical",
+    "高危": "high",
+    "中危": "medium",
+    "低危": "low",
+    "critical": "critical",
+    "high": "high",
+    "medium": "medium",
+    "low": "low",
+    "info": "info"
+  };
+  const key = (value || "").toLowerCase();
+  return mapping[key] || mapping[value] || "medium";
 }
 
 function clampConfidence(value) {

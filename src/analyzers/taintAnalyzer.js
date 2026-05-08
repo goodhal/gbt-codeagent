@@ -42,6 +42,11 @@ export class TaintAnalyzer {
     return result;
   }
 
+  async analyze(code, context = {}) {
+    const language = context.language || 'unknown';
+    return this.analyzeCode(code, language, context);
+  }
+
   _generateAnalysisId(code, language, options) {
     const hash = this._simpleHash(code);
     return `${language}:${hash}:${JSON.stringify(options)}`;

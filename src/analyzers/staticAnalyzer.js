@@ -13,7 +13,7 @@ export class StaticAnalyzer extends AsyncBaseAnalyzer {
     super(rulesEngine, options);
 
     this.patternAnalyzer = new PatternAnalyzer(rulesEngine, options);
-    this.taintAnalyzer = new TaintAnalyzer(rulesEngine, options);
+    this.taintAnalyzer = new TaintAnalyzer(options);
 
     this.options = {
       enablePatternAnalysis: options.enablePatternAnalysis !== false,
@@ -82,7 +82,7 @@ export class StaticAnalyzer extends AsyncBaseAnalyzer {
 
   async _runTaintAnalysis(code, language, context) {
     try {
-      return await this.taintAnalyzer.analyze(code, { language, ...context });
+      return await this.taintAnalyzer.analyzeCode(code, language, context);
     } catch (error) {
       console.error('[StaticAnalyzer] Taint analysis failed:', error);
       return { vulnerabilities: [], taintSources: [], taintSinks: [] };

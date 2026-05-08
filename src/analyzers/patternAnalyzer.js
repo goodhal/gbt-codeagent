@@ -20,7 +20,6 @@ export class PatternAnalyzer extends AsyncBaseAnalyzer {
     this.setLanguage(language);
 
     this._validateCode(code);
-    this._checkCache(code, language);
 
     const cacheKey = this._getCacheKey(code, { language });
     if (this._cache.has(cacheKey)) {
@@ -41,8 +40,10 @@ export class PatternAnalyzer extends AsyncBaseAnalyzer {
 
     const rules = this.rulesEngine.getRulesForLanguage(language);
 
-    for (const rule of rules) {
+    for (const rule of (rules || [])) {
       const matches = this.rulesEngine.matchVulnerability(code, rule.id, language);
+
+      if (!matches || !matches[Symbol.iterator]) continue;
 
       for (const match of matches) {
         const vuln = this._createVulnerabilityFromMatch(match, rule);

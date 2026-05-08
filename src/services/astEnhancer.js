@@ -65,17 +65,27 @@ const ACCESS_CONTROL_PATTERNS = {
   check: ['checkOwner', 'checkTenant', 'validateOwnership', 'canAccess', 'canModify', 'isOwner', 'hasAccess']
 };
 
+const AST_INIT_TIMEOUT_MS = 120000;
+
 class ASTEnhancerService {
   constructor() {
     this.builder = null;
     this.queryEngine = null;
     this.searchHandler = null;
     this.initialized = false;
+    this.currentProjectPath = null;
   }
 
   async initialize(projectPath, options = {}) {
-    if (this.initialized) {
+    const resolvedPath = path.resolve(projectPath);
+
+    if (this.initialized && this.currentProjectPath === resolvedPath) {
       return this;
+    }
+
+    if (this.initialized && this.currentProjectPath !== resolvedPath) {
+      console.log(`[AST增强] 项目路径变更 (${this.currentProjectPath} -> ${resolvedPath})，重新初始化`);
+      this.cleanup();
     }
 
     const projectId = path.basename(projectPath);
@@ -85,19 +95,27 @@ class ASTEnhancerService {
     });
 
     try {
-      await this.builder.initialize(projectId, projectPath, {
+      const initPromise = this.builder.initialize(projectId, projectPath, {
         forceRebuild: options.forceRebuild || false,
         includeNodeModules: false,
         includeTests: false
       });
 
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(`AST 初始化超时 (${AST_INIT_TIMEOUT_MS / 1000}s)`)), AST_INIT_TIMEOUT_MS)
+      );
+
+      await Promise.race([initPromise, timeoutPromise]);
+
       this.queryEngine = this.builder.queryEngine;
       this.searchHandler = new SearchHandler(this.queryEngine);
       this.initialized = true;
+      this.currentProjectPath = resolvedPath;
 
       console.log(`[AST增强] 已初始化，项目: ${projectId}, AST节点数: ${this.builder.astIndex?.nodes?.size || 0}`);
     } catch (error) {
       console.warn(`[AST增强] 初始化失败: ${error.message}`);
+      this.cleanup();
     }
 
     return this;
@@ -941,6 +959,7 @@ class ASTEnhancerService {
       this.builder.persistenceManager.invalidateAll?.();
     }
     this.initialized = false;
+    this.currentProjectPath = null;
     this.builder = null;
     this.queryEngine = null;
     this.searchHandler = null;

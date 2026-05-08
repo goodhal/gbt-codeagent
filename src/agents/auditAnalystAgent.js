@@ -20,7 +20,7 @@ export class AuditAnalystAgent {
     this.quickScanService = new QuickScanService();
   }
 
-  async run({ taskId, projects, selectedSkillIds, llmConfig, useReAct = false, reactConfig = {}, onProgress, shouldCancel, tasks }) {
+  async run({ taskId, projects, selectedSkillIds, llmConfig, useReAct = false, reactConfig = {}, enableLlmAudit = true, onProgress, shouldCancel, tasks, onProjectGroupComplete }) {
     const reviewProfile = resolveAuditSkills(selectedSkillIds);
     const results = [];
     const isGbtAudit = reviewProfile.some(skill => skill.id === "gbt-code-audit");
@@ -111,7 +111,7 @@ export class AuditAnalystAgent {
       const sourceRoot = path.join(process.cwd(), "workspace", "downloads", project.id);
 
       const doAstEnhance = heuristicFindings.length > 0;
-      const doLlmAudit = !!this.llmReviewer;
+      const doLlmAudit = !!(this.llmReviewer) && (enableLlmAudit !== false);
 
       if (doAstEnhance) {
         onProgress?.({
@@ -135,6 +135,16 @@ export class AuditAnalystAgent {
           await astEnhancer.initialize(sourceRoot);
           const result = await astEnhancer.enhanceFindings(heuristicFindings, sourceRoot);
           console.log(`[审计分析] AST 增强完成，发现增强: ${result.length}`);
+          if (doLlmAudit) {
+            onProgress?.({
+              stage: useReAct ? "react-audit" : "llm-audit",
+              projectId: project.id,
+              projectName: project.name,
+              projectIndex: index + 1,
+              totalProjects: projects.length,
+              label: `正在进行 LLM 审计：${project.name}`
+            });
+          }
           return result;
         } catch (error) {
           console.warn(`[审计分析] AST 增强失败: ${error.message}`);
@@ -145,8 +155,8 @@ export class AuditAnalystAgent {
       let llmAuditPromise = Promise.resolve({
         status: "skipped",
         called: false,
-        skipReason: "no-llm-reviewer",
-        summary: "未配置 LLM 审计器。",
+        skipReason: enableLlmAudit === false ? "llm-audit-disabled" : "no-llm-reviewer",
+        summary: enableLlmAudit === false ? "LLM 审计已在配置中关闭。" : "未配置 LLM 审计器。",
         findings: [],
         warnings: [],
         reactResult: null
@@ -288,6 +298,14 @@ export class AuditAnalystAgent {
       );
 
       results.push(...groupResults);
+
+      // 每组完成后保存部分结果，支持断点续传
+      if (onProjectGroupComplete) {
+        onProjectGroupComplete({
+          projects: results,
+          findingsCount: results.reduce((sum, r) => sum + r.findings.length, 0)
+        });
+      }
 
       // 检查任务是否被暂停或取消（在处理完一轮后检查）
       if (shouldCancel?.()) {

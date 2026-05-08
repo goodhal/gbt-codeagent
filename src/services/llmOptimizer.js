@@ -300,13 +300,18 @@ export class LLMOptimizer {
 
   _severityToCVSS(severity) {
     const map = {
+      "严重": 9.5,
       critical: 9.5,
+      "高危": 7.5,
       high: 7.5,
+      "中危": 5.0,
       medium: 5.0,
+      "低危": 2.5,
       low: 2.5,
       info: 0.1
     };
-    return map[severity?.toLowerCase()] || 5.0;
+    const key = (severity || "").toLowerCase();
+    return map[key] || map[severity] || 5.0;
   }
 
   _estimateConfidence(finding) {

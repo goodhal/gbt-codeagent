@@ -185,6 +185,7 @@ const server = http.createServer(async (req, res) => {
         const useMemory = uploadResult.fields.useMemory === "true";
         const useReAct = uploadResult.fields.useReAct === "true";
         const reactConfig = uploadResult.fields.reactConfig ? JSON.parse(uploadResult.fields.reactConfig) : {};
+        const enableLlmAudit = uploadResult.fields.enableLlmAudit !== "false";
 
         const memory = await memoryStore.read();
         const taskData = {
@@ -193,6 +194,7 @@ const server = http.createServer(async (req, res) => {
           useMemory,
           useReAct,
           reactConfig,
+          enableLlmAudit,
           zipFiles: uploadResult.files
         };
 
@@ -300,7 +302,8 @@ const server = http.createServer(async (req, res) => {
         selectedSkillIds: originalTask.selectedSkillIds || [],
         useMemory: originalTask.useMemory !== false,
         useReAct: originalTask.useReAct || false,
-        reactConfig: originalTask.reactConfig || {}
+        reactConfig: originalTask.reactConfig || {},
+        enableLlmAudit: originalTask.enableLlmAudit !== false
       };
 
       const newTask = await tasks.createTask(restartData);
@@ -669,9 +672,9 @@ async function runAudit(taskId, selectedProjectIds) {
         llmConfig,
         useReAct: task.useReAct || false,
         reactConfig: task.reactConfig || {},
+        enableLlmAudit: task.enableLlmAudit !== false,
         tasks,
         onProgress: (detail) => {
-          // 调整进度，加入已完成的项目
           const adjustedDetail = {
             ...detail,
             current: (detail.current || 0) + completedProjectIds.length,
@@ -680,9 +683,21 @@ async function runAudit(taskId, selectedProjectIds) {
           };
           updateTaskProgress(taskId, buildAuditProgress(adjustedDetail, selectedProjects.length));
         },
+        onProjectGroupComplete: (partialResult) => {
+          const merged = existingAuditResult
+            ? {
+                ...existingAuditResult,
+                projects: [
+                  ...(existingAuditResult.projects || []),
+                  ...partialResult.projects
+                ]
+              }
+            : partialResult;
+          tasks.updateTask(taskId, { auditResult: merged });
+          console.log(`[审计流程] 已保存部分结果: ${partialResult.projects.length} 个项目, ${partialResult.findingsCount} 个发现`);
+        },
         shouldCancel: () => {
           const currentTask = tasks.getTask(taskId);
-          // 如果任务被暂停或取消，停止审计
           return currentTask?.status === 'cancelled' || currentTask?.status === 'paused';
         }
       });
@@ -791,6 +806,17 @@ function calculateMirrorPercent(projectIndex, totalProjects, processedFiles, tot
 function buildAuditProgress(detail, totalProjects) {
   const safeProjects = Math.max(totalProjects || 1, 1);
 
+  if (detail.stage === "ast-enhance") {
+    return {
+      stage: "ast-enhance",
+      label: detail.label || `正在进行 AST 增强分析`,
+      detail: detail.detail || "",
+      percent: 70,
+      current: detail.projectIndex || 0,
+      total: detail.totalProjects || safeProjects
+    };
+  }
+
   if (detail.stage === "heuristic") {
     return {
       stage: "heuristic",
@@ -804,29 +830,48 @@ function buildAuditProgress(detail, totalProjects) {
 
   if (detail.stage === "llm-review") {
     const totalBatches = Math.max(detail.totalBatches || 1, 1);
-    const batchProgress = detail.currentBatch ? Math.min(detail.currentBatch / totalBatches, 1) : 0;
+    const totalFiles = detail.totalFiles || 0;
+    const completedFiles = detail.reviewedFiles || 0;
+    const completedBatches = detail.currentBatch || 0;
+    const batchProgress = completedBatches ? Math.min(completedBatches / totalBatches, 1) : 0;
     const projectOffset = (Math.max((detail.projectIndex || 1) - 1, 0) / safeProjects) * 24;
+    const fileDetail = totalFiles > 0
+      ? `第 ${completedBatches} / ${totalBatches} 批`
+      : "正在初始化...";
     return {
       stage: "llm-review",
       label: detail.label || `正在进行 LLM 复核：${detail.projectName || ""}`,
-      detail: detail.currentPath || `${detail.reviewedFiles || 0} / ${detail.totalFiles || 0} 个文件`,
+      detail: fileDetail,
       percent: Math.min(95, Math.round(68 + projectOffset + batchProgress * (24 / safeProjects))),
-      current: detail.currentBatch || detail.reviewedBatches || 0,
-      total: detail.totalBatches || 0
+      current: totalFiles > 0 ? completedFiles : completedBatches || 0,
+      total: totalFiles > 0 ? totalFiles : totalBatches
     };
   }
 
   if (detail.stage === "llm-audit") {
     const totalBatches = Math.max(detail.totalBatches || 1, 1);
-    const batchProgress = detail.currentBatch ? Math.min(detail.currentBatch / totalBatches, 1) : 0;
+    const totalFiles = detail.totalFiles || 0;
+    const completedFiles = detail.auditedFiles || 0;
+    const completedBatches = detail.currentBatch || 0;
+    const batchProgress = completedBatches ? Math.min(completedBatches / totalBatches, 1) : 0;
     const projectOffset = (Math.max((detail.projectIndex || 1) - 1, 0) / safeProjects) * 24;
+
+    let fileDetail;
+    if (detail.type === "llm-indexing") {
+      fileDetail = `索引中 ${detail.indexedFiles || 0} / ${detail.totalFiles || 0} 个文件`;
+    } else if (totalFiles > 0) {
+      fileDetail = `第 ${completedBatches} / ${totalBatches} 批`;
+    } else {
+      fileDetail = "正在初始化...";
+    }
+
     return {
       stage: "llm-audit",
       label: detail.label || `正在进行 LLM 独立审计：${detail.projectName || ""}`,
-      detail: detail.currentPath || `${detail.auditedFiles || 0} / ${detail.totalFiles || 0} 个文件`,
+      detail: fileDetail,
       percent: Math.min(95, Math.round(68 + projectOffset + batchProgress * (24 / safeProjects))),
-      current: detail.currentBatch || detail.auditedBatches || 0,
-      total: detail.totalBatches || 0
+      current: totalFiles > 0 ? completedFiles : completedBatches || 0,
+      total: totalFiles > 0 ? totalFiles : totalBatches
     };
   }
 
@@ -997,6 +1042,7 @@ function applyMemoryDefaults(body, memory) {
   const sourceType = body.sourceType || "github";
   const useReAct = body.useReAct === true;
   const reactConfig = typeof body.reactConfig === 'object' && body.reactConfig !== null ? body.reactConfig : {};
+  const enableLlmAudit = body.enableLlmAudit !== false;
   let selectedSkillIds = Array.isArray(body.selectedSkillIds) ? body.selectedSkillIds : [];
   
   // 如果提供了selectedSkills，将其转换为selectedSkillIds
@@ -1027,6 +1073,7 @@ function applyMemoryDefaults(body, memory) {
       useMemory,
       useReAct,
       reactConfig,
+      enableLlmAudit,
       query: "local repository import",
       cmsType: "all",
       industry: "all",
@@ -1067,6 +1114,7 @@ function applyMemoryDefaults(body, memory) {
       useMemory: false,
       useReAct,
       reactConfig,
+      enableLlmAudit,
       query,
       cmsType: body.cmsType || "all",
       industry: body.industry || "all",
@@ -1081,6 +1129,7 @@ function applyMemoryDefaults(body, memory) {
     useMemory,
     useReAct,
     reactConfig,
+    enableLlmAudit,
     query,
     cmsType: body.cmsType || "all",
     industry: body.industry || "all",

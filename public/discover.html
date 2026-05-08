@@ -107,6 +107,10 @@
                 启用项目记忆
               </label>
               <label class="checkbox-row">
+                <input name="enableLlmAudit" type="checkbox" id="enableLlmAuditToggle" checked />
+                启用 LLM 审计
+              </label>
+              <label class="checkbox-row">
                 <input name="useReAct" type="checkbox" id="useReActToggle" />
                 启用 ReAct 深度推理审计
               </label>
@@ -166,7 +170,7 @@
                   <button id="clear-skills-button" class="ghost" type="button">清空</button>
                 </div>
               </div>
-              <div id="skill-picker" class="skill-grid"></div>
+              <div id="skill-picker" class="skill-list-full"></div>
             </div>
 
             <div class="form-footer">

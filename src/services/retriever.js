@@ -1,4 +1,4 @@
-import { EmbeddingsService } from "./embeddings.js";
+import { EmbeddingsService, globalEmbeddingsService } from "./embeddings.js";
 import { VectorStore } from "./vectorStore.js";
 import { CodeChunk, CodeSplitter } from "./splitter.js";
 

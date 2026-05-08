@@ -185,6 +185,9 @@ function initDiscoverPage() {
       useMemory: form.elements.useMemory?.checked
     };
 
+    const enableLlmAudit = form.elements.enableLlmAudit?.checked !== false;
+    payload.enableLlmAudit = enableLlmAudit;
+
     const useReAct = form.elements.useReAct?.checked === true;
     if (useReAct) {
       payload.useReAct = true;
@@ -253,16 +256,12 @@ function renderSkillPicker(target) {
   const defaultProfile = availableProfiles[0]?.id || "default";
 
   target.innerHTML = `
-    <div class="profile-selector" style="margin-bottom: 16px; padding: 12px; background: #f0f5ff; border-radius: 8px;">
-      <label style="display: block; margin-bottom: 8px; font-weight: 600;">
-        审计配置 (Profile)
-        <select id="profile-selector" style="margin-left: 8px; padding: 4px 8px; border-radius: 4px; border: 1px solid #bfdbfe;">
-          ${profileOptions}
-        </select>
-      </label>
-      <p class="muted" style="font-size: 12px; margin: 0;">选择不同的配置会影响审计的严格程度和覆盖范围。</p>
+    <div id="profile-selector-row" style="grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding: 8px 12px; background: #f0f5ff; border-radius: 8px;">
+      <label style="font-weight: 600; margin: 0; min-width: 80px;">审计配置:</label>
+      <select id="profile-selector" style="flex: 1; padding: 6px 12px; border-radius: 6px; border: 1px solid #bfdbfe; background: white;">
+        ${profileOptions}
+      </select>
     </div>
-    <div id="skill-list">
     ${auditSkills.map(
       (skill) => `
         <label class="skill-card" data-profiles="${(skill.profiles || []).join(",")}">
@@ -275,11 +274,11 @@ function renderSkillPicker(target) {
         </label>
       `
     ).join("")}
-    </div>
   `;
 
   const profileSelector = document.getElementById("profile-selector");
   if (profileSelector) {
+    profileSelector.value = defaultProfile;
     profileSelector.addEventListener("change", (e) => {
       const selectedProfile = e.target.value;
       filterSkillsByProfile(selectedProfile);
@@ -288,7 +287,7 @@ function renderSkillPicker(target) {
 }
 
 function filterSkillsByProfile(profile) {
-  const skillCards = document.querySelectorAll("#skill-list .skill-card");
+  const skillCards = document.querySelectorAll("#skill-picker .skill-card");
   skillCards.forEach((card) => {
     const cardProfiles = (card.dataset.profiles || "").split(",").filter(p => p);
     if (cardProfiles.length === 0 || cardProfiles.includes(profile)) {
@@ -392,8 +391,9 @@ async function refreshAuditPage() {
   renderQuickStatus(latestSettings || (await api("/api/settings")), await api("/api/tasks"));
   renderTaskList(tasks);
 
-  if (!selectedTaskId && tasks.length) {
-    selectedTaskId = tasks[0].id;
+  const selectedInFiltered = selectedTaskId && tasks.some(t => t.id === selectedTaskId);
+  if (!selectedInFiltered) {
+    selectedTaskId = tasks.length ? tasks[0].id : null;
   }
   if (!selectedTaskId) {
     setHtml("#task-detail", '<div class="empty-card">还没有任务。</div>');
@@ -513,9 +513,16 @@ function renderTaskDetail(task) {
   const statusLabels = { completed: "已完成", failed: "失败", running: "运行中", queued: "排队中", paused: "已暂停", cancelled: "已取消" };
   const statusText = statusLabels[task.status] || task.status;
   const findingsCount = task.auditResult?.findingsCount || 0;
-  const heuristicCount = task.auditResult?.heuristicFindingsCount || 0;
-  const llmCount = task.auditResult?.llmFindingsCount || 0;
-  const reactCount = projects.reduce((sum, p) => sum + (p.reactAudit?.issues?.length || p.reactResult?.issues?.length || 0), 0);
+  // 使用经过验证的发现数量，与后端findingsCount保持一致
+  const heuristicCount = projects.reduce((sum, p) => {
+    return sum + (p.findings?.filter(f => ['quick_scan', 'taint', 'rule', 'pattern'].includes(f.source) || !f.source).length || 0);
+  }, 0);
+  const llmCount = projects.reduce((sum, p) => {
+    return sum + (p.findings?.filter(f => f.source === 'llm').length || 0);
+  }, 0);
+  const reactCount = projects.reduce((sum, p) => {
+    return sum + (p.findings?.filter(f => f.source === 'react').length || 0);
+  }, 0);
   const useReAct = task.useReAct === true;
   const canPause = task.status === "running";
   const canResume = task.status === "paused";
@@ -648,12 +655,11 @@ function renderTaskDetail(task) {
       const findingLists = target.querySelectorAll('.finding-list');
       findingLists.forEach(list => {
         list.querySelectorAll('li').forEach(item => {
-          const standard = item.querySelector('.badge-gbt, .badge-owasp');
           if (filterType === 'all') {
             item.style.display = '';
-          } else if (filterType === 'owasp' && standard?.classList.contains('badge-owasp')) {
+          } else if (filterType === 'owasp' && item.querySelector('.badge-owasp')) {
             item.style.display = '';
-          } else if (filterType === 'gbt' && standard?.classList.contains('badge-gbt')) {
+          } else if (filterType === 'gbt' && item.querySelector('.badge-gbt')) {
             item.style.display = '';
           } else if (filterType !== 'all') {
             item.style.display = 'none';
@@ -759,11 +765,8 @@ function renderSelectionView(task) {
 
 function renderProjectReview(project) {
   const reactResult = project.reactAudit || project.reactResult;
-  const allFindings = [
-    ...(project.heuristicFindings || []),
-    ...(project.llmAudit?.findings || []),
-    ...(reactResult?.issues || [])
-  ];
+  // 使用经过验证的发现数量，与后端findingsCount保持一致
+  const allFindings = project.findings || [];
 
   const severityStats = {
     critical: allFindings.filter(f => f.severity === 'critical' || f.severity === 'CRITICAL').length,
@@ -778,8 +781,8 @@ function renderProjectReview(project) {
     typeStats[type] = (typeStats[type] || 0) + 1;
   });
 
-  const owaspCount = allFindings.filter(f => f.standard?.includes('OWASP')).length;
-  const gbtCount = allFindings.filter(f => f.standard?.includes('GB/T')).length;
+  const owaspCount = allFindings.filter(f => f.owasp || f.owaspId || (f.gbtMapping && f.gbtMapping.includes('OWASP'))).length;
+  const gbtCount = allFindings.filter(f => f.gbtMapping?.includes('GB/T')).length;
 
   const total = severityStats.critical + severityStats.high + severityStats.medium + severityStats.low;
   const projectNameClean = project.projectName.replace(/[^a-zA-Z0-9]/g, '-');
@@ -907,11 +910,15 @@ function renderFindingList(findings, emptyMessage) {
     return 'low';
   };
 
-  const getStandardBadge = (standard) => {
-    if (!standard) return '';
-    if (standard.includes('GB/T')) return '<span class="badge badge-gbt">国标</span>';
-    if (standard.includes('OWASP')) return '<span class="badge badge-owasp">OWASP</span>';
-    return '';
+  const getStandardBadge = (finding) => {
+    const badges = [];
+    if (finding.gbtMapping?.includes('GB/T')) {
+      badges.push('<span class="badge badge-gbt">国标</span>');
+    }
+    if (finding.owasp || finding.owaspId || (finding.gbtMapping && finding.gbtMapping.includes('OWASP'))) {
+      badges.push('<span class="badge badge-owasp">OWASP</span>');
+    }
+    return badges.join('');
   };
 
   return '<ul class="finding-list">' +
@@ -922,7 +929,7 @@ function renderFindingList(findings, emptyMessage) {
       const confidencePercent = Math.round(confidence * 100);
       const confidenceClass = getConfidenceClass(confidence);
       const clusterInfo = f.clusterId ? `<span class="cluster-tag">🗂️ 聚类 ${f.clusterSize || 1}</span>` : '';
-      const standardBadge = getStandardBadge(f.standard);
+      const standardBadge = getStandardBadge(f);
 
       return '<li>' +
         '<div class="finding-head">' +
@@ -1400,6 +1407,9 @@ async function handleZipUpload(form, selectedSkillIds) {
     formData.append("sourceType", "zip-upload");
     formData.append("selectedSkillIds", JSON.stringify(selectedSkillIds));
     formData.append("useMemory", form.elements.useMemory?.checked || false);
+
+    const enableLlmAudit = form.elements.enableLlmAudit?.checked !== false;
+    formData.append("enableLlmAudit", enableLlmAudit);
 
     const useReAct = form.elements.useReAct?.checked === true;
     if (useReAct) {

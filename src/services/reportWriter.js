@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { OWASP_NAMES } from "../config/owaspMapping.js";
 
 export async function writeAuditHtmlReport({ reportsDir, task, selectedProjects, auditResult }) {
   await fs.mkdir(reportsDir, { recursive: true });
@@ -28,8 +29,9 @@ function buildHtml({ task, selectedProjects, auditResult }) {
       const project = selectedMap.get(projectResult.projectId);
       const llmResult = projectResult.llmAudit;
       const llmState = describeLlmAudit(llmResult);
-      const heuristicFindings = renderFindings(projectResult.heuristicFindings, "规则层本次没有保留到高置信度结果。");
-      const llmFindings = renderFindings(llmResult?.findings || [], llmState.emptyMessage);
+      // 使用经过验证的发现数据，与后端findingsCount保持一致
+      const heuristicFindings = renderFindings((projectResult.findings || []).filter(f => ['quick_scan', 'taint', 'rule', 'pattern'].includes(f.source) || !f.source), "规则层本次没有保留到高置信度结果。");
+      const llmFindings = renderFindings((projectResult.findings || []).filter(f => f.source === 'llm'), llmState.emptyMessage);
       const llmWarnings = (llmResult?.warnings || [])
         .map((warning) => `<li>${escapeHtml(warning)}</li>`)
         .join("");
@@ -57,7 +59,7 @@ function buildHtml({ task, selectedProjects, auditResult }) {
 
           <div class="sub-card">
             <h4>规则层摘要</h4>
-            <p>保留 ${escapeHtml(String(projectResult.heuristicFindings.length))} 条结果。</p>
+            <p>保留 ${escapeHtml(String((projectResult.findings || []).filter(f => ['quick_scan', 'taint', 'rule', 'pattern'].includes(f.source) || !f.source).length))} 条结果。</p>
             ${heuristicFindings}
           </div>
 
@@ -98,6 +100,7 @@ function buildHtml({ task, selectedProjects, auditResult }) {
     .sub-card{margin-top:16px;padding:16px;border-radius:18px;background:#f0f5ff;border:1px solid #bfdbfe}
     .finding{border-top:1px solid #dbeafe;padding-top:14px;margin-top:14px}
     .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:#dbeafe}
+    .badge.critical{background:#fecaca}
     .badge.low{background:#dbeafe}
     .badge.medium{background:#bfdbfe}
     .badge.high{background:#fecaca}
@@ -276,10 +279,20 @@ function renderFindings(findings, emptyMessage) {
         .map(
           (finding, index) => {
             const isGbtFinding = finding.skillId === "gbt-code-audit";
+            // 处理OWASP映射，添加中文名称
+            let owaspDisplay = "无";
+            if (finding.owasp) {
+              const owaspIds = finding.owasp.split(", ");
+              owaspDisplay = owaspIds.map(id => `${id} ${OWASP_NAMES[id] || ""}`).join(", ");
+            } else if (finding.owaspIds) {
+              owaspDisplay = finding.owaspIds.map(id => `${id} ${OWASP_NAMES[id] || ""}`).join(", ");
+            }
+
             const extraInfo = isGbtFinding ? `
               <p><strong>漏洞类型：</strong>${escapeHtml(finding.vulnType || "UNKNOWN")}</p>
               <p><strong>CWE：</strong>${escapeHtml(finding.cwe || "CWE-000")}</p>
               <p><strong>国标映射：</strong>${escapeHtml(finding.gbtMapping || "GB/T39412-2020 通用基线")}</p>
+              <p><strong>OWASP 映射：</strong>${escapeHtml(owaspDisplay)}</p>
               <p><strong>CVSS 评分：</strong>${escapeHtml(String(finding.cvssScore || 0.0))}</p>
               <p><strong>编程语言：</strong>${escapeHtml(finding.language || "unknown")}</p>
             ` : "";
@@ -309,7 +322,7 @@ function renderFindings(findings, emptyMessage) {
               <div class="finding-head">
                 <h4>${index + 1}. ${escapeHtml(finding.title)}</h4>
                 <div>
-                  <span class="badge ${escapeHtml(finding.severity)}">${escapeHtml(finding.severity)}</span>
+                  <span class="badge ${escapeHtml(severityClass(finding.severity))}">${escapeHtml(severityLabel(finding.severity))}</span>
                   <span class="badge ${escapeHtml(finding.source || "rule")}">${escapeHtml(finding.source || "rule")}</span>
                 </div>
               </div>
@@ -328,6 +341,18 @@ function renderFindings(findings, emptyMessage) {
         .join("")}
     </div>
   `;
+}
+
+function severityClass(severity) {
+  const normalized = (severity || "medium").toLowerCase();
+  const mapping = { critical: "critical", high: "high", medium: "medium", low: "low" };
+  return mapping[normalized] || "medium";
+}
+
+function severityLabel(severity) {
+  const normalized = (severity || "medium").toLowerCase();
+  const mapping = { critical: "严重", high: "高危", medium: "中危", low: "低危" };
+  return mapping[normalized] || "中危";
 }
 
 function escapeHtml(value) {

@@ -30,6 +30,7 @@ export class AuditAnalystAgent {
     const reviewProfile = resolveAuditSkills(selectedSkillIds);
     const results = [];
     const isGbtAudit = reviewProfile.some(skill => skill.id === "gbt-code-audit");
+    let firstProjectCodeGraph = null; // 保存第一个项目的知识图谱
 
     const auditState = new AuditState();
     auditState.agentId = `audit_${taskId}_${Date.now().toString(36)}`;
@@ -172,10 +173,41 @@ export class AuditAnalystAgent {
         const sourceRoot = path.join(process.cwd(), "workspace", "downloads", project.id);
         
         let codeGraphContext = null;
+        let codeGraph = null;
         try {
-          console.log(`[审计分析] 开始构建代码知识图谱`);
-          const codeGraph = new CodeGraph();
-          await codeGraph.build(sourceRoot);
+          console.log(`[审计分析] 开始获取代码知识图谱`);
+          
+          // 先尝试从增量分析器获取图谱
+          const incrementalAnalyzer = await getGlobalIncrementalAnalyzer();
+          codeGraph = incrementalAnalyzer.getGraph(project.id);
+          
+          // 如果增量分析器没有图谱，尝试构建或加载
+          if (!codeGraph) {
+            // 尝试从缓存加载
+            try {
+              const graphPath = path.join(process.cwd(), 'cache', 'graphs', `${project.id}_graph.json`);
+              codeGraph = new CodeGraph();
+              const savedAt = await codeGraph.loadFromFile(graphPath);
+              console.log(`[审计分析] 从缓存加载图谱，保存时间: ${savedAt}`);
+            } catch (loadError) {
+              // 缓存不存在，构建新图谱
+              console.log(`[审计分析] 图谱缓存不存在，构建新图谱`);
+              codeGraph = new CodeGraph();
+              await codeGraph.build(sourceRoot);
+              
+              // 保存图谱到缓存
+              try {
+                await codeGraph.saveToFile(path.join(process.cwd(), 'cache', 'graphs', `${project.id}_graph.json`));
+              } catch (saveError) {
+                console.warn(`[审计分析] 图谱保存失败: ${saveError.message}`);
+              }
+            }
+          }
+          
+          // 保存第一个项目的 codeGraph 供架构分析使用
+          if (index === 0 && codeGraph) {
+            firstProjectCodeGraph = codeGraph;
+          }
           
           const entryPoints = codeGraph.getEntryPoints?.() || [];
           const hubNodes = codeGraph.findHubNodes?.(5) || [];
@@ -193,9 +225,9 @@ export class AuditAnalystAgent {
               warnings: architectureOverview.warnings?.slice(0, 3) || []
             }
           };
-          console.log(`[审计分析] 代码知识图谱构建完成，入口点: ${entryPoints.length}, 热点节点: ${hubNodes.length}`);
+          console.log(`[审计分析] 代码知识图谱获取完成，入口点: ${entryPoints.length}, 热点节点: ${hubNodes.length}`);
         } catch (error) {
-          console.warn(`[审计分析] 代码知识图谱构建失败: ${error.message}`);
+          console.warn(`[审计分析] 代码知识图谱获取失败: ${error.message}`);
         }
 
         if (useReAct && typeof this.llmReviewer.auditWithReAct === 'function') {
@@ -456,23 +488,51 @@ export class AuditAnalystAgent {
       });
 
       try {
-        // 使用增量分析器获取分析结果
-        const incrementalAnalyzer = await getGlobalIncrementalAnalyzer();
-        const firstProject = projects[0];
-        const projectRoot = path.join(process.cwd(), "workspace", "downloads", firstProject.id);
-        
-        // 执行增量分析
-        const analysisResult = await incrementalAnalyzer.analyze(firstProject.id, projectRoot, {
-          forceFull: false,
-          maxDepth: 3
-        });
-
-        // 执行架构分析
-        const archAnalyzer = new ArchitectureAnalyzer();
-        await archAnalyzer.initialize(projectRoot);
-        architectureAnalysis = archAnalyzer.analyze();
-        
-        console.log(`[审计分析] 架构分析完成 - 风险评分: ${architectureAnalysis.overview?.riskScore || 0}`);
+        // 优先使用已经构建好的 codeGraph
+        if (firstProjectCodeGraph) {
+          console.log(`[审计分析] 使用已构建的代码知识图谱进行架构分析`);
+          
+          const overview = firstProjectCodeGraph.getArchitectureOverview?.() || {};
+          const entryPoints = firstProjectCodeGraph.getEntryPoints?.() || [];
+          const hubNodes = firstProjectCodeGraph.findHubNodes?.(10) || [];
+          const criticalPaths = firstProjectCodeGraph.traceExecutionFlow?.() || [];
+          
+          architectureAnalysis = {
+            overview: overview,
+            criticalPaths: criticalPaths.map(path => ({
+              entryPoint: path[0],
+              nodeCount: path.length,
+              edgeCount: Math.max(0, path.length - 1),
+              depth: path.length,
+              criticality: 80
+            })),
+            hotspots: hubNodes.map(h => ({
+              name: h.name,
+              degree: h.degree,
+              community: 'module'
+            })),
+            knowledgeGaps: {
+              isolatedNodes: [],
+              untestedHotspots: [],
+              orphanFiles: []
+            },
+            recommendations: []
+          };
+          
+          console.log(`[审计分析] 架构分析完成 - 风险评分: ${architectureAnalysis.overview?.riskScore || 0}`);
+        } else {
+          console.log(`[审计分析] 无可用的代码知识图谱，使用架构分析器`);
+          
+          const firstProject = projects[0];
+          const projectRoot = path.join(process.cwd(), "workspace", "downloads", firstProject.id);
+          
+          // 执行架构分析
+          const archAnalyzer = new ArchitectureAnalyzer();
+          await archAnalyzer.initialize(projectRoot);
+          architectureAnalysis = archAnalyzer.analyze();
+          
+          console.log(`[审计分析] 架构分析完成 - 风险评分: ${architectureAnalysis.overview?.riskScore || 0}`);
+        }
       } catch (error) {
         console.warn(`[审计分析] 架构分析失败: ${error.message}`);
       }

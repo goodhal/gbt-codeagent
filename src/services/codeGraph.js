@@ -178,7 +178,7 @@ export class CodeGraph {
     }
 
     // 检测入口点
-    await this._detectEntryPoints(queryEngine);
+    this._detectEntryPoints();
   }
 
   /**
@@ -322,19 +322,20 @@ export class CodeGraph {
   }
 
   /**
-   * 使用 QueryEngine 检测入口点
+   * 检测入口点
    */
-  async _detectEntryPoints(queryEngine) {
+  _detectEntryPoints() {
     // 查找入口点方法
     const entryPatterns = ['main', 'handler', 'controller', 'router', 'app'];
     
-    for (const pattern of entryPatterns) {
-      const methods = queryEngine.searchMethods(pattern);
-      for (const method of methods) {
-        const qn = method.qualifiedName || `${method.className}.${method.name}`;
-        const node = this._nodeIndex.get(qn);
-        if (node) {
-          node.kind = NODE_KIND.ENTRY_POINT;
+    for (const node of this._nodes) {
+      if (node.kind === NODE_KIND.FUNCTION || node.kind === NODE_KIND.METHOD) {
+        const lowerName = node.name.toLowerCase();
+        for (const pattern of entryPatterns) {
+          if (lowerName.includes(pattern)) {
+            node.kind = NODE_KIND.ENTRY_POINT;
+            break;
+          }
         }
       }
     }
@@ -623,6 +624,27 @@ export class CodeGraph {
     const hubs = this.findHubNodes(5);
     const bridges = this.findBridgeNodes();
     const gaps = this.findKnowledgeGaps();
+    const warnings = this._generateArchitectureWarnings(communities, gaps);
+
+    // 计算架构风险评分
+    let riskScore = 0;
+    
+    // 基于警告计算风险
+    const highWarns = warnings.filter(w => w.severity === 'high').length;
+    const mediumWarns = warnings.filter(w => w.severity === 'medium').length;
+    const lowWarns = warnings.filter(w => w.severity === 'low').length;
+    
+    riskScore += highWarns * 25;
+    riskScore += mediumWarns * 10;
+    riskScore += lowWarns * 3;
+    
+    // 基于孤立节点计算风险
+    const totalNodes = this._nodes.length;
+    const isolatedRatio = totalNodes > 0 ? gaps.isolatedNodes.length / totalNodes : 0;
+    riskScore += Math.min(isolatedRatio * 100, 20);
+    
+    // 限制最大评分
+    riskScore = Math.min(riskScore, 100);
 
     return {
       totalNodes: this._nodes.length,
@@ -641,7 +663,8 @@ export class CodeGraph {
       isolatedNodeCount: gaps.isolatedNodes.length,
       untestedHotspotCount: gaps.untestedHotspots.length,
       orphanFileCount: gaps.orphanFiles.length,
-      warnings: this._generateArchitectureWarnings(communities, gaps)
+      warnings,
+      riskScore: Math.round(riskScore)
     };
   }
 
@@ -832,6 +855,69 @@ export class CodeGraph {
       byLanguage,
       byEdgeKind
     };
+  }
+
+  /**
+   * 序列化图谱到 JSON 对象
+   */
+  toJSON() {
+    return {
+      nodes: this._nodes,
+      edges: this._edges,
+      projectRoot: this._projectRoot,
+      savedAt: new Date().toISOString()
+    };
+  }
+
+  /**
+   * 从 JSON 对象反序列化图谱
+   */
+  fromJSON(jsonData) {
+    this._nodes = jsonData.nodes || [];
+    this._edges = jsonData.edges || [];
+    this._projectRoot = jsonData.projectRoot || null;
+    
+    // 重建索引
+    this._rebuildIndexes();
+    
+    console.log(`[CodeGraph] 从缓存加载图谱 - 节点: ${this._nodes.length}, 边: ${this._edges.length}`);
+  }
+
+  /**
+   * 重建内部索引
+   */
+  _rebuildIndexes() {
+    this._nodeIndex.clear();
+    this._fileIndex.clear();
+    
+    for (const node of this._nodes) {
+      this._nodeIndex.set(node.qualifiedName, node);
+      
+      if (!this._fileIndex.has(node.filePath)) {
+        this._fileIndex.set(node.filePath, []);
+      }
+      this._fileIndex.get(node.filePath).push(node.qualifiedName);
+    }
+  }
+
+  /**
+   * 保存图谱到文件
+   */
+  async saveToFile(filePath) {
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    const jsonData = this.toJSON();
+    await fs.writeFile(filePath, JSON.stringify(jsonData, null, 2), 'utf8');
+    console.log(`[CodeGraph] 图谱已保存到: ${filePath}`);
+  }
+
+  /**
+   * 从文件加载图谱
+   */
+  async loadFromFile(filePath) {
+    const content = await fs.readFile(filePath, 'utf8');
+    const jsonData = JSON.parse(content);
+    this.fromJSON(jsonData);
+    return jsonData.savedAt;
   }
 }
 

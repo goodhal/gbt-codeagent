@@ -14,6 +14,7 @@ import { CodeGraph } from "./codeGraph.js";
 export class IncrementalAnalyzer {
   constructor() {
     this._cacheDir = path.join(process.cwd(), 'cache', 'incremental');
+    this._graphDir = path.join(process.cwd(), 'cache', 'graphs');
     this._fileHashes = new Map();  // 项目ID -> { 文件路径 -> 哈希 }
     this._analysisCache = new Map();  // 项目ID -> 分析结果
     this._graphCache = new Map();  // 项目ID -> CodeGraph实例
@@ -24,7 +25,15 @@ export class IncrementalAnalyzer {
    */
   async initialize() {
     await fs.mkdir(this._cacheDir, { recursive: true });
+    await fs.mkdir(this._graphDir, { recursive: true });
     await this._loadCache();
+  }
+
+  /**
+   * 获取图谱文件路径
+   */
+  _getGraphFilePath(projectId) {
+    return path.join(this._graphDir, `${projectId}_graph.json`);
   }
 
   /**
@@ -55,6 +64,38 @@ export class IncrementalAnalyzer {
       JSON.stringify(cache, null, 2),
       'utf8'
     );
+  }
+
+  /**
+   * 保存图谱到文件
+   */
+  async _saveGraph(projectId, graph) {
+    const graphPath = this._getGraphFilePath(projectId);
+    await graph.saveToFile(graphPath);
+  }
+
+  /**
+   * 从文件加载图谱
+   */
+  async _loadGraph(projectId) {
+    try {
+      const graphPath = this._getGraphFilePath(projectId);
+      const graph = new CodeGraph();
+      const savedAt = await graph.loadFromFile(graphPath);
+      this._graphCache.set(projectId, graph);
+      console.log(`[增量分析] 从缓存加载图谱: ${projectId}, 保存时间: ${savedAt}`);
+      return graph;
+    } catch (error) {
+      console.log(`[增量分析] 图谱缓存不存在: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * 获取缓存的图谱
+   */
+  getGraph(projectId) {
+    return this._graphCache.get(projectId);
   }
 
   /**
@@ -165,21 +206,35 @@ export class IncrementalAnalyzer {
     const changes = await this.detectChanges(projectId, projectRoot);
     const hasChanges = changes.added.length > 0 || changes.modified.length > 0 || changes.deleted.length > 0;
 
-    // 如果没有变更且不是强制全量分析，返回缓存结果
+    // 如果没有变更且不是强制全量分析，尝试加载缓存图谱和结果
     if (!forceFull && !hasChanges) {
-      const cached = this._analysisCache.get(projectId);
-      if (cached) {
+      const cachedAnalysis = this._analysisCache.get(projectId);
+      const cachedGraph = this._graphCache.get(projectId) || await this._loadGraph(projectId);
+      
+      if (cachedAnalysis && cachedGraph) {
         console.log(`[增量分析] 使用缓存结果，项目: ${projectId}`);
-        return cached;
+        return cachedAnalysis;
       }
     }
 
     console.log(`[增量分析] 开始分析项目: ${projectId}`);
     console.log(`[增量分析] 变更统计 - 新增: ${changes.added.length}, 修改: ${changes.modified.length}, 删除: ${changes.deleted.length}`);
 
-    // 构建代码图谱
-    const graph = new CodeGraph();
-    await graph.build(projectRoot);
+    // 尝试从缓存加载图谱
+    let graph = this._graphCache.get(projectId);
+    if (!graph) {
+      graph = await this._loadGraph(projectId);
+    }
+    
+    // 如果有变更或没有缓存图谱，重新构建
+    if (hasChanges || !graph) {
+      console.log(`[增量分析] ${hasChanges ? '检测到变更，重新构建图谱' : '没有缓存图谱，构建新图谱'}`);
+      graph = new CodeGraph();
+      await graph.build(projectRoot);
+      
+      // 保存图谱到文件
+      await this._saveGraph(projectId, graph);
+    }
     
     // 缓存图谱
     this._graphCache.set(projectId, graph);

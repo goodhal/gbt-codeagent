@@ -1261,8 +1261,21 @@ function sendJson(res, statusCode, payload) {
 function collectExportFindings(auditResult) {
   const allFindings = [];
   for (const project of auditResult.projects || []) {
+    // 添加验证后的发现
     for (const finding of project.findings || []) {
       allFindings.push(finding);
+    }
+    // 添加原始的规则层发现
+    for (const finding of project.heuristicFindings || []) {
+      if (!allFindings.some(f => JSON.stringify(f) === JSON.stringify(finding))) {
+        allFindings.push(finding);
+      }
+    }
+    // 添加原始的LLM发现
+    for (const finding of project.llmAudit?.findings || []) {
+      if (!allFindings.some(f => JSON.stringify(f) === JSON.stringify(finding))) {
+        allFindings.push(finding);
+      }
     }
   }
   return allFindings;

@@ -2,6 +2,7 @@ node_modules/
 package-lock.json
 audit_checkpoint/
 workspace/
+cache/
 
 .env
 .env.*

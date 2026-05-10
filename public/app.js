@@ -37,7 +37,7 @@ async function bootstrap() {
   if (page === "audit") {
     initAuditPage();
     await refreshAuditPage();
-    startAuditPolling();
+    // 不在这里统一启动轮询，让 refreshAuditPage() 根据任务状态决定是否启动
   }
 
   if (page === "fingerprints") {
@@ -53,7 +53,7 @@ async function bootstrap() {
 
 function startAuditPolling() {
   if (refreshTimer) return;
-  refreshTimer = setInterval(refreshAuditPage, 1800);
+  refreshTimer = setInterval(refreshAuditPage, 5000);
 }
 
 function stopAuditPolling() {

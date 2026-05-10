@@ -15,14 +15,9 @@ let selectedFingerprintProjectId = "";
 let refreshTimer = null;
 let currentTaskFilter = "all";
 
-const providerDefaultsMap = {
-  openai: { baseUrl: "https://api.openai.com/v1", model: "gpt-4.1-mini" },
-  compatible: { baseUrl: "https://api.openai.com/v1", model: "gpt-4.1-mini" },
-  anthropic: { baseUrl: "https://api.anthropic.com", model: "claude-3-7-sonnet-latest" },
-  gemini: { baseUrl: "https://generativelanguage.googleapis.com", model: "gemini-2.5-pro" },
-  deepseek: { baseUrl: "https://api.deepseek.com", model: "deepseek-chat" },
-  qwen: { baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-max" }
-};
+const STATUS_LABELS = { completed: "已完成", failed: "失败", running: "运行中", queued: "排队中", paused: "已暂停", cancelled: "已取消" };
+
+let providerDefaultsMap = {};
 
 markActiveNav();
 initParticles();
@@ -91,6 +86,13 @@ async function loadQuickStatus() {
       target.innerHTML = `<div class="empty-card">状态读取失败</div>`;
     }
   }
+  try {
+    const catalog = await api("/api/provider-defaults");
+    providerDefaultsMap = {};
+    for (const item of catalog) {
+      providerDefaultsMap[item.id] = item;
+    }
+  } catch { /**/ }
 }
 
 function renderQuickStatus(settings, tasks = []) {
@@ -349,13 +351,6 @@ async function renderOverviewTasks() {
     return;
   }
 
-  const statusLabel = {
-    completed: "已完成",
-    failed: "失败",
-    running: "运行中",
-    queued: "排队中"
-  };
-
   target.innerHTML = tasks
     .slice(0, 6)
     .map(
@@ -364,7 +359,7 @@ async function renderOverviewTasks() {
         return `
           <a class="task-row ${rowClass}" href="/audit.html?task=${encodeURIComponent(task.id)}">
             <strong>${escapeHtml(task.sourceType === "local" ? "本地仓库导入" : task.query)}</strong>
-            <span>${escapeHtml(task.phase)} · ${escapeHtml(statusLabel[task.status] || task.status)} · ${escapeHtml(task.progress?.label || "")}</span>
+            <span>${escapeHtml(task.phase)} · ${escapeHtml(STATUS_LABELS[task.status] || task.status)} · ${escapeHtml(task.progress?.label || "")}</span>
           </a>
         `;
       }
@@ -423,8 +418,7 @@ function renderTaskList(tasks) {
     .map((task) => {
       const active = task.id === selectedTaskId ? "active" : "";
       const statusClass = "status-" + task.status;
-      const statusLabels = { completed: "已完成", failed: "失败", running: "运行中", queued: "排队中", paused: "已暂停", cancelled: "已取消" };
-      const statusText = statusLabels[task.status] || task.status;
+      const statusText = STATUS_LABELS[task.status] || task.status;
       const canPause = task.status === "running";
       const canResume = task.status === "paused";
       const canStop = task.status === "running" || task.status === "queued";
@@ -510,19 +504,20 @@ function renderTaskDetail(task) {
   if (!target) return;
 
   const projects = task.auditResult?.projects || [];
-  const statusLabels = { completed: "已完成", failed: "失败", running: "运行中", queued: "排队中", paused: "已暂停", cancelled: "已取消" };
-  const statusText = statusLabels[task.status] || task.status;
+  const statusText = STATUS_LABELS[task.status] || task.status;
   const findingsCount = task.auditResult?.findingsCount || 0;
-  // 使用经过验证的发现数量，与后端findingsCount保持一致
+  const findingsTotalCount = task.auditResult?.findingsTotalCount || 0;
+  // 使用验证前的原始数据，与卡片内统计保持一致
   const heuristicCount = projects.reduce((sum, p) => {
-    return sum + (p.findings?.filter(f => ['quick_scan', 'taint', 'rule', 'pattern'].includes(f.source) || !f.source).length || 0);
+    return sum + (p.heuristicFindings?.length || 0);
   }, 0);
   const llmCount = projects.reduce((sum, p) => {
-    return sum + (p.findings?.filter(f => f.source === 'llm').length || 0);
+    return sum + (p.llmAudit?.findings?.length || 0);
   }, 0);
   const reactCount = projects.reduce((sum, p) => {
-    return sum + (p.findings?.filter(f => f.source === 'react').length || 0);
+    return sum + (p.reactAudit?.issues?.length || 0);
   }, 0);
+  const totalCount = heuristicCount + llmCount + reactCount;
   const useReAct = task.useReAct === true;
   const canPause = task.status === "running";
   const canResume = task.status === "paused";
@@ -534,7 +529,7 @@ function renderTaskDetail(task) {
   html += '<div class="summary-card"><strong>状态</strong><span>' + escapeHtml(statusText) + '</span></div>';
   html += '<div class="summary-card"><strong>阶段</strong><span>' + escapeHtml(task.phase) + '</span></div>';
   html += '<div class="summary-card"><strong>来源</strong><span>' + escapeHtml(task.sourceType) + '</span></div>';
-  html += '<div class="summary-card"><strong>结果</strong><span>' + escapeHtml(String(findingsCount)) + '</span></div>';
+  html += '<div class="summary-card"><strong>结果</strong><span>' + escapeHtml(String(totalCount)) + '</span></div>';
   html += '</div>';
 
   if (canPause || canResume || canStop || canRestart) {
@@ -555,25 +550,33 @@ function renderTaskDetail(task) {
   html += '<p>' + escapeHtml(task.message || "") + '</p>';
   html += '</div>';
 
-  if (task.report?.html?.downloadPath) {
+  if (task.report?.html?.downloadPath || task.status === 'completed') {
     html += '<div class="detail-block">';
     html += '<h3>审计报告</h3>';
-    html += '<p><a class="download-link" href="' + escapeHtml(task.report.html.downloadPath) + '" target="_blank" rel="noreferrer">📄 下载 HTML 报告</a></p>';
-    html += '<p><button class="download-link" id="export-sarif-btn" data-task-id="' + escapeHtml(task.id) + '">📋 导出 SARIF 格式（GitHub Code Scanning）</button></p>';
+    html += '<div class="report-export-grid">';
+    if (task.report?.html?.downloadPath) {
+      html += '<a class="report-export-btn" href="' + escapeHtml(task.report.html.downloadPath) + '" target="_blank" rel="noreferrer">📄 HTML</a>';
+    }
+    html += '<button class="report-export-btn" id="export-sarif-btn" data-task-id="' + escapeHtml(task.id) + '">📋 SARIF</button>';
+    html += '<button class="report-export-btn" id="export-json-btn" data-task-id="' + escapeHtml(task.id) + '">📊 JSON</button>';
+    html += '<button class="report-export-btn" id="export-markdown-btn" data-task-id="' + escapeHtml(task.id) + '">📝 Markdown</button>';
+    html += '</div>';
     html += '</div>';
   }
 
-  html += '<div class="detail-block">';
-  html += '<h3>审计结果</h3>';
-  html += '<p>规则层 ' + escapeHtml(String(heuristicCount)) + ' 条，LLM 复核 ' + escapeHtml(String(llmCount)) + ' 条' + (useReAct ? '，ReAct推理 ' + escapeHtml(String(reactCount)) + ' 条' : '') + '。</p>';
-  if (projects.length) {
-    html += projects.map(renderProjectReview).join("");
-  } else {
-    html += '<div class="empty-card">任务还在进行中。</div>';
-  }
-  html += '</div>';
+  html += renderAuditMetrics(task);
 
-  target.innerHTML = html;
+    html += '<div class="detail-block">';
+    html += '<h3>审计结果</h3>';
+    html += '<p>规则层 ' + escapeHtml(String(heuristicCount)) + ' 条，LLM 复核 ' + escapeHtml(String(llmCount)) + ' 条' + (useReAct ? '，ReAct推理 ' + escapeHtml(String(reactCount)) + ' 条' : '') + '。</p>';
+    if (projects.length) {
+      html += projects.map(renderProjectReview).join("");
+    } else {
+      html += '<div class="empty-card">任务还在进行中。</div>';
+    }
+    html += '</div>';
+
+    target.innerHTML = html;
 
   target.querySelectorAll(".btn-pause").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -638,7 +641,53 @@ function renderTaskDetail(task) {
       } catch (error) {
         showToast("导出失败: " + (error.message || "未知错误"), "error");
       } finally {
-        btn.textContent = "📋 导出 SARIF 格式（GitHub Code Scanning）";
+        btn.textContent = "📋 SARIF";
+        btn.disabled = false;
+      }
+    });
+  });
+
+  target.querySelectorAll("#export-json-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const taskId = btn.dataset.taskId;
+      if (!taskId) return;
+      btn.textContent = "正在导出...";
+      btn.disabled = true;
+      try {
+        const result = await api("/api/export-json?taskId=" + encodeURIComponent(taskId));
+        if (result.success) {
+          showToast("JSON 报告已生成", "success");
+          window.open(result.downloadPath, "_blank");
+        } else {
+          showToast("导出失败: " + (result.error || "未知错误"), "error");
+        }
+      } catch (error) {
+        showToast("导出失败: " + (error.message || "未知错误"), "error");
+      } finally {
+        btn.textContent = "📊 JSON";
+        btn.disabled = false;
+      }
+    });
+  });
+
+  target.querySelectorAll("#export-markdown-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const taskId = btn.dataset.taskId;
+      if (!taskId) return;
+      btn.textContent = "正在导出...";
+      btn.disabled = true;
+      try {
+        const result = await api("/api/export-markdown?taskId=" + encodeURIComponent(taskId));
+        if (result.success) {
+          showToast("Markdown 报告已生成", "success");
+          window.open(result.downloadPath, "_blank");
+        } else {
+          showToast("导出失败: " + (result.error || "未知错误"), "error");
+        }
+      } catch (error) {
+        showToast("导出失败: " + (error.message || "未知错误"), "error");
+      } finally {
+        btn.textContent = "📝 Markdown";
         btn.disabled = false;
       }
     });
@@ -764,10 +813,10 @@ function renderSelectionView(task) {
 }
 
 function renderProjectReview(project) {
-  const reactResult = project.reactAudit || project.reactResult;
-  // 使用经过验证的发现数量，与后端findingsCount保持一致
-  const allFindings = project.findings || [];
-
+  const heuristicFindings = project.heuristicFindings || [];
+  const llmFindings = project.llmAudit?.findings || [];
+  const reactFindings = project.reactAudit?.issues || [];
+  const allFindings = [...heuristicFindings, ...llmFindings, ...reactFindings];
   const severityStats = {
     critical: allFindings.filter(f => f.severity === 'critical' || f.severity === 'CRITICAL').length,
     high: allFindings.filter(f => f.severity === 'high' || f.severity === 'HIGH').length,
@@ -781,16 +830,13 @@ function renderProjectReview(project) {
     typeStats[type] = (typeStats[type] || 0) + 1;
   });
 
-  const owaspCount = allFindings.filter(f => f.owasp || f.owaspId || (f.gbtMapping && f.gbtMapping.includes('OWASP'))).length;
-  const gbtCount = allFindings.filter(f => f.gbtMapping?.includes('GB/T')).length;
-
   const total = severityStats.critical + severityStats.high + severityStats.medium + severityStats.low;
   const projectNameClean = project.projectName.replace(/[^a-zA-Z0-9]/g, '-');
 
-  setTimeout(() => {
+  function renderCharts() {
     const severityChartContainer = document.querySelector('#severity-pie-' + projectNameClean);
     const typeChartContainer = document.querySelector('#type-bar-' + projectNameClean);
-    
+
     if (severityChartContainer) {
       charts.pieChart('#severity-pie-' + projectNameClean, [
         { label: '严重', value: severityStats.critical, color: '#ef4444' },
@@ -803,27 +849,26 @@ function renderProjectReview(project) {
     const vulnTypeLabels = {
       HARD_CODED_SECRET: "硬编码密钥", COMMAND_INJECTION: "命令注入", SQL_INJECTION: "SQL注入",
       CODE_INJECTION: "代码注入", DESERIALIZATION: "反序列化", AUTH_BYPASS: "认证绕过",
-      PROCESS_CONTROL: "进程控制", FORMAT_STRING: "格式化字符串", PLAINTEXT_TRANSMISSION: "明文传输",
-      SSRF: "SSRF", BUFFER_OVERFLOW: "缓冲区溢出", XSS: "XSS", XPATH_INJECTION: "XPath注入",
-      PATH_TRAVERSAL: "路径穿越", PREDICTABLE_RANDOM: "可预测随机数", SESSION_FIXATION: "会话固定",
-      COOKIE_MANIPULATION: "Cookie篡改", INTEGER_OVERFLOW: "整数溢出", WEAK_CRYPTO: "弱加密",
-      WEAK_HASH: "弱哈希", INFINITE_LOOP: "无限循环", INFO_LEAK: "信息泄露",
-      WEAK_PASSWORD_POLICY: "弱密码策略", EXTERNAL_CONTROL_CRITICAL_STATE: "外部控制关键状态",
-      INSUFFICIENT_DATA_VALIDATION: "数据校验不足", XSS_HTTP_HEADER: "HTTP头XSS",
-      VALIDATION_ORDER_ISSUE: "校验顺序问题", FILE_UPLOAD: "文件上传", RCE: "远程代码执行",
-      LFI: "本地文件包含", RFI: "远程文件包含", IDOR: "越权访问", CSRF: "CSRF",
-      OPEN_REDIRECT: "开放重定向", XXE: "XXE", LDAP_INJECTION: "LDAP注入"
+      SSRF: "SSRF", XSS: "XSS", PATH_TRAVERSAL: "路径穿越", SESSION_FIXATION: "会话固定",
+      WEAK_CRYPTO: "弱加密", INFO_LEAK: "信息泄露", FILE_UPLOAD: "文件上传",
+      OPEN_REDIRECT: "开放重定向", XXE: "XXE", CSRF: "CSRF", IDOR: "越权访问"
     };
     const typeData = Object.entries(typeStats).map(([type, value], idx) => ({
       label: vulnTypeLabels[type] || type,
       value,
       color: charts.getColor(idx)
     }));
-    
+
     if (typeChartContainer) {
       charts.barChart('#type-bar-' + projectNameClean, typeData);
     }
-  }, 300);
+  }
+
+  setTimeout(renderCharts, 100);
+  
+  requestAnimationFrame(() => {
+    setTimeout(renderCharts, 50);
+  });
 
   return `
     <article class="review-card-block">
@@ -843,15 +888,7 @@ function renderProjectReview(project) {
         </div>
         <div class="summary-badge">
           <span class="total-count">共 ${total} 个问题</span>
-          ${owaspCount > 0 ? `<span class="badge badge-owasp" style="margin-left: 8px;">OWASP ${owaspCount}</span>` : ''}
-          ${gbtCount > 0 ? `<span class="badge badge-gbt" style="margin-left: 8px;">国标 ${gbtCount}</span>` : ''}
         </div>
-      </div>
-
-      <div class="filter-tabs" style="margin-bottom: 16px;">
-        <button class="filter-tab active" data-filter-all="${projectNameClean}" type="button">全部</button>
-        <button class="filter-tab" data-filter-owasp="${projectNameClean}" type="button">OWASP</button>
-        <button class="filter-tab" data-filter-gbt="${projectNameClean}" type="button">国标</button>
       </div>
 
       <div class="stats-grid">
@@ -872,30 +909,79 @@ function renderProjectReview(project) {
         </section>
       </div>
 
-      <div class="review-columns">
-        <section class="review-pane">
-          <h5>规则层</h5>
-          ${renderFindingList(project.heuristicFindings, "规则层暂未保留高置信度结果。")}
-        </section>
-        <section class="review-pane">
-          <h5>LLM 复核 ${project.llmAudit?.cached ? '<span class="badge badge-cache">使用缓存</span>' : ''}</h5>
-          ${project.llmAudit?.skipReason ? '<p class="note">跳过原因: ' + escapeHtml(project.llmAudit.skipReason) + '</p>' : ''}
-          <p>${escapeHtml(project.llmAudit?.summary || "暂无 LLM 复核结果。")}</p>
-          ${renderFindingList(project.llmAudit?.findings || [], "LLM 本次没有额外保留高置信度结果。")}
-        </section>
+      <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); margin-top: 12px;">
+        <div class="summary-card"><strong>规则层</strong><span>${heuristicFindings.length}</span></div>
+        <div class="summary-card"><strong>LLM 复核</strong><span>${llmFindings.length}</span></div>
+        <div class="summary-card"><strong>LLM 状态</strong><span>${escapeHtml(project.llmAudit?.status || 'N/A')}</span></div>
+        <div class="summary-card"><strong>调用</strong><span>${project.llmAudit?.called ? '是' : '否'}</span></div>
       </div>
-      ${reactResult ? `
-      <div class="review-columns">
-        <section class="review-pane full-width">
-          <h5>ReAct 深度推理审计</h5>
-          <p>${escapeHtml(reactResult.summary || reactResult.finalAnswer || "ReAct 审计完成。")}</p>
-          ${reactResult.steps?.length ? renderReActSteps(reactResult.steps) : ""}
-          ${renderFindingList(reactResult.issues || [], "ReAct 本次没有发现额外问题。")}
-        </section>
-      </div>
-      ` : ""}
+      ${project.llmAudit?.summary ? `<p class="note" style="margin-top: 8px;">${escapeHtml(project.llmAudit.summary)}</p>` : ''}
     </article>
   `;
+}
+
+function renderAuditMetrics(task) {
+  const metrics = task.metrics || {};
+  const auditPhases = task.auditPhases || [];
+  
+  if (!Object.keys(metrics).length && !auditPhases.length) {
+    return '';
+  }
+
+  let html = '<div class="detail-block">';
+  html += '<h3>📊 审计统计</h3>';
+  
+  if (auditPhases.length) {
+    html += '<div class="audit-phases">';
+    html += '<div class="phases-header">审计阶段</div>';
+    html += '<div class="phases-timeline">';
+    auditPhases.forEach((phase, idx) => {
+      const isCompleted = phase.status === 'completed';
+      const isCurrent = phase.status === 'running';
+      html += `
+        <div class="phase-item ${isCompleted ? 'completed' : ''} ${isCurrent ? 'current' : ''}">
+          <div class="phase-dot"></div>
+          <div class="phase-info">
+            <span class="phase-name">${escapeHtml(phase.name)}</span>
+            <span class="phase-status">${isCompleted ? '✓ 完成' : isCurrent ? '⏳ 进行中' : '待执行'}</span>
+          </div>
+          ${phase.duration ? `<span class="phase-duration">${escapeHtml(phase.duration)}s</span>` : ''}
+        </div>
+      `;
+    });
+    html += '</div>';
+    html += '</div>';
+  }
+
+  if (Object.keys(metrics).length) {
+    html += '<div class="metrics-grid">';
+    
+    const metricItems = [
+      { key: 'totalDuration', label: '总耗时', value: metrics.totalDuration ? `${metrics.totalDuration}s` : '-', icon: '⏱️' },
+      { key: 'llmCalls', label: 'LLM调用', value: metrics.llmCalls || '-', icon: '🤖' },
+      { key: 'averageConfidence', label: '平均置信度', value: metrics.averageConfidence ? `${Math.round(metrics.averageConfidence * 100)}%` : '-', icon: '📈' },
+      { key: 'truePositiveRate', label: '准确率', value: metrics.truePositiveRate ? `${Math.round(metrics.truePositiveRate * 100)}%` : '-', icon: '✅' },
+      { key: 'filesScanned', label: '扫描文件', value: metrics.filesScanned || '-', icon: '📁' },
+      { key: 'linesAnalyzed', label: '分析行数', value: metrics.linesAnalyzed?.toLocaleString() || '-', icon: '📝' },
+    ];
+
+    metricItems.forEach(item => {
+      html += `
+        <div class="metric-card">
+          <span class="metric-icon">${item.icon}</span>
+          <div class="metric-content">
+            <span class="metric-label">${item.label}</span>
+            <span class="metric-value">${item.value}</span>
+          </div>
+        </div>
+      `;
+    });
+    
+    html += '</div>';
+  }
+  
+  html += '</div>';
+  return html;
 }
 
 function renderFindingList(findings, emptyMessage) {
@@ -910,6 +996,13 @@ function renderFindingList(findings, emptyMessage) {
     return 'low';
   };
 
+  const getConfidenceLabel = (confidence) => {
+    if (!confidence) return '中';
+    if (confidence >= 0.8) return '高';
+    if (confidence >= 0.5) return '中';
+    return '低';
+  };
+
   const getStandardBadge = (finding) => {
     const badges = [];
     if (finding.gbtMapping?.includes('GB/T')) {
@@ -921,6 +1014,42 @@ function renderFindingList(findings, emptyMessage) {
     return badges.join('');
   };
 
+  const renderKnowledgeCard = (finding) => {
+    const items = [];
+    if (finding.cwe) {
+      items.push(`<div class="knowledge-item"><span class="knowledge-label">CWE</span><span class="knowledge-value">${escapeHtml(finding.cwe)}</span></div>`);
+    }
+    if (finding.owasp) {
+      items.push(`<div class="knowledge-item"><span class="knowledge-label">OWASP</span><span class="knowledge-value">${escapeHtml(finding.owasp)}</span></div>`);
+    }
+    if (finding.gbtMapping) {
+      items.push(`<div class="knowledge-item"><span class="knowledge-label">GB/T</span><span class="knowledge-value">${escapeHtml(finding.gbtMapping)}</span></div>`);
+    }
+    if (finding.vulnType) {
+      items.push(`<div class="knowledge-item"><span class="knowledge-label">类型</span><span class="knowledge-value">${escapeHtml(finding.vulnType)}</span></div>`);
+    }
+    if (items.length === 0) return '';
+    
+    return `
+      <div class="knowledge-card">
+        <div class="knowledge-header">📚 参考标准</div>
+        <div class="knowledge-content">${items.join('')}</div>
+      </div>
+    `;
+  };
+
+  const renderDetailSection = (finding) => {
+    const details = [];
+    if (finding.description) {
+      const desc = finding.description.length > 150 ? finding.description.substring(0, 150) + '...' : finding.description;
+      details.push(`<p class="finding-description">${escapeHtml(desc)}</p>`);
+    }
+    if (finding.remediation) {
+      details.push(`<p class="finding-remediation"><strong>修复建议:</strong> ${escapeHtml(finding.remediation.substring(0, 100) + '...')}</p>`);
+    }
+    return details.join('');
+  };
+
   return '<ul class="finding-list">' +
     findings.map(f => {
       const severityLabels = { critical: "严重", CRITICAL: "严重", high: "高危", HIGH: "高危", medium: "中危", MEDIUM: "中危", low: "低危", LOW: "低危" };
@@ -928,25 +1057,48 @@ function renderFindingList(findings, emptyMessage) {
       const confidence = f.confidence !== undefined ? f.confidence : 0.75;
       const confidencePercent = Math.round(confidence * 100);
       const confidenceClass = getConfidenceClass(confidence);
+      const confidenceLabel = getConfidenceLabel(confidence);
       const clusterInfo = f.clusterId ? `<span class="cluster-tag">🗂️ 聚类 ${f.clusterSize || 1}</span>` : '';
       const standardBadge = getStandardBadge(f);
+      const verdictBadge = f.verdict ? (() => {
+        if (f.verdict === 'confirmed') return '<span class="badge badge-success">✓ 已确认</span>';
+        if (f.verdict === 'false_positive') return '<span class="badge badge-danger">✗ 误报</span>';
+        if (f.verdict === 'downgraded') return '<span class="badge badge-warning">↓ 已降级</span>';
+        if (f.verdict === 'needs_review') return '<span class="badge badge-info">? 待复核</span>';
+        return '';
+      })() : '';
+      const knowledgeCard = renderKnowledgeCard(f);
+      const detailSection = renderDetailSection(f);
 
-      return '<li>' +
+      return '<li class="finding-item expanded' + (f.verdict === 'false_positive' ? ' finding-fp' : '') + '">' +
         '<div class="finding-head">' +
           '<strong>' + escapeHtml(f.title) + '</strong>' +
           '<span>' +
             '<span class="badge badge-' + (f.severity || 'info') + '">' + escapeHtml(sev) + '</span>' +
+            '<span class="badge badge-confidence badge-confidence-' + confidenceClass + '">置信度 ' + confidenceLabel + '</span>' +
             standardBadge +
+            verdictBadge +
             clusterInfo +
           '</span>' +
         '</div>' +
-        '<span class="finding-location">' + escapeHtml(f.location || "n/a") + '</span>' +
+        (f.verificationReason ? '<p class="note">验证说明：' + escapeHtml(f.verificationReason) + '</p>' : '') +
+        '<span class="finding-location">📍 ' + escapeHtml(f.location || "n/a") + '</span>' +
         '<div class="confidence-bar">' +
-          '<span class="confidence-label">置信度: ' + confidencePercent + '%</span>' +
+          '<div class="confidence-info">' +
+            '<span class="confidence-label">置信度</span>' +
+            '<span class="confidence-value">' + confidencePercent + '%</span>' +
+          '</div>' +
           '<div class="confidence-track">' +
             '<div class="confidence-fill ' + confidenceClass + '" style="width:' + confidencePercent + '%"></div>' +
           '</div>' +
+          '<div class="confidence-marks">' +
+            '<span>0%</span>' +
+            '<span>50%</span>' +
+            '<span>100%</span>' +
+          '</div>' +
         '</div>' +
+        knowledgeCard +
+        detailSection +
       '</li>';
     }).join("") +
   '</ul>';
@@ -1249,8 +1401,8 @@ function applyProviderDefaults(form) {
   const providerId = form.elements.providerId.value;
   const defaults = providerDefaultsMap[providerId];
   if (!defaults) return;
-  form.elements.baseUrl.value = defaults.baseUrl;
-  form.elements.model.value = defaults.model;
+  form.elements.baseUrl.value = defaults.defaultBaseUrl;
+  form.elements.model.value = defaults.defaultModel;
 }
 
 async function api(url, options = {}) {

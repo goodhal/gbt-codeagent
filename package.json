@@ -12,5 +12,9 @@
     "p-limit": "^7.3.0",
     "tiktoken": "^1.0.22",
     "yaml": "^2.3.4"
+  },
+  "devDependencies": {
+    "chai": "^6.2.2",
+    "mocha": "^11.7.5"
   }
 }

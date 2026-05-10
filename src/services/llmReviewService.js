@@ -12,14 +12,23 @@ import { estimateTokens, countTokensTiktoken, getModelMaxTokens, PromptCompresso
 import { fetchWithTimeout, globalLLMFactory } from "./llmFactory.js";
 import { CodeRetriever } from "./retriever.js";
 import { deduplicateAndSort, severityScore } from "../utils/findingsUtils.js";
-import { LLMOptimizer, createEnhancedPrompt, createIncrementalAuditPrompt } from "./llmOptimizer.js";
+import { LLMOptimizer } from "./llmOptimizer.js";
+import {
+  loadAuditKnowledge,
+  buildSystemPrompt,
+  buildUserPrompt,
+  createEnhancedPrompt,
+  createIncrementalAuditPrompt,
+  EVIDENCE_REQUIRED_MAP,
+  EVIDENCE_CONTRACT_GUIDE
+} from "../config/llmPrompts.js";
 import OWASP_MAPPING from "../config/owaspMapping.js";
 
 const MAX_BATCHES = 16;
-const MAX_FILES_PER_BATCH = 4;
-const MAX_CHARS_PER_BATCH = 25_000;
-const MAX_PARALLEL_REQUESTS = 3;
-const FETCH_TIMEOUT_MS = 120_000;
+const MAX_FILES_PER_BATCH = 6;
+const MAX_CHARS_PER_BATCH = 35_000;
+const MAX_PARALLEL_REQUESTS = 5;
+const FETCH_TIMEOUT_MS = 150_000;
 
 const llmCircuitBreaker = new CircuitBreaker("llm-service", {
   failureThreshold: 3,
@@ -48,362 +57,6 @@ async function initializeRAG() {
 
 // 在模块加载时初始化 RAG
 initializeRAG();
-
-const THREE_LAYER_AUDIT = `
-【三层审计分工 - 各自职责明确】
-
-┌─────────────────────────────────────────────────────────────────────┐
-│  第一层：快速扫描（代码负责） - 正则表达式检测高风险函数调用            │
-│  第二层：LLM审计（LLM负责） - 语义分析检测上下文相关漏洞              │
-│  第三层：LLM审查（LLM负责） - 复杂业务逻辑和漏洞验证                  │
-└─────────────────────────────────────────────────────────────────────┘
-
-【第一层：快速扫描（代码负责）】
-职责：使用正则表达式搜索高风险函数调用
-覆盖：命令注入、SQL注入、缓冲区溢出、硬编码凭证、弱加密、反序列化等
-特点：高效率、低精度，特征明显，不需要上下文
-
-【第二层：LLM审计（LLM负责）】（本层职责）
-职责：语义分析，发现需要上下文分析的漏洞
-覆盖：
-- 输入验证问题：关键状态数据外部可控、数据真实性验证不足
-- 业务逻辑问题：条件比较不充分、条件语句缺失默认情况、死代码
-- 认证安全问题：身份鉴别过程暴露多余信息、身份鉴别被绕过
-- 并发安全问题：未加限制的外部可访问锁、共享资源并发安全
-- 会话安全问题：不同会话间信息泄露、会话固定
-特点：低效率、高精度，需要理解代码上下文和业务逻辑
-
-【第三层：LLM审查（LLM负责）】
-职责：深入分析复杂业务逻辑，验证漏洞，做出最终决策
-覆盖：认证流程、权限判断、状态转换、组合漏洞攻击链
-特点：最高精度，需要深入理解业务逻辑`;
-
-const CORE_SECURITY_PRINCIPLES = `
-【核心安全分析原则】
-
-1. 深度分析优于广度扫描
-   - 深入分析少数真实漏洞比报告大量误报更有价值
-   - 每个发现都需要上下文验证
-   - 理解业务逻辑后才能判断安全影响
-
-2. 数据流追踪
-   - 从用户输入（Source）到危险函数（Sink）
-   - 识别所有数据处理和验证节点
-   - 评估过滤和编码的有效性
-
-3. 上下文感知分析
-   - 不要孤立看待代码片段
-   - 理解函数调用链和模块依赖
-   - 考虑运行时环境和配置
-
-4. 质量优先
-   - 高置信度发现优于低置信度猜测
-   - 提供明确的证据和复现步骤
-   - 给出实际可行的修复建议`;
-
-const SEVERITY_CLASSIFICATION_GUIDE = `
-【严重级别判定标准 - 必须严格区分】
-
-🔴 critical（严重）- 仅以下情况：
-- 可直接通过网络远程利用，无需认证
-- 可导致远程代码执行(RCE)、系统完全控制
-- 可导致任意文件读取/写入
-- 可绕过身份认证直接访问核心功能
-- 明确的命令注入、SQL注入且用户输入未经任何过滤直接到达危险函数
-- 硬编码的生产环境密钥/凭证
-- ⚠️ critical 只能用于最严重的问题，不能滥用
-
-🟠 high（高危）- 以下情况：
-- 需要普通用户认证后可利用
-- 可导致重要数据泄露（用户密码、个人信息）
-- CSRF 可导致关键操作（修改密码、转账）
-- 反序列化漏洞（有实际风险）
-- SSRF 可访问内网
-- 权限控制缺失导致越权
-- 会话固定、敏感信息在日志中泄露
-
-🟡 medium（中危）- 以下情况：
-- 需要特定条件才能利用（如需要管理员权限）
-- 信息泄露但影响范围有限（如版本号、路径泄露）
-- 配置不当但不直接导致安全漏洞
-- 弱加密算法但仍需要其他条件才能利用
-- 输入验证不足但已有部分防护
-- 仅测试/开发环境风险
-- 竞争条件但利用难度大
-
-🟢 low（低危）- 以下情况：
-- 几乎无法实际利用
-- 仅理论风险，缺乏实际攻击路径
-- 代码风格问题不直接导致安全漏洞
-- 已废弃但未删除的调试代码（不影响生产）
-- 框架已默认防护的潜在风险
-- low 用于信息性发现，置信度应设为 0.3-0.5
-
-⚠️ 判定原则：
-- 不确定时应降级而非升级：有疑问时选较低级别
-- 需要认证或特定条件才能利用的，不应评为 critical
-- 仅理论风险无实际攻击路径的，评为 low
-- 如果所有发现都是同一级别，说明判定标准有问题，请重新审视`;
-
-const FILE_VALIDATION_RULES = `
-【文件路径验证规则 - 防止幻觉】
-
-⚠️ 严禁行为：
-- 禁止报告不存在的文件路径
-- 禁止凭记忆或推测编造代码片段
-- 禁止假设特定文件存在（如 config/database.py）
-- 禁止报告注释行代码作为漏洞
-- 禁止报告导入语句但无实际调用的代码
-
-✅ 正确做法：
-- 只报告提供代码片段中确实存在的漏洞
-- 引用实际代码时使用提供的 snippet
-- 行号必须在文件实际行数范围内
-- 必须在源文件中验证行号对应实际代码行
-
-🔥 宁可漏报，不可误报。质量优于数量。`;
-
-const VULNERABILITY_PRIORITIES = `
-【LLM审计漏洞检测优先级 - 需要上下文分析的漏洞】
-
-⚠️ 注意：以下列表是LLM审计需要重点关注的漏洞类型。SQL注入、命令注入、硬编码密码等高风险函数调用已由快速扫描覆盖，LLM不应重复检测。
-
-🔴 Critical - 认证授权类（必须检测）：
-1. 身份认证绕过 - 密码重置漏洞、会话管理缺陷
-2. 权限检查缺失 - 水平越权、垂直越权
-3. 关键状态数据外部可控 - 用户输入直接控制安全决策
-
-🟠 High - 业务逻辑类（重点检测）：
-1. 会话固定/会话劫持
-2. 条件判断不充分 - 缺少默认值、死代码
-3. 状态绕过 - 订单状态、支付流程篡改
-
-🟡 Medium - 上下文相关类（全面检测）：
-1. 开放重定向
-2. 文件上传类型验证不足
-3. 并发安全问题 - 竞态条件
-4. 整数溢出 - 数值运算边界检查
-
-🟢 Info - 框架配置类（参考检测）：
-1. CSRF防护缺失
-2. CORS配置不当
-3. 错误信息泄露敏感数据`;
-
-const FALSE_POSITIVE_RULES = `
-【误报判定规则 - 仅适用于LLM独立发现】
-
-⚠️ 注意：以下规则仅适用于LLM独立发现的漏洞，不适用于规则层（heuristicFindings）的发现。
-
-| 判定规则 | 特征 | 结论 |
-|---------|------|------|
-| 仅导入语句 | 只有 import/using，无实际调用 | 误报 |
-| 测试/演示代码 | 位于 test/demo 目录或含测试注解 | 误报 |
-| 框架自动防护 | 框架本身已做安全处理（如Spring Security） | 需验证上下文 |
-| 规则层已有 | 已在heuristicFindings中标记 | 以规则层结论为准 |
-
-⚠️ 判定流程：
-1. 检查是否有实际调用（不只是导入）
-2. 检查是否在测试/演示目录
-3. 检查是否有安全防护措施
-4. 规则层已有结论时，以规则层为准`;
-
-const LINE_NUMBER_VERIFICATION = `
-【行号验证强制要求】
-
-🔴 必须执行的验证步骤：
-1. 使用 Grep 精确搜索问题代码关键字
-2. 在源文件中确认行号对应实际代码行
-3. 确认不是注释行、空行或无关代码
-
-🔴 禁止行为：
-- ❌ 凭记忆填写行号
-- ❌ 根据函数名推断行号
-- ❌ 报告注释行作为漏洞代码
-
-🔴 正确流程：
-发现漏洞 → Grep搜索精确位置 → 确认行号 → 创建发现
-
-⚠️ ValidationService验证：验证逻辑使用关键词匹配，只要2个关键词重叠就认为匹配。LLM必须主动验证行号！`;
-
-const LANGUAGE_GBT_MAP = {
-  'java': 'GBT_34944-2017.md',
-  'python': 'GBT_39412-2020.md',
-  'javascript': 'GBT_39412-2020.md',
-  'typescript': 'GBT_39412-2020.md',
-  'go': 'GBT_39412-2020.md',
-  'ruby': 'GBT_39412-2020.md',
-  'rust': 'GBT_39412-2020.md',
-  'php': 'GBT_39412-2020.md',
-  'cpp': 'GBT_34943-2017.md',
-  'c': 'GBT_34943-2017.md',
-  'csharp': 'GBT_34946-2017.md',
-  'c#': 'GBT_34946-2017.md'
-};
-
-const VULNERABILITY_FILES = {
-  'sql_injection': 'sql_injection.md',
-  'command_injection': 'command_injection.md',
-  'code_injection': 'code_injection.md',
-  'deserialization': 'deserialization.md',
-  'hardcoded_credentials': 'hardcoded_credentials.md',
-  'path_traversal': 'path_traversal.md',
-  'weak_crypto': 'weak_crypto.md'
-};
-
-async function loadAuditKnowledge({ languages = [], vulnerabilityTypes = [] } = {}) {
-  const docsDir = path.join(process.cwd(), "docs");
-  const gbtAuditDir = path.join(docsDir, "gbt-audit");
-  const knowledge = {};
-
-  try {
-    const skillContent = await fs.readFile(path.join(gbtAuditDir, "skill.md"), "utf8");
-    const lines = skillContent.split('\n');
-    let inMappingTable = false;
-    let mappingLines = [];
-
-    for (const line of lines) {
-      if (line.includes('| 语言') && line.includes('GB/T')) {
-        inMappingTable = true;
-      }
-      if (inMappingTable) {
-        mappingLines.push(line);
-        if (line.trim() === '|' && mappingLines.length > 5) {
-          break;
-        }
-      }
-    }
-
-    knowledge.gbtMapping = mappingLines.join('\n');
-  } catch (error) {
-    knowledge.gbtMapping = '';
-  }
-
-  try {
-    const workflowContent = await fs.readFile(path.join(gbtAuditDir, "workflow", "audit_workflow.md"), "utf8");
-    const lines = workflowContent.split('\n');
-    const languageSections = [];
-    let capture = false;
-    let section = [];
-
-    const targetLanguages = languages.map(l => l.toLowerCase());
-    const languageKeywords = {
-      'python': '### Python 审计要点',
-      'java': '### Java 审计要点',
-      'cpp': '### C/C++ 审计要点',
-      'c': '### C/C++ 审计要点',
-      'csharp': '### C# 审计要点',
-      'c#': '### C# 审计要点',
-      'javascript': '### JavaScript 审计要点',
-      'typescript': '### TypeScript 审计要点',
-      'go': '### Go 审计要点',
-      'ruby': '### Ruby 审计要点',
-      'rust': '### Rust 审计要点',
-      'php': '### PHP 审计要点'
-    };
-
-    for (const line of lines) {
-      const matchedLang = targetLanguages.find(lang => line.includes(languageKeywords[lang]));
-      if (matchedLang) {
-        if (section.length > 0) {
-          languageSections.push(section.join('\n'));
-        }
-        section = [line];
-        capture = true;
-      } else if (capture && line.startsWith('### ')) {
-        languageSections.push(section.join('\n'));
-        break;
-      } else if (capture) {
-        section.push(line);
-      }
-    }
-    if (section.length > 0) {
-      languageSections.push(section.join('\n'));
-    }
-
-    knowledge.languageAudit = languageSections.join('\n\n');
-  } catch (error) {
-    knowledge.languageAudit = '';
-  }
-
-  const gbtReferences = [];
-  const uniqueGbtFiles = new Set();
-
-  const baseStandard = 'GBT_39412-2020.md';
-  if (!uniqueGbtFiles.has(baseStandard)) {
-    uniqueGbtFiles.add(baseStandard);
-    try {
-      const content = await fs.readFile(path.join(gbtAuditDir, "reference", baseStandard), "utf8");
-      gbtReferences.push(`\n\n=== ${baseStandard.replace('.md', '')} (通用基线) ===\n\n${content}`);
-    } catch (error) {
-    }
-  }
-
-  for (const lang of languages) {
-    const gbtFile = LANGUAGE_GBT_MAP[lang.toLowerCase()];
-    if (gbtFile && gbtFile !== baseStandard && !uniqueGbtFiles.has(gbtFile)) {
-      uniqueGbtFiles.add(gbtFile);
-      try {
-        const content = await fs.readFile(path.join(gbtAuditDir, "reference", gbtFile), "utf8");
-        gbtReferences.push(`\n\n=== ${gbtFile.replace('.md', '')} (${lang}) ===\n\n${content}`);
-      } catch (error) {
-      }
-    }
-  }
-  knowledge.gbtReferences = gbtReferences.join('\n');
-
-  const vulnReferences = [];
-  const uniqueVulnFiles = new Set();
-  for (const vulnType of vulnerabilityTypes) {
-    const vulnFile = VULNERABILITY_FILES[vulnType.toLowerCase()];
-    if (vulnFile && !uniqueVulnFiles.has(vulnFile)) {
-      uniqueVulnFiles.add(vulnFile);
-      try {
-        const content = await fs.readFile(path.join(gbtAuditDir, "vulnerabilities", vulnFile), "utf8");
-        vulnReferences.push(`\n\n=== ${vulnFile.replace('.md', '')} ===\n\n${content}`);
-      } catch (error) {
-      }
-    }
-  }
-  knowledge.vulnerabilityReferences = vulnReferences.join('\n');
-
-  try {
-    const qualityContent = await fs.readFile(path.join(gbtAuditDir, "workflow", "quality_standards.md"), "utf8");
-    const lines = qualityContent.split('\n');
-    const prohibitedSection = [];
-    const remediationExamples = [];
-    let captureProhibited = false;
-    let captureExamples = false;
-
-    for (const line of lines) {
-      if (line.includes('### ❌ 禁止以下敷衍内容')) {
-        captureProhibited = true;
-        prohibitedSection.push(line);
-      } else if (captureProhibited && line.startsWith('### ')) {
-        captureProhibited = false;
-      } else if (captureProhibited) {
-        prohibitedSection.push(line);
-      }
-
-      if (line.includes('| 漏洞类型') && line.includes('合格修复方案')) {
-        captureExamples = true;
-        remediationExamples.push(line);
-      } else if (captureExamples && line.trim() === '|') {
-        captureExamples = false;
-      } else if (captureExamples) {
-        remediationExamples.push(line);
-      }
-    }
-
-    knowledge.qualityStandards = {
-      prohibited: prohibitedSection.join('\n'),
-      examples: remediationExamples.join('\n')
-    };
-  } catch (error) {
-    knowledge.qualityStandards = { prohibited: '', examples: '' };
-  }
-
-  return knowledge;
-}
 
 export class DefensiveLlmReviewer {
   async reviewProject({ project, selectedSkills, heuristicFindings, llmConfig, onProgress }) {
@@ -635,8 +288,9 @@ export class DefensiveLlmReviewer {
     };
   }
 
-  async auditProject({ project, selectedSkills, llmConfig, onProgress }) {
+  async auditProject({ project, selectedSkills, llmConfig, codeGraphContext, onProgress }) {
     console.log(`[LLM审计] auditProject 开始 - 项目: ${project.name}, 提供商: ${llmConfig.providerId}, 模型: ${llmConfig.model}`);
+    console.log(`[LLM审计] 代码知识图谱上下文: ${codeGraphContext ? '已提供' : '未提供'}`);
     if (!llmConfig?.apiKey) {
       return {
         status: "skipped",
@@ -770,7 +424,7 @@ export class DefensiveLlmReviewer {
           requestStructuredReview({
             llmConfig,
             systemPrompt,
-            userPrompt: buildUserPrompt({ project, selectedSkills, heuristicFindings: [], batch, codeContext })
+            userPrompt: buildUserPrompt({ project, selectedSkills, heuristicFindings: [], batch, codeContext, codeGraphContext })
           }),
           () => {
             console.warn('[LLM审计] LLM服务熔断，使用降级方案');
@@ -1138,224 +792,6 @@ async function requestStructuredReview({ llmConfig, systemPrompt, userPrompt }) 
   return content;
 }
 
-async function buildSystemPrompt(selectedSkills, auditKnowledge = {}, languages = []) {
-  const gbtSkill = selectedSkills.find(skill => skill.id === "gbt-code-audit");
-  const isGbtAudit = gbtSkill !== undefined;
-
-  let prompt = [
-    "你是一个防御性代码审计助手。",
-    "只输出风险说明、证据、影响、修复建议和安全验证建议。",
-    "不要提供利用步骤、payload、绕过思路、攻击链构造或 weaponization 细节。",
-    "如果证据不足，就降低置信度或不要报出该问题。",
-    "请只返回 JSON 对象，不要输出额外说明。",
-    CORE_SECURITY_PRINCIPLES,
-    SEVERITY_CLASSIFICATION_GUIDE,
-    FILE_VALIDATION_RULES
-  ];
-
-  // 添加 RAG 知识参考
-  try {
-    const knowledgeContext = await withRetryWithFallback(
-      () => ragService.buildAuditContext({
-        language: languages?.[0],
-        fileCount: 3
-      }),
-      () => {
-        console.warn('[LLM审计] RAG服务不可用，使用降级方案');
-        return null;
-      },
-      { maxAttempts: 2, baseDelay: 500 }
-    );
-    if (knowledgeContext) {
-      prompt.push("", knowledgeContext);
-    }
-  } catch (error) {
-    console.warn('[LLM审计] 获取 RAG 知识失败:', error);
-  }
-
-  if (isGbtAudit) {
-    prompt.push(
-      THREE_LAYER_AUDIT,
-      FALSE_POSITIVE_RULES,
-      LINE_NUMBER_VERIFICATION,
-      "",
-      "【GB/T 国标代码安全审计 - 核心原则】",
-      "",
-      "🔴 三条核心原则（必须遵守）：",
-      "1. 独立性：LLM 审计必须完全独立，不查看快速扫描结果",
-      "2. 全面性：必须覆盖所有源代码文件，不得遗漏",
-      "3. 准确性：行号必须用代码行号验证，禁止凭记忆填写"
-    );
-    
-    if (auditKnowledge.gbtMapping) {
-      prompt.push(
-        "",
-        "【国标映射表】（必须严格遵守）：",
-        "---",
-        auditKnowledge.gbtMapping,
-        "---"
-      );
-    }
-    
-    if (auditKnowledge.languageAudit) {
-      prompt.push(
-        "",
-        "【语言特定审计要点】（必须遵循）：",
-        "---",
-        auditKnowledge.languageAudit,
-        "---"
-      );
-    }
-
-    if (auditKnowledge.gbtReferences) {
-      prompt.push(
-        "",
-        "【国标规则详解】（参考使用）：",
-        "---",
-        auditKnowledge.gbtReferences,
-        "---"
-      );
-    }
-
-    if (auditKnowledge.vulnerabilityReferences) {
-      prompt.push(
-        "",
-        "【漏洞类型详解】（参考使用）：",
-        "---",
-        auditKnowledge.vulnerabilityReferences,
-        "---"
-      );
-    }
-
-    if (auditKnowledge.qualityStandards?.prohibited) {
-      prompt.push(
-        "",
-        "【修复方案禁止内容】（出现则验证失败）：",
-        "---",
-        auditKnowledge.qualityStandards.prohibited,
-        "---"
-      );
-    }
-
-    if (auditKnowledge.qualityStandards?.examples) {
-      prompt.push(
-        "",
-        "【修复方案示例】（合格/不合格对比）：",
-        "---",
-        auditKnowledge.qualityStandards.examples,
-        "---"
-      );
-    }
-  }
-
-  prompt.push("");
-  prompt.push("关注的审计 Skill：");
-  const skills = selectedSkills.map((skill) => `- ${skill.name}: ${skill.reviewPrompt}`).join("\n");
-  prompt.push(skills);
-
-  return prompt.join("\n");
-}
-
-function buildUserPrompt({ project, selectedSkills, heuristicFindings, batch, codeContext = "", incrementalPrompt = "" }) {
-  const gbtSkill = selectedSkills.find(skill => skill.id === "gbt-code-audit");
-  const isGbtAudit = gbtSkill !== undefined;
-
-  let prompt = [
-    `项目名称：${project.name}`,
-    `审计镜像路径：${project.localPath || path.join("workspace", "downloads", project.id)}`,
-    `来源模式：${project.sourceType}`
-  ];
-
-  if (codeContext) {
-    prompt.push(codeContext);
-  }
-
-  if (incrementalPrompt) {
-    prompt.push("", incrementalPrompt);
-  }
-
-  if (isGbtAudit) {
-    prompt = prompt.concat([
-      "",
-      "【审计任务】",
-      "",
-      "� 项目信息：",
-      `- 项目名称：${project.name}`,
-      `- 审计路径：${project.localPath || path.join("workspace", "downloads", project.id)}`,
-      `- 来源模式：${project.sourceType}`,
-      "",
-      "🔴 核心要求（再次强调）：",
-      "- 独立审计：不查看快速扫描结果，独立发现所有安全问题",
-      "- 全面覆盖：审计全部源代码文件，不得遗漏",
-      "- 准确行号：使用 Grep 验证行号，禁止凭记忆填写",
-      "",
-      "📝 输出要求：",
-      "- 严格返回 JSON 格式，用 ```json 代码块包裹",
-      "- 每个字段必须有值，禁止 null 或 undefined",
-      "- evidence/impact 字数≥20，remediation 字数≥30",
-      "- remediation 必须包含具体代码示例或 API 名称",
-      "",
-      "📋 JSON 格式示例："
-    ]);
-    
-    // 添加详细的 JSON 格式示例
-    prompt.push(
-      '```json',
-      '{',
-      '  "findings": [',
-      '    {',
-      '      "title": "身份认证绕过漏洞",',
-      '      "severity": "high",',
-      '      "confidence": 0.9,',
-      '      "location": "src/controllers/AuthController.java:45",',
-      '      "skillId": "gbt-code-audit",',
-      '      "vulnType": "AUTH_BYPASS",',
-      '      "cwe": "CWE-287",',
-      '      "gbtMapping": "GB/T34944-6.3.1.2 身份鉴别被绕过；GB/T39412-6.3.1.2 身份鉴别被绕过",',
-      '      "cvssScore": 8.5,',
-      '      "language": "java",',
-      '      "evidence": "代码中 adminCheck 方法仅验证用户名是否为 admin，未验证密码。攻击者构造用户名 admin 即可绕过认证。",',
-      '      "impact": "攻击者可绕过身份认证访问管理功能，导致系统被完全控制，用户数据泄露。",',
-      '      "remediation": "使用 Spring Security 的 BCryptPasswordEncoder 加密密码：BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(); boolean matches = encoder.matches(rawPassword, encodedPassword);",',
-      '      "safeValidation": "验证登录接口是否正确调用 passwordEncoder.matches() 方法，检查数据库中密码是否为 BCrypt 格式（60 字符）"',
-      '    }',
-      '  ]',
-      '}',
-      '```'
-    );
-  } else {
-    const skills = selectedSkills.map((skill) => `${skill.id}: ${skill.description}`).join("\n");
-
-    const hasHeuristicContext = heuristicFindings && heuristicFindings.length > 0;
-    const heuristicSummary = hasHeuristicContext
-      ? heuristicFindings.slice(0, 10).map((finding) => `- ${finding.title} @ ${finding.location} (${finding.vulnType || 'unknown'})`).join("\n")
-      : "";
-
-    prompt = prompt.concat([
-      "",
-      `已启用 Skill：\n${skills}`,
-      hasHeuristicContext ? `规则层发现（仅供参考，LLM应独立验证）：\n${heuristicSummary}` : "规则层未提供额外提示，LLM应独立进行全面审计。",
-      "",
-      "【重要】LLM 自主审计要求：",
-      "- 不要受规则层发现的限制，独立发现所有安全问题",
-      "- 可以发现任何类型的安全漏洞，不限于上述Skill列表",
-      "- 包括但不限于：注入漏洞、XSS、CSRF、SSRF、路径遍历、敏感信息泄露、",
-      "  认证绕过、访问控制、加密问题、反序列化、API安全、配置错误等",
-      "- 输出所有发现的高置信度问题，不要限制数量",
-      "- 每个漏洞都必须独立验证行号",
-      "",
-      "严格返回如下 JSON：",
-      '{ "findings": [ { "title": "", "severity": "low|medium|high|critical", "confidence": 0.0, "location": "", "skillId": "", "vulnType": "VULN_TYPE", "cwe": "CWE-XXX", "evidence": "", "impact": "", "remediation": "", "safeValidation": "" } ] }'
-    ]);
-  }
-
-  const snippets = batch.map((file) => `FILE: ${file.relativePath}\n\`\`\`${file.language}\n${file.content}\n\`\`\``).join("\n\n");
-  prompt.push("");
-  prompt.push(snippets);
-
-  return prompt.join("\n\n");
-}
-
 async function collectFilesWithContent(root) {
   try {
     const output = [];
@@ -1368,22 +804,26 @@ async function collectFilesWithContent(root) {
 
 async function walk(root, currentPath, output) {
   const entries = await fs.readdir(currentPath, { withFileTypes: true });
+  const pendingDirs = [];
+  const pendingFiles = [];
+
   for (const entry of entries) {
     const target = path.join(currentPath, entry.name);
     if (entry.isDirectory()) {
-      await walk(root, target, output);
+      pendingDirs.push(target);
       continue;
     }
-
     if (!entry.isFile()) {
       continue;
     }
-
     const language = inferFenceLanguage(target);
     if (!language) {
       continue;
     }
+    pendingFiles.push({ target, language });
+  }
 
+  const fileReads = pendingFiles.map(async ({ target, language }) => {
     const content = await fs.readFile(target, "utf8");
     output.push({
       fullPath: target,
@@ -1391,6 +831,12 @@ async function walk(root, currentPath, output) {
       content,
       language
     });
+  });
+
+  await Promise.all(fileReads);
+
+  for (const dir of pendingDirs) {
+    await walk(root, dir, output);
   }
 }
 

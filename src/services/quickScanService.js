@@ -2,25 +2,9 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { deduplicateAndSort } from "../utils/findingsUtils.js";
 import OWASP_MAPPING from "../config/owaspMapping.js";
-
-const LANGUAGE_EXTENSIONS = {
-  "java": [".java"],
-  "python": [".py", ".pyw"],
-  "cpp": [".cpp", ".cc", ".cxx", ".c", ".h", ".hpp"],
-  "csharp": [".cs"],
-  "go": [".go"],
-  "javascript": [".js", ".jsx", ".mjs", ".cjs"],
-  "typescript": [".ts", ".tsx"],
-  "php": [".php", ".phtml", ".php3", ".php4", ".php5"],
-  "ruby": [".rb", ".rbw"],
-  "rust": [".rs"],
-  "kotlin": [".kt", ".kts"],
-  "swift": [".swift"],
-  "scala": [".scala", ".sc"],
-  "perl": [".pl", ".pm", ".t"],
-  "lua": [".lua"],
-  "shell": [".sh", ".bash", ".zsh"]
-};
+import { smartFileFilter } from "./smartFileFilter.js";
+import { scanComponentVulnerabilities, LANGUAGE_EXTENSIONS } from "../config/auditConfig.js";
+import { getRulesEngine } from "../analyzers/rulesEngine.js";
 
 const QUICK_SCAN_PATTERNS = {
   java: [
@@ -435,11 +419,115 @@ const GBT_MAPPING = {
   }
 };
 
+const SINK_METADATA = {
+  COMMAND_INJECTION: {
+    type: "CMD",
+    evidencePoints: ["EVID_CMD_EXEC_POINT", "EVID_CMD_STRING_CONSTRUCTION", "EVID_CMD_USER_PARAM_MAPPING"],
+    sinkFunctions: ["exec()", "system()", "shell_exec()", "Runtime.exec()", "ProcessBuilder", "Popen", "subprocess"]
+  },
+  SQL_INJECTION: {
+    type: "SQL",
+    evidencePoints: ["EVID_SQL_EXEC_POINT", "EVID_SQL_STRING_CONSTRUCTION", "EVID_SQL_USER_PARAM_MAPPING"],
+    sinkFunctions: ["query()", "execute()", "Statement", "JDBC Template", "createQuery", "raw SQL"]
+  },
+  CODE_INJECTION: {
+    type: "CODE",
+    evidencePoints: ["EVID_CODE_EXEC_POINT", "EVID_CODE_STRING_CONSTRUCTION", "EVID_CODE_USER_PARAM_MAPPING"],
+    sinkFunctions: ["eval()", "exec()", "Function()", "GroovyShell", "ScriptEngine"]
+  },
+  PATH_TRAVERSAL: {
+    type: "FILE",
+    evidencePoints: ["EVID_FILE_READ_SINK", "EVID_FILE_PATH_CONSTRUCTION", "EVID_FILE_USER_PARAM_MAPPING"],
+    sinkFunctions: ["FileInputStream", "File()", "readFile", "include()", "require()"]
+  },
+  XSS: {
+    type: "XSS",
+    evidencePoints: ["EVID_XSS_OUTPUT_POINT", "EVID_XSS_USER_INPUT_INTO_OUTPUT", "EVID_XSS_ESCAPE_OR_RAW_CONTROL"],
+    sinkFunctions: ["innerHTML", "document.write", "echo", "print", "resp.Write"]
+  },
+  SSRF: {
+    type: "SSRF",
+    evidencePoints: ["EVID_SSRF_URL_CONSTRUCTION", "EVID_SSRF_USER_PARAM_MAPPING", "EVID_SSRF_DNSIP_AND_INNER_BLOCK"],
+    sinkFunctions: ["URL()", "urlopen", "openConnection", "Request()"]
+  },
+  XXE: {
+    type: "XXE",
+    evidencePoints: ["EVID_XXE_PARSER_CALL", "EVID_XXE_INPUT_SOURCE", "EVID_XXE_ENTITY_DOCTYPE_SAFETY_AND_ECHO"],
+    sinkFunctions: ["XMLReader", "SAXParser", "DocumentBuilder", "loadXML", "simplexml_load_string"]
+  },
+  DESERIALIZATION: {
+    type: "DESER",
+    evidencePoints: ["EVID_DESER_CALLSITE", "EVID_DESER_INPUT_SOURCE", "EVID_DESER_OBJECT_TYPE_MAGIC_TRIGGER_CHAIN"],
+    sinkFunctions: ["unserialize", "ObjectInputStream", "XMLDecoder", "pickle.load", "yaml.load"]
+  },
+  AUTH_BYPASS: {
+    type: "AUTH",
+    evidencePoints: ["EVID_AUTH_CHECK_BYPASS", "EVID_AUTH_TOKEN_DECODE_JUDGMENT", "EVID_AUTH_PERMISSION_CHECK_EXEC"],
+    sinkFunctions: ["referer check", "session check", "SecurityContext"]
+  },
+  IDOR: {
+    type: "IDOR",
+    evidencePoints: ["EVID_IDOR_OWNERSHIP_CONDITION", "EVID_IDOR_USER_PARAM_MAPPING", "EVID_IDOR_MISSING_CHECK"],
+    sinkFunctions: ["getAllByUsername", "findById", "getUser"]
+  },
+  OPEN_REDIRECT: {
+    type: "REDIR",
+    evidencePoints: ["EVID_REDIR_OUTPUT_POINT", "EVID_REDIR_DEST_SOURCE_MAPPING", "EVID_REDIR_DEST_VALIDATION_NORMALIZATION"],
+    sinkFunctions: ["redirect:", "sendRedirect", "setHeader(Location)"]
+  },
+  WEAK_CRYPTO: {
+    type: "CRYPTO",
+    evidencePoints: ["EVID_CRYPTO_ALGORITHM", "EVID_CRYPTO_KEY_SIZE", "EVID_CRYPTO_MODE"],
+    sinkFunctions: ["DES", "AES", "RSA", "MD5", "SHA1"]
+  },
+  WEAK_HASH: {
+    type: "HASH",
+    evidencePoints: ["EVID_HASH_ALGORITHM", "EVID_HASH_SALT", "EVID_HASH_ITERATIONS"],
+    sinkFunctions: ["MD5", "SHA1", "getInstance(MD5)", "getInstance(SHA1)"]
+  },
+  SESSION_FIXATION: {
+    type: "SESS",
+    evidencePoints: ["EVID_SESS_SESSION_INIT_REGEN", "EVID_SESS_SESSION_ID_FIXATION", "EVID_SESS_LOGOUT_CLEAR"],
+    sinkFunctions: ["session.put", "session.setAttribute"]
+  },
+  CSRF: {
+    type: "CSRF",
+    evidencePoints: ["EVID_CSRF_TOKEN_SOURCE", "EVID_CSRF_TOKEN_RECEIVE", "EVID_CSRF_TOKEN_VERIFY", "EVID_CSRF_BYPASS_BRANCH"],
+    sinkFunctions: ["csrfToken", "csrf"]
+  },
+  LOG_INJECTION: {
+    type: "LOG",
+    evidencePoints: ["EVID_LOG_INJECTION_SINK", "EVID_LOG_USER_INPUT_MAPPING", "EVID_LOG_ESCAPE_OR_SANITIZE"],
+    sinkFunctions: ["logger.error", "logger.info", "log()"]
+  }
+};
+
 export class QuickScanService {
   constructor() {
     this.patterns = QUICK_SCAN_PATTERNS;
     this.gbtMapping = GBT_MAPPING;
+    this.sinkMetadata = SINK_METADATA;
     this.vulnCounter = {};
+    this._rulesEngine = null;
+    this._engineReady = false;
+  }
+
+  async _ensureEngine() {
+    if (this._engineReady) return this._rulesEngine;
+    try {
+      this._rulesEngine = await getRulesEngine('./config/detection_rules.yaml');
+      this._rulesEngine.registerQuickScanPatterns(QUICK_SCAN_PATTERNS);
+      this._engineReady = true;
+      console.log('[QuickScanService] RulesEngine initialized with unified rules (YAML + inline)');
+    } catch (error) {
+      console.warn('[QuickScanService] Failed to init RulesEngine, using inline fallback:', error.message);
+      this._engineReady = false;
+    }
+    return this._rulesEngine;
+  }
+
+  getSinkMetadata(vulnType) {
+    return this.sinkMetadata[vulnType] || null;
   }
 
   getVulnId(vulnType, severity) {
@@ -519,7 +607,8 @@ export class QuickScanService {
       "USE_AFTER_FREE": "UAF",
       "TEMP_FILE_EXPOSURE": "TEMP",
       "MEMORY_LEAK": "MEM",
-      "CORS_MISCONFIGURATION": "CORS"
+      "CORS_MISCONFIGURATION": "CORS",
+      "COMPONENT_VULNERABILITY": "CMP"
     };
     
     const prefix = severityPrefixMap[severity] || "L";
@@ -695,55 +784,71 @@ export class QuickScanService {
 
     try {
       const content = await fs.readFile(filePath, "utf8");
-      const findings = [];
       const lines = content.split("\n");
       console.log(`[快速扫描] 读取文件成功: ${relativePath} (${lines.length} 行)`);
 
-      for (const { pattern, vulnType, cwe, severity } of this.patterns[language]) {
-        for (let lineNum = 0; lineNum < lines.length; lineNum++) {
-          const line = lines[lineNum];
-          if (pattern.test(line)) {
-            const codeSnippet = this.extractCodeSnippet(lines, lineNum);
-            const vulnId = this.getVulnId(vulnType, severity);
-            const cvssDetails = this.calculateCVSSDetailed(vulnType, severity);
+      const engine = await this._ensureEngine();
+      let rawMatches;
 
-            const owaspIds = OWASP_MAPPING[vulnType] || [];
-            findings.push({
-              source: "quick_scan",
-              skillId: "gbt-code-audit",
-              vulnId,
-              title: `发现 ${vulnType} 漏洞`,
-              severity: this.normalizeSeverity(severity),
-              severityLabel: severity,
-              confidence: 0.75,
-              location: `${relativePath}:${lineNum + 1}`,
-              file: relativePath,
-              line: lineNum + 1,
-              vulnType,
-              cwe,
-              owaspIds,
-              owasp: owaspIds.join(", "),
-              language,
-              gbtMapping: this.getGbtMapping(vulnType, language),
-              cvssScore: cvssDetails.cvss,
-              cvssBreakdown: cvssDetails.breakdown,
-              cvssScoreRaw: cvssDetails.score,
-              reachability: cvssDetails.reachability,
-              impact: cvssDetails.impact,
-              complexity: cvssDetails.complexity,
-              reachabilityDesc: cvssDetails.reachabilityDesc,
-              impactDesc: cvssDetails.impactDesc,
-              complexityDesc: cvssDetails.complexityDesc,
-              evidence: `在 ${relativePath}:${lineNum + 1} 发现 ${vulnType} 相关代码`,
-              impact: this.getImpactDescription(vulnType),
-              remediation: this.getRemediation(vulnType),
-              safeValidation: "建议人工复核代码上下文，确认是否存在实际安全风险",
-              codeSnippet,
-              status: "误报" // 默认状态为"误报"，等待 LLM 审计判定
-            });
-            console.log(`[快速扫描] 发现漏洞: ${vulnType} 在 ${relativePath}:${lineNum + 1}`);
-          }
-        }
+      if (engine && this._engineReady) {
+        rawMatches = engine.matchQuickScan(content, language);
+        console.log(`[快速扫描] RulesEngine 匹配完成: ${relativePath} (${rawMatches.length} 条)`)
+      } else {
+        rawMatches = this._matchInline(content, language);
+        console.log(`[快速扫描] 内联规则匹配完成: ${relativePath} (${rawMatches.length} 条)`)
+      }
+
+      const findings = [];
+
+      for (const match of rawMatches) {
+        const lineNum = match.line - 1;
+        if (lineNum < 0 || lineNum >= lines.length) continue;
+
+        const vulnType = match.vulnType || match.category || 'UNKNOWN';
+        const cwe = match.cwe || 'CWE-NONE';
+        const severity = match.severity || '中危';
+
+        const codeSnippet = this.extractCodeSnippet(lines, lineNum);
+        const vulnId = this.getVulnId(vulnType, severity);
+        const cvssDetails = this.calculateCVSSDetailed(vulnType, severity);
+        const owaspIds = OWASP_MAPPING[vulnType] || [];
+
+        findings.push({
+          source: "quick_scan",
+          skillId: "gbt-code-audit",
+          vulnId,
+          title: `发现 ${vulnType} 漏洞`,
+          severity: this.normalizeSeverity(severity),
+          severityLabel: severity,
+          confidence: 0.75,
+          location: `${relativePath}:${lineNum + 1}`,
+          file: relativePath,
+          line: lineNum + 1,
+          vulnType,
+          cwe,
+          owaspIds,
+          owasp: owaspIds.join(", "),
+          language,
+          gbtMapping: this.getGbtMapping(vulnType, language),
+          sink: this.getSinkMetadata(vulnType),
+          evidencePoints: this.getSinkMetadata(vulnType)?.evidencePoints || [],
+          cvssScore: cvssDetails.cvss,
+          cvssBreakdown: cvssDetails.breakdown,
+          cvssScoreRaw: cvssDetails.score,
+          reachability: cvssDetails.reachability,
+          impact: cvssDetails.impact,
+          complexity: cvssDetails.complexity,
+          reachabilityDesc: cvssDetails.reachabilityDesc,
+          impactDesc: cvssDetails.impactDesc,
+          complexityDesc: cvssDetails.complexityDesc,
+          evidence: `在 ${relativePath}:${lineNum + 1} 发现 ${vulnType} 相关代码`,
+          impact: this.getImpactDescription(vulnType),
+          remediation: this.getRemediation(vulnType),
+          safeValidation: "建议人工复核代码上下文，确认是否存在实际安全风险",
+          codeSnippet,
+          status: "误报"
+        });
+        console.log(`[快速扫描] 发现漏洞: ${vulnType} 在 ${relativePath}:${lineNum + 1}`);
       }
 
       console.log(`[快速扫描] 完成扫描: ${relativePath} (发现 ${findings.length} 个问题)`);
@@ -754,16 +859,49 @@ export class QuickScanService {
     }
   }
 
+  _matchInline(content, language) {
+    const results = [];
+    const patterns = this.patterns[language];
+    if (!patterns) return results;
+
+    for (const { pattern, vulnType, cwe, severity } of patterns) {
+      let match;
+      const regex = new RegExp(pattern.source, 'gi');
+      while ((match = regex.exec(content)) !== null) {
+        results.push({
+          pattern: pattern.source,
+          match: match[0],
+          index: match.index,
+          line: content.substring(0, match.index).split('\n').length,
+          vulnType,
+          cwe,
+          severity,
+          _quickScan: true
+        });
+      }
+    }
+    return results;
+  }
+
   async scanProject(projectRoot, onProgress) {
     console.log(`[快速扫描] 开始扫描项目: ${projectRoot}`);
     
-    const fileList = [];
+    const allFiles = [];
     await this.walkDirectory(projectRoot, (filePath) => {
-      fileList.push(filePath);
+      allFiles.push(filePath);
     });
 
+    console.log(`[快速扫描] 共发现 ${allFiles.length} 个文件`);
+    
+    const filtered = smartFileFilter.filterFiles(allFiles, { skipTests: true, minScore: 0.5 });
+    const fileList = filtered.toAudit;
+    
+    console.log(`[快速扫描] 智能筛选后保留 ${fileList.length} 个文件（跳过 ${filtered.stats.skipped} 个低风险文件）`);
+    if (filtered.stats.skipped > 0) {
+      console.log(`[快速扫描] 跳过原因统计: 测试文件=${filtered.skipped.filter(f => f.skipReason === 'test_file' || f.skipReason === 'test_directory').length}, 第三方代码=${filtered.skipped.filter(f => f.skipReason === 'third_party_code').length}, 文档=${filtered.skipped.filter(f => f.skipReason === 'documentation').length}, 低风险扩展=${filtered.skipped.filter(f => f.skipReason === 'low_risk_extension').length}`);
+    }
+
     const totalFiles = fileList.length;
-    console.log(`[快速扫描] 共发现 ${totalFiles} 个文件`);
     
     const findings = [];
     let processedFiles = 0;
@@ -780,7 +918,8 @@ export class QuickScanService {
       const batch = batches[batchIndex];
       console.log(`[快速扫描] 开始处理第 ${batchIndex + 1}/${batches.length} 批`);
       
-      const batchPromises = batch.map(async (filePath) => {
+      const batchPromises = batch.map(async (fileInfo) => {
+        const filePath = fileInfo.path || fileInfo.fullPath || fileInfo;
         const fileFindings = await this.scanFile(filePath, projectRoot);
         processedFiles++;
 
@@ -804,7 +943,135 @@ export class QuickScanService {
 
     const dedupedFindings = this.deduplicateFindings(findings);
     console.log(`[快速扫描] 完成扫描，共发现 ${findings.length} 个问题，去重后 ${dedupedFindings.length} 个问题`);
-    return dedupedFindings;
+
+    const componentVulnFindings = await this.scanComponentVuln(projectRoot);
+    console.log(`[组件漏洞扫描] 发现 ${componentVulnFindings.length} 个组件漏洞`);
+
+    const allFindings = [...dedupedFindings, ...componentVulnFindings];
+    
+    return {
+      findings: allFindings,
+      stats: {
+        totalFilesScanned: totalFiles,
+        totalFilesFound: allFiles.length,
+        filesSkipped: filtered.stats.skipped,
+        avgRiskScore: filtered.stats.avgRiskScore,
+        componentVulnsFound: componentVulnFindings.length
+      }
+    };
+  }
+
+  async scanComponentVuln(projectRoot) {
+    const dependencyFiles = [
+      path.join(projectRoot, "pom.xml"),
+      path.join(projectRoot, "build.gradle"),
+      path.join(projectRoot, "gradle.properties")
+    ];
+
+    const findings = [];
+
+    for (const depFile of dependencyFiles) {
+      try {
+        if (await fs.stat(depFile).catch(() => false)) {
+          const content = await fs.readFile(depFile, "utf8");
+          const relativePath = path.relative(projectRoot, depFile).replaceAll("\\", "/");
+          const vulns = scanComponentVulnerabilities(content);
+          
+          for (const vuln of vulns) {
+            findings.push({
+              source: "component_scan",
+              skillId: "supply-chain",
+              vulnId: this.getVulnId(vuln.type, vuln.severity),
+              title: vuln.name,
+              severity: this.normalizeSeverity(vuln.severity),
+              severityLabel: this.getSeverityLabel(vuln.severity),
+              confidence: 0.95,
+              location: relativePath,
+              file: relativePath,
+              line: 1,
+              vulnType: vuln.type,
+              cwe: "CWE-1035",
+              owaspIds: ["A06:2021"],
+              owasp: "A06:2021 Security Misconfiguration",
+              language: "java",
+              gbtMapping: "GB/T39412-6.2.2.1 敏感信息暴露",
+              cvssScore: this.getComponentCVSS(vuln.severity),
+              cvssBreakdown: this.getComponentCVSSBreakdown(vuln.severity),
+              cvssScoreRaw: this.getComponentCVSS(vuln.severity),
+              reachability: 3,
+              impact: this.getComponentImpact(vuln.severity),
+              complexity: 1,
+              reachabilityDesc: "依赖库直接影响应用安全",
+              impactDesc: this.getComponentImpactDesc(vuln.severity),
+              complexityDesc: "已知漏洞，易于利用",
+              evidence: `在 ${relativePath} 中发现存在已知漏洞的组件: ${vuln.component}`,
+              impact: vuln.description,
+              remediation: `建议升级 ${vuln.component} 到安全版本`,
+              safeValidation: "确认依赖版本并升级到安全版本",
+              codeSnippet: `依赖: ${vuln.component}`,
+              component: vuln.component,
+              affectedVersion: vuln.affectedVersion,
+              cve: vuln.cve,
+              status: "待验证"
+            });
+          }
+        }
+      } catch (error) {
+        console.error(`[组件漏洞扫描] 扫描文件失败 ${depFile}:`, error.message);
+      }
+    }
+
+    return findings;
+  }
+
+  getSeverityLabel(severity) {
+    const map = {
+      critical: "严重",
+      high: "高危",
+      medium: "中危",
+      low: "低危"
+    };
+    return map[severity] || severity;
+  }
+
+  getComponentCVSS(severity) {
+    const map = {
+      critical: 9.8,
+      high: 8.0,
+      medium: 5.9,
+      low: 3.1
+    };
+    return map[severity] || 5.0;
+  }
+
+  getComponentCVSSBreakdown(severity) {
+    const map = {
+      critical: "3/3/1",
+      high: "3/2/1",
+      medium: "2/2/1",
+      low: "1/1/1"
+    };
+    return map[severity] || "2/2/1";
+  }
+
+  getComponentImpact(severity) {
+    const map = {
+      critical: 3,
+      high: 2,
+      medium: 2,
+      low: 1
+    };
+    return map[severity] || 2;
+  }
+
+  getComponentImpactDesc(severity) {
+    const map = {
+      critical: "RCE/系统沦陷/数据全泄露",
+      high: "远程代码执行/敏感数据泄露",
+      medium: "拒绝服务/有限数据泄露",
+      low: "有限安全影响"
+    };
+    return map[severity] || "中等安全影响";
   }
 
   async walkDirectory(root, callback) {

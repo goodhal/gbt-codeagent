@@ -52,6 +52,10 @@ export function extensionToLanguage(ext) {
   }[ext] || "Unknown";
 }
 
+export function stripTrailingSlash(value) {
+  return String(value || "").replace(/\/+$/, "");
+}
+
 export function inferFenceLanguage(filePath) {
   const basename = path.basename(filePath).toLowerCase();
   if (basename === ".env" || basename.startsWith(".env.")) {

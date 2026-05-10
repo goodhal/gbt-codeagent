@@ -6,7 +6,14 @@
 export { CodeAnalysisTool } from './codeAnalysis.js';
 export { EmbeddingsService, OpenAIEmbedding, LocalEmbedding, EmbeddingProviderFactory, globalEmbeddingsService } from './embeddings.js';
 export { VectorStore, SemanticSearchEngine, ChunkedVectorStore, getGlobalVectorStore, createSemanticSearchEngine } from './vectorStore.js';
+
+/**
+ * 检索服务模块
+ * 统一管理知识库检索和代码检索
+ */
 export { RAGService, ragService } from './ragService.js';
+export { RetrievalResult, CodeRetriever } from './retriever.js';
+
 export { LLMFactory, createLLMService } from './llmFactory.js';
 export { DefensiveLlmReviewer } from './llmReviewService.js';
 export { QuickScanService } from './quickScanService.js';
@@ -19,7 +26,6 @@ export { StreamService } from './streamService.js';
 export { MemoryStore } from './memoryStore.js';
 export { SettingsStore } from './settingsStore.js';
 export { Splitter } from './splitter.js';
-export { Retriever } from './retriever.js';
 export { Sandbox } from './sandbox.js';
 
 /**

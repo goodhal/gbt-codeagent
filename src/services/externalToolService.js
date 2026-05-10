@@ -28,6 +28,8 @@ const execAsync = async (command, options = {}) => {
  * - Gitleaks: 密钥和敏感信息检测
  * - Bandit: Python 代码安全分析
  * - Semgrep: 多语言静态分析
+ * - ilspycmd: .NET 反编译工具
+ * - de4dot: .NET 去混淆工具
  */
 export class ExternalToolService {
   constructor() {
@@ -52,6 +54,20 @@ export class ExternalToolService {
         installCommand: this.getInstallCommand("semgrep"),
         checkCommand: "semgrep --version",
         scanCommand: this.scanWithSemgrep.bind(this)
+      },
+      ilspycmd: {
+        name: "ILSpy Command Line",
+        description: ".NET 反编译工具",
+        installCommand: this.getInstallCommand("ilspycmd"),
+        checkCommand: "ilspycmd --version",
+        scanCommand: null
+      },
+      de4dot: {
+        name: "de4dot",
+        description: ".NET 去混淆工具",
+        installCommand: this.getInstallCommand("de4dot"),
+        checkCommand: "de4dot --help",
+        scanCommand: null
       }
     };
   }
@@ -76,6 +92,16 @@ export class ExternalToolService {
         win32: "pip install semgrep",
         darwin: "brew install semgrep",
         linux: "pip install semgrep"
+      },
+      ilspycmd: {
+        win32: "dotnet tool install -g ilspycmd",
+        darwin: "dotnet tool install -g ilspycmd",
+        linux: "dotnet tool install -g ilspycmd"
+      },
+      de4dot: {
+        win32: "powershell -Command \"Invoke-WebRequest -Uri 'https://github.com/kant2002/de4dot/releases/download/v3.2.0/de4dot-net48.zip' -OutFile de4dot.zip; Expand-Archive de4dot.zip -DestinationPath C:\\tools\\de4dot; Add-Content -Path $env:PATH -Value ';C:\\tools\\de4dot'\"",
+        darwin: "brew install mono && curl -L -o /tmp/de4dot-net48.zip https://github.com/kant2002/de4dot/releases/download/v3.2.0/de4dot-net48.zip && mkdir -p ~/tools/de4dot && unzip /tmp/de4dot-net48.zip -d ~/tools/de4dot && echo 'alias de4dot=\"mono ~/tools/de4dot/de4dot.exe\"' >> ~/.zshrc",
+        linux: "sudo apt-get install -y mono-complete && curl -L -o /tmp/de4dot-net48.zip https://github.com/kant2002/de4dot/releases/download/v3.2.0/de4dot-net48.zip && mkdir -p ~/tools/de4dot && unzip /tmp/de4dot-net48.zip -d ~/tools/de4dot && echo 'alias de4dot=\"mono ~/tools/de4dot/de4dot.exe\"' >> ~/.bashrc"
       }
     };
     return installCommands[tool]?.[platform] || installCommands[tool]?.linux;
@@ -561,5 +587,171 @@ export class ExternalToolService {
   getSemgrepGbtMapping(checkId) {
     // 简化处理，返回通用映射
     return "GB/T39412-6.1.1.1 输入验证不足";
+  }
+
+  /**
+   * 查找项目中的 .NET 程序集文件
+   */
+  async findDotnetAssemblies(projectRoot) {
+    const assemblies = [];
+    const dllPatterns = ["**/*.dll", "**/*.exe"];
+    
+    for (const pattern of dllPatterns) {
+      const glob = await import('glob');
+      const files = await glob.glob(pattern, { cwd: projectRoot, absolute: true });
+      assemblies.push(...files);
+    }
+    
+    return assemblies;
+  }
+
+  /**
+   * 使用 ilspycmd 反编译 .NET 程序集
+   */
+  async decompileDotnetAssembly(assemblyPath, outputDir) {
+    try {
+      if (!await this.checkToolInstalled("ilspycmd")) {
+        console.warn("ilspycmd 未安装，跳过反编译");
+        return null;
+      }
+
+      await fs.mkdir(outputDir, { recursive: true });
+
+      const command = `ilspycmd "${assemblyPath}" -o "${outputDir}" --use-short-names`;
+      await execAsync(command, { timeout: 120000 });
+
+      const decompiledFiles = await this._getDecompiledFiles(outputDir);
+      
+      return {
+        success: true,
+        assemblyPath,
+        outputDir,
+        files: decompiledFiles
+      };
+    } catch (error) {
+      console.error("ilspycmd 反编译失败:", error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * 使用 de4dot 检测混淆并去混淆
+   */
+  async detectAndDeobfuscate(assemblyPath, outputDir) {
+    try {
+      if (!await this.checkToolInstalled("de4dot")) {
+        console.warn("de4dot 未安装，跳过去混淆");
+        return { success: false, skipped: true, reason: "de4dot 未安装" };
+      }
+
+      await fs.mkdir(outputDir, { recursive: true });
+
+      const command = `de4dot "${assemblyPath}" -o "${path.join(outputDir, path.basename(assemblyPath))}"`;
+      const { stdout, stderr } = await execAsync(command, { timeout: 60000 });
+
+      const obfuscator = this._detectObfuscator(stdout, stderr);
+      
+      return {
+        success: true,
+        assemblyPath,
+        outputDir,
+        obfuscator,
+        deobfuscatedPath: path.join(outputDir, path.basename(assemblyPath))
+      };
+    } catch (error) {
+      console.error("de4dot 去混淆失败:", error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * 批量反编译 .NET 程序集
+   */
+  async decompileDotnetProject(projectRoot, outputDir) {
+    const assemblies = await this.findDotnetAssemblies(projectRoot);
+    
+    if (assemblies.length === 0) {
+      console.log("未找到 .NET 程序集文件");
+      return { success: true, files: [], assemblies: [] };
+    }
+
+    const results = [];
+    const decompileDir = path.join(outputDir, "decompiled");
+
+    for (const assemblyPath of assemblies) {
+      const assemblyName = path.basename(assemblyPath, path.extname(assemblyPath));
+      const assemblyOutputDir = path.join(decompileDir, assemblyName);
+
+      // 先尝试去混淆
+      const deobfuscateResult = await this.detectAndDeobfuscate(assemblyPath, path.join(outputDir, "deobfuscated"));
+      
+      const targetAssembly = deobfuscateResult.success 
+        ? deobfuscateResult.deobfuscatedPath 
+        : assemblyPath;
+
+      // 反编译
+      const decompileResult = await this.decompileDotnetAssembly(targetAssembly, assemblyOutputDir);
+      
+      if (decompileResult.success) {
+        results.push({
+          assembly: path.relative(projectRoot, assemblyPath),
+          obfuscated: deobfuscateResult.success,
+          obfuscator: deobfuscateResult.obfuscator,
+          decompiledFiles: decompileResult.files,
+          outputDir: assemblyOutputDir
+        });
+      }
+    }
+
+    return {
+      success: true,
+      assemblies: results,
+      totalDecompiled: results.length,
+      outputDir: decompileDir
+    };
+  }
+
+  /**
+   * 获取反编译后的文件列表
+   */
+  async _getDecompiledFiles(outputDir) {
+    const files = [];
+    const glob = await import('glob');
+    const csFiles = await glob.glob("**/*.cs", { cwd: outputDir, absolute: true });
+    
+    for (const file of csFiles) {
+      const content = await fs.readFile(file, "utf8");
+      files.push({
+        path: file,
+        relativePath: path.relative(outputDir, file),
+        size: content.length,
+        lines: content.split('\n').length
+      });
+    }
+    
+    return files;
+  }
+
+  /**
+   * 从 de4dot 输出中检测混淆器类型
+   */
+  _detectObfuscator(stdout, stderr) {
+    const output = (stdout || "") + (stderr || "");
+    
+    if (output.includes("ConfuserEx")) return "ConfuserEx";
+    if (output.includes("Eazfuscator")) return "Eazfuscator";
+    if (output.includes("SmartAssembly")) return "SmartAssembly";
+    if (output.includes("Dotfuscator")) return "Dotfuscator";
+    if (output.includes("CryptoObfuscator")) return "CryptoObfuscator";
+    if (output.includes("CodeVeil")) return "CodeVeil";
+    if (output.includes("Xenocode")) return "Xenocode";
+    
+    return "Unknown";
   }
 }

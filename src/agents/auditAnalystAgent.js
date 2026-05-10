@@ -11,13 +11,19 @@ import { QueryEngine } from "../utils/queryEngine.js";
 import { deduplicateFindings, deduplicateAndSort, severityScore } from "../utils/findingsUtils.js";
 import { collectFiles } from "../utils/fileUtils.js";
 import { globalCheckpointManager, AuditState, AgentStatus } from "../core/stateManager.js";
+import { generateExploitChainReport } from "../services/exploitChainAnalyzer.js";
+import { smartFileFilter } from "../services/smartFileFilter.js";
+import { ArchitectureAnalyzer } from "../services/architectureAnalyzer.js";
+import { getGlobalIncrementalAnalyzer } from "../services/incrementalAnalyzer.js";
+import { CodeGraph } from "../services/codeGraph.js";
 
-const MAX_PARALLEL_PROJECTS = 2;
+const MAX_PARALLEL_PROJECTS = 4;
 
 export class AuditAnalystAgent {
   constructor({ llmReviewer }) {
     this.llmReviewer = llmReviewer;
     this.quickScanService = new QuickScanService();
+    this.validationService = new ValidationService();
   }
 
   async run({ taskId, projects, selectedSkillIds, llmConfig, useReAct = false, reactConfig = {}, enableLlmAudit = true, onProgress, shouldCancel, tasks, onProjectGroupComplete }) {
@@ -163,12 +169,42 @@ export class AuditAnalystAgent {
       });
 
       if (doLlmAudit) {
+        const sourceRoot = path.join(process.cwd(), "workspace", "downloads", project.id);
+        
+        let codeGraphContext = null;
+        try {
+          console.log(`[审计分析] 开始构建代码知识图谱`);
+          const codeGraph = new CodeGraph();
+          await codeGraph.build(sourceRoot);
+          
+          const entryPoints = codeGraph.getEntryPoints?.() || [];
+          const hubNodes = codeGraph.findHubNodes?.(5) || [];
+          const criticalPaths = codeGraph.traceExecutionFlow?.() || [];
+          const architectureOverview = codeGraph.getArchitectureOverview?.() || {};
+          
+          codeGraphContext = {
+            entryPoints: entryPoints.slice(0, 10).map(e => ({ name: e.name, file: e.file })),
+            hubNodes: hubNodes.slice(0, 5).map(h => ({ name: h.name, file: h.file, degree: h.degree })),
+            criticalPaths: criticalPaths.slice(0, 3).map(p => p.join(' → ')),
+            architectureOverview: {
+              totalNodes: architectureOverview.totalNodes,
+              totalEdges: architectureOverview.totalEdges,
+              communities: architectureOverview.communities?.length || 0,
+              warnings: architectureOverview.warnings?.slice(0, 3) || []
+            }
+          };
+          console.log(`[审计分析] 代码知识图谱构建完成，入口点: ${entryPoints.length}, 热点节点: ${hubNodes.length}`);
+        } catch (error) {
+          console.warn(`[审计分析] 代码知识图谱构建失败: ${error.message}`);
+        }
+
         if (useReAct && typeof this.llmReviewer.auditWithReAct === 'function') {
           llmAuditPromise = this.llmReviewer.auditWithReAct({
             project,
             selectedSkills: reviewProfile,
             llmConfig,
             reactConfig,
+            codeGraphContext,
             onProgress: (detail) =>
               onProgress?.({
                 stage: "react-audit",
@@ -184,6 +220,7 @@ export class AuditAnalystAgent {
             project,
             selectedSkills: reviewProfile,
             llmConfig,
+            codeGraphContext,
             onProgress: (detail) =>
               onProgress?.({
                 stage: "llm-audit",
@@ -259,6 +296,10 @@ export class AuditAnalystAgent {
         ...(Array.isArray(llmAudit.findings) ? llmAudit.findings : [])
       ]);
 
+      const unresolvedRisks = await this.validationService.checkUnresolvedRisks(mergedFindings);
+      const riskPoolReport = this.validationService.generateRiskPoolReport(unresolvedRisks);
+      const exploitChainReport = generateExploitChainReport(mergedFindings);
+
       onProgress?.({
         stage: "project-complete",
         projectId: project.id,
@@ -268,6 +309,8 @@ export class AuditAnalystAgent {
         heuristicCount: heuristicFindings.length,
         astEnhancedCount: astEnhancedFindings.length,
         llmCount: llmAudit?.findings?.length || 0,
+        unresolvedRiskCount: unresolvedRisks.length,
+        exploitChainCount: exploitChainReport.totalChains,
         useReAct,
         label: `已完成：${project.name}`
       });
@@ -280,7 +323,9 @@ export class AuditAnalystAgent {
         reviewProfile,
         heuristicFindings: astEnhancedFindings,
         llmAudit,
-        findings: mergedFindings
+        findings: mergedFindings,
+        riskPool: riskPoolReport,
+        exploitChains: exploitChainReport
       };
     }
 
@@ -352,29 +397,92 @@ export class AuditAnalystAgent {
         sourceRoot
       );
       
+      // 深度验证漏洞路径（参考 SAST2AI 的 vuln_verifier 模型）
+      const deepValidated = await Promise.all(validated.map(async (finding) => {
+        const verification = await validationService.verifyVulnerabilityPath(finding, sourceRoot);
+        return {
+          ...finding,
+          verdict: verification.verdict,
+          verificationReason: verification.reason,
+          adjustedSeverity: verification.adjustedSeverity,
+          verifiedCallChain: verification.verifiedCallChain,
+          sanitizersFound: verification.sanitizersFound
+        };
+      }));
+
+      // 统计验证结果
+      const verdictStats = {
+        confirmed: deepValidated.filter(f => f.verdict === 'confirmed').length,
+        falsePositive: deepValidated.filter(f => f.verdict === 'false_positive').length,
+        downgraded: deepValidated.filter(f => f.verdict === 'downgraded').length,
+        needsReview: deepValidated.filter(f => f.verdict === 'needs_review').length
+      };
+
+      // 过滤掉误报，降级的保留但标记
+      const finalFindings = deepValidated;
+      
       return {
         ...result,
-        findings: validated,
+        findings: finalFindings,
         validationStats: {
           total: result.findings.length,
           validated: validated.length,
           hallucinations: hallucinations.length,
-          corrected: corrected.length
+          corrected: corrected.length,
+          ...verdictStats
         },
-        hallucinations
+        hallucinations: [
+          ...hallucinations,
+          ...deepValidated.filter(f => f.verdict === 'false_positive').map(f => ({
+            ...f,
+            validationError: `深度验证标记为误报: ${f.verificationReason}`
+          }))
+        ]
       };
     }));
 
     // 重新计算统计信息
     const totalValidated = validatedResults.reduce((sum, r) => sum + r.findings.length, 0);
+    const totalConfirmed = validatedResults.reduce((sum, r) => sum + r.findings.filter(f => f.verdict !== 'false_positive').length, 0);
     const totalHallucinations = validatedResults.reduce((sum, r) => sum + (r.hallucinations?.length || 0), 0);
     const totalCorrected = validatedResults.reduce((sum, r) => sum + (r.validationStats?.corrected || 0), 0);
+
+    // 架构分析阶段
+    let architectureAnalysis = null;
+    if (projects.length > 0) {
+      onProgress?.({
+        stage: "architecture-analysis",
+        label: "正在进行架构分析"
+      });
+
+      try {
+        // 使用增量分析器获取分析结果
+        const incrementalAnalyzer = await getGlobalIncrementalAnalyzer();
+        const firstProject = projects[0];
+        const projectRoot = path.join(process.cwd(), "workspace", "downloads", firstProject.id);
+        
+        // 执行增量分析
+        const analysisResult = await incrementalAnalyzer.analyze(firstProject.id, projectRoot, {
+          forceFull: false,
+          maxDepth: 3
+        });
+
+        // 执行架构分析
+        const archAnalyzer = new ArchitectureAnalyzer();
+        await archAnalyzer.initialize(projectRoot);
+        architectureAnalysis = archAnalyzer.analyze();
+        
+        console.log(`[审计分析] 架构分析完成 - 风险评分: ${architectureAnalysis.overview?.riskScore || 0}`);
+      } catch (error) {
+        console.warn(`[审计分析] 架构分析失败: ${error.message}`);
+      }
+    }
 
     // 最终检查点
     auditState.status = AgentStatus.COMPLETED;
     auditState.findings = validatedResults.flatMap(r => r.findings || []);
     auditState.setCompleted({
-      findingsCount: totalValidated,
+      findingsCount: totalConfirmed,
       projectsCount: validatedResults.length
     });
     await createCheckpoint('final');
@@ -386,7 +494,8 @@ export class AuditAnalystAgent {
       reviewedAt: new Date().toISOString(),
       policy: "defensive-only",
       skillsUsed: reviewProfile.map((skill) => ({ id: skill.id, name: skill.name })),
-      findingsCount: totalValidated,
+      findingsCount: totalConfirmed,
+      findingsTotalCount: totalValidated,
       checkpointId: auditState.agentId,
       heuristicFindingsCount: validatedResults.reduce((sum, item) => sum + item.heuristicFindings.length, 0),
       llmFindingsCount: validatedResults.reduce((sum, item) => sum + (item.llmAudit?.findings?.length || 0), 0),
@@ -398,6 +507,7 @@ export class AuditAnalystAgent {
         hallucinations: totalHallucinations,
         corrected: totalCorrected
       },
+      architectureAnalysis,
       projects: validatedResults
     };
   }
@@ -411,10 +521,11 @@ async function buildHeuristicFindings(project, reviewProfile) {
   // 1. 快速扫描（所有审计模式都执行）
   console.log(`[审计分析] 开始快速扫描项目: ${project.name}`);
   const quickScanService = new QuickScanService();
-  const quickScanFindings = await quickScanService.scanProject(sourceRoot, (progress) => {
+  const quickScanResult = await quickScanService.scanProject(sourceRoot, (progress) => {
     console.log(`[快速扫描进度] ${progress.processedFiles}/${progress.totalFiles} 文件，当前: ${progress.currentFile}`);
   });
-  console.log(`[审计分析] 快速扫描完成，发现 ${quickScanFindings.length} 个问题`);
+  const quickScanFindings = quickScanResult.findings || [];
+  console.log(`[审计分析] 快速扫描完成，发现 ${quickScanFindings.length} 个问题（扫描 ${quickScanResult.stats?.totalFilesScanned || quickScanFindings.length} 个文件）`);
   findings.push(...quickScanFindings);
 
   // 2. 污点追踪分析（行级污点追踪 + AST访问器）

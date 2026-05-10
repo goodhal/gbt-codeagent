@@ -3,6 +3,41 @@
  * 提供问题发现的通用操作方法
  */
 
+import {
+  VULN_TYPE_CODES,
+  SEVERITY_PREFIX,
+  VERDICT,
+  SANITIZER_PATTERNS,
+  DKTSS_BASE_SCORES,
+  DKTSS_FRICTION,
+  DKTSS_WEAPON,
+  getVulnTypeCode,
+  getSeverityPrefix,
+  calculateDKTSS as configCalculateDKTSS,
+  getDktssSeverity as configGetDktssSeverity
+} from "../config/auditConfig.js";
+
+/**
+ * 为漏洞列表批量生成编号
+ * @param {Array} findings - 漏洞列表
+ * @returns {Array} 带 vulnId 的漏洞列表
+ */
+export function assignVulnIds(findings) {
+  const assigned = [];
+  const counted = {};
+  for (const finding of findings) {
+    const severity = getSeverityPrefix(finding.severity);
+    const typeCode = getVulnTypeCode(finding.type);
+    const key = `${severity}-${typeCode}`;
+    counted[key] = (counted[key] || 0) + 1;
+    assigned.push({
+      ...finding,
+      vulnId: `${key}-${counted[key].toString().padStart(3, '0')}`
+    });
+  }
+  return assigned;
+}
+
 /**
  * 去重 findings
  * @param {Array} findings - findings 数组
@@ -76,3 +111,20 @@ export function deduplicateAndSort(findings, options = {}) {
 export function severityScore(value) {
   return value === "high" || value === "严重" ? 3 : value === "medium" || value === "中危" ? 2 : 1;
 }
+
+/**
+ * 计算 DKTSS 评分（导出为保持兼容性）
+ */
+export function calculateDKTSS(finding) {
+  return configCalculateDKTSS(finding);
+}
+
+/**
+ * 获取 DKTSS 严重程度（导出为保持兼容性）
+ */
+export function getDktSSSeverity(dktssScore) {
+  return configGetDktssSeverity(dktssScore);
+}
+
+// 导出 VERDICT 和 SANITIZER_PATTERNS 保持兼容性
+export { VERDICT, SANITIZER_PATTERNS };

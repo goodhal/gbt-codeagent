@@ -1,12 +1,13 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { OWASP_NAMES } from "../config/owaspMapping.js";
+import { validationChecklist } from "./validationChecklist.js";
 
-export async function writeAuditHtmlReport({ reportsDir, task, selectedProjects, auditResult }) {
+export async function writeAuditHtmlReport({ reportsDir, task, selectedProjects, auditResult, architectureAnalysis }) {
   await fs.mkdir(reportsDir, { recursive: true });
   const fileName = `audit-report-${task.id}.html`;
   const filePath = path.join(reportsDir, fileName);
-  const html = buildHtml({ task, selectedProjects, auditResult });
+  const html = buildHtml({ task, selectedProjects, auditResult, architectureAnalysis });
   await fs.writeFile(filePath, html, "utf8");
 
   return {
@@ -17,7 +18,7 @@ export async function writeAuditHtmlReport({ reportsDir, task, selectedProjects,
   };
 }
 
-function buildHtml({ task, selectedProjects, auditResult }) {
+function buildHtml({ task, selectedProjects, auditResult, architectureAnalysis }) {
   const selectedMap = new Map(selectedProjects.map((project) => [project.id, project]));
   const skillTags = (auditResult.skillsUsed || [])
     .map((skill) => `<span class="tag">${escapeHtml(skill.name)}</span>`)
@@ -29,9 +30,15 @@ function buildHtml({ task, selectedProjects, auditResult }) {
       const project = selectedMap.get(projectResult.projectId);
       const llmResult = projectResult.llmAudit;
       const llmState = describeLlmAudit(llmResult);
-      // 使用经过验证的发现数据，与后端findingsCount保持一致
-      const heuristicFindings = renderFindings((projectResult.findings || []).filter(f => ['quick_scan', 'taint', 'rule', 'pattern'].includes(f.source) || !f.source), "规则层本次没有保留到高置信度结果。");
-      const llmFindings = renderFindings((projectResult.findings || []).filter(f => f.source === 'llm'), llmState.emptyMessage);
+      const verdictMap = buildVerdictMap(projectResult.findings || []);
+      const heuristicSource = (projectResult.heuristicFindings || []).length > 0
+        ? (projectResult.heuristicFindings || [])
+        : (projectResult.findings || []).filter(f => ['quick_scan', 'taint', 'rule', 'pattern'].includes(f.source) || !f.source);
+      const llmSource = (llmResult?.findings || []).length > 0
+        ? (llmResult?.findings || [])
+        : (projectResult.findings || []).filter(f => f.source === 'llm');
+      const heuristicFindings = renderFindings(heuristicSource, "规则层本次没有保留到高置信度结果。", verdictMap);
+      const llmFindings = renderFindings(llmSource, llmState.emptyMessage, verdictMap);
       const llmWarnings = (llmResult?.warnings || [])
         .map((warning) => `<li>${escapeHtml(warning)}</li>`)
         .join("");
@@ -59,7 +66,7 @@ function buildHtml({ task, selectedProjects, auditResult }) {
 
           <div class="sub-card">
             <h4>规则层摘要</h4>
-            <p>保留 ${escapeHtml(String((projectResult.findings || []).filter(f => ['quick_scan', 'taint', 'rule', 'pattern'].includes(f.source) || !f.source).length))} 条结果。</p>
+            <p>保留 ${escapeHtml(String(heuristicSource.length))} 条结果。</p>
             ${heuristicFindings}
           </div>
 
@@ -99,6 +106,7 @@ function buildHtml({ task, selectedProjects, auditResult }) {
     .project-meta{display:flex;gap:18px;text-align:right}
     .sub-card{margin-top:16px;padding:16px;border-radius:18px;background:#f0f5ff;border:1px solid #bfdbfe}
     .finding{border-top:1px solid #dbeafe;padding-top:14px;margin-top:14px}
+    .finding-fp{opacity:0.6;border-left:3px solid #fca5a5;padding-left:10px}
     .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:#dbeafe}
     .badge.critical{background:#fecaca}
     .badge.low{background:#dbeafe}
@@ -131,7 +139,7 @@ function buildHtml({ task, selectedProjects, auditResult }) {
         <div class="metric"><strong>任务 ID</strong><br/>${escapeHtml(task.id)}</div>
         <div class="metric"><strong>来源模式</strong><br/>${escapeHtml(task.sourceType === "local" ? "本地仓库导入" : "GitHub 候选发现")}</div>
         <div class="metric"><strong>选中目标</strong><br/>${escapeHtml(String(selectedProjects.length))}</div>
-        <div class="metric"><strong>总保留结果</strong><br/>${escapeHtml(String(auditResult.findingsCount || 0))}</div>
+        <div class="metric"><strong>确认结果</strong><br/>${escapeHtml(String(auditResult.findingsCount || 0))}</div>
       </div>
       <div class="grid">
         <div class="metric"><strong>规则层结果</strong><br/>${escapeHtml(String(auditResult.heuristicFindingsCount || 0))}</div>
@@ -175,6 +183,10 @@ function buildHtml({ task, selectedProjects, auditResult }) {
     }
 
     ${projectSections}
+
+    ${architectureAnalysis ? buildArchitectureSection(architectureAnalysis) : ""}
+
+    ${buildValidationChecklist(auditResult)}
   </main>
 </body>
 </html>`;
@@ -268,7 +280,17 @@ function getLlmSkipReasonLabel(reason) {
   }
 }
 
-function renderFindings(findings, emptyMessage) {
+function buildVerdictMap(validatedFindings) {
+  const map = new Map();
+  for (const f of validatedFindings) {
+    if (f.location) {
+      map.set(f.location, { verdict: f.verdict, verificationReason: f.verificationReason, adjustedSeverity: f.adjustedSeverity });
+    }
+  }
+  return map;
+}
+
+function renderFindings(findings, emptyMessage, verdictMap) {
   if (!findings?.length) {
     return `<p class="muted">${escapeHtml(emptyMessage)}</p>`;
   }
@@ -317,15 +339,27 @@ function renderFindings(findings, emptyMessage) {
               </div>
             ` : "";
 
+            const verdictInfo = verdictMap?.get(finding.location);
+            const verdictBadge = verdictInfo ? (() => {
+              const v = verdictInfo.verdict;
+              if (v === 'confirmed') return '<span class="badge called">✓ 已确认</span>';
+              if (v === 'false_positive') return '<span class="badge failed">✗ 误报</span>';
+              if (v === 'downgraded') return '<span class="badge skipped">↓ 已降级</span>';
+              if (v === 'needs_review') return '<span class="badge status">? 待复核</span>';
+              return '';
+            })() : '';
+
             return `
-            <div class="finding">
+            <div class="finding${verdictInfo?.verdict === 'false_positive' ? ' finding-fp' : ''}">
               <div class="finding-head">
                 <h4>${index + 1}. ${escapeHtml(finding.title)}</h4>
                 <div>
                   <span class="badge ${escapeHtml(severityClass(finding.severity))}">${escapeHtml(severityLabel(finding.severity))}</span>
                   <span class="badge ${escapeHtml(finding.source || "rule")}">${escapeHtml(finding.source || "rule")}</span>
+                  ${verdictBadge}
                 </div>
               </div>
+              ${verdictInfo?.verificationReason ? `<p class="muted">验证说明：${escapeHtml(verdictInfo.verificationReason)}</p>` : ''}
               ${extraInfo}
               ${confidenceInfo}
               <p><strong>位置：</strong>${escapeHtml(finding.location || "n/a")}</p>
@@ -362,6 +396,317 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function buildValidationChecklist(auditResult) {
+  const hasDotnetSkills = auditResult.skillsUsed?.some(skill => 
+    skill.id === 'dotnet-route-audit' || skill.id === 'dotnet-auth-audit'
+  );
+  const checklistType = hasDotnetSkills ? 'dotnet' : 'general';
+  const checklistReport = validationChecklist.generateChecklistReport(checklistType, auditResult);
+  
+  if (checklistReport.summary.status === 'complete') {
+    return "";
+  }
+  
+  const sectionsHtml = checklistReport.sections.map(section => {
+    const itemsHtml = section.items.map(item => {
+      const statusClass = {
+        'pass': 'check-pass',
+        'fail': 'check-fail',
+        'skip': 'check-skip'
+      }[item.status];
+      
+      const icon = {
+        'pass': '✓',
+        'fail': '✗',
+        'skip': '○'
+      }[item.status];
+      
+      return `
+        <div class="check-item ${statusClass}">
+          <span class="check-icon">${icon}</span>
+          <span class="check-label">${escapeHtml(item.label)}</span>
+          ${item.required ? '<span class="check-required">必需</span>' : ''}
+        </div>
+      `;
+    }).join('');
+    
+    return `
+      <div class="check-section">
+        <h4>${escapeHtml(section.name)}</h4>
+        <div class="check-items">${itemsHtml}</div>
+      </div>
+    `;
+  }).join('');
+  
+  const statusBadge = checklistReport.summary.status === 'complete' 
+    ? '<span class="badge success">✓ 完整</span>' 
+    : '<span class="badge warning">! 部分完成</span>';
+  
+  return `
+    <section class="card">
+      <h2>验证清单 ${statusBadge}</h2>
+      <div class="check-summary">
+        <div class="summary-item">
+          <span class="summary-value">${checklistReport.summary.completeness}%</span>
+          <span class="summary-label">完整性</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-value">${checklistReport.summary.passRate}%</span>
+          <span class="summary-label">必需项通过率</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-value">${checklistReport.summary.checkedRequired}/${checklistReport.summary.requiredItems}</span>
+          <span class="summary-label">必需项完成</span>
+        </div>
+      </div>
+      ${sectionsHtml}
+      <style>
+        .check-summary {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 14px;
+          margin-bottom: 20px;
+        }
+        .summary-item {
+          padding: 12px;
+          border-radius: 12px;
+          background: #f0f5ff;
+          text-align: center;
+        }
+        .summary-value {
+          display: block;
+          font-size: 24px;
+          font-weight: bold;
+          color: #1e40af;
+        }
+        .summary-label {
+          font-size: 12px;
+          color: #667eea;
+        }
+        .check-section {
+          margin-bottom: 16px;
+          padding-bottom: 16px;
+          border-bottom: 1px solid #dbeafe;
+        }
+        .check-section:last-child {
+          border-bottom: none;
+          margin-bottom: 0;
+          padding-bottom: 0;
+        }
+        .check-items {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 8px;
+          margin-top: 8px;
+        }
+        .check-item {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 6px 10px;
+          border-radius: 8px;
+          font-size: 13px;
+        }
+        .check-pass {
+          background: #d1fae5;
+          color: #065f46;
+        }
+        .check-fail {
+          background: #fee2e2;
+          color: #991b1b;
+        }
+        .check-skip {
+          background: #f3f4f6;
+          color: #6b7280;
+        }
+        .check-icon {
+          font-weight: bold;
+        }
+        .check-required {
+          margin-left: auto;
+          font-size: 10px;
+          padding: 2px 6px;
+          border-radius: 4px;
+          background: #f59e0b;
+          color: white;
+        }
+        .badge.success {
+          background: #d1fae5;
+          color: #065f46;
+        }
+        .badge.warning {
+          background: #fee2e2;
+          color: #991b1b;
+        }
+        @media (max-width: 600px) {
+          .check-summary {
+            grid-template-columns: 1fr;
+          }
+          .check-items {
+            grid-template-columns: 1fr;
+          }
+        }
+      </style>
+    </section>
+  `;
+}
+
+function buildArchitectureSection(architectureAnalysis) {
+  if (!architectureAnalysis) return "";
+
+  const { overview, criticalPaths, hotspots, knowledgeGaps, recommendations } = architectureAnalysis;
+
+  const riskScore = overview?.riskScore || 0;
+  const riskLevel = riskScore >= 70 ? 'high' : riskScore >= 40 ? 'medium' : 'low';
+  const riskLabel = { high: '高风险', medium: '中风险', low: '低风险' }[riskLevel];
+  const riskColor = { high: '#ef4444', medium: '#f59e0b', low: '#10b981' }[riskLevel];
+
+  return `
+    <section class="card">
+      <h2>架构分析报告</h2>
+      
+      <div class="grid">
+        <div class="metric">
+          <strong>总节点数</strong><br/>${escapeHtml(String(overview?.totalNodes || 0))}
+        </div>
+        <div class="metric">
+          <strong>总边数</strong><br/>${escapeHtml(String(overview?.totalEdges || 0))}
+        </div>
+        <div class="metric">
+          <strong>模块数量</strong><br/>${escapeHtml(String(overview?.communities || 0))}
+        </div>
+        <div class="metric" style="background: ${riskColor}20; border-color: ${riskColor}40;">
+          <strong>架构风险</strong><br/>
+          <span style="color: ${riskColor}; font-weight: bold;">${riskLabel} (${riskScore})</span>
+        </div>
+      </div>
+
+      ${overview?.warnings?.length > 0 ? `
+        <div class="sub-card" style="margin-top: 16px;">
+          <h4>架构警告</h4>
+          <ul>
+            ${overview.warnings.map(w => `
+              <li class="warning-item ${w.severity}">
+                <span class="severity-badge ${w.severity}">${w.severity === 'high' ? '高危' : w.severity === 'medium' ? '中危' : '低危'}</span>
+                ${escapeHtml(w.message)}
+              </li>
+            `).join('')}
+          </ul>
+        </div>
+      ` : ''}
+
+      ${criticalPaths?.length > 0 ? `
+        <div class="sub-card" style="margin-top: 16px;">
+          <h4>关键执行路径</h4>
+          <div style="display: grid; gap: 12px;">
+            ${criticalPaths.slice(0, 5).map((path, idx) => `
+              <div style="padding: 10px; background: #fff; border-radius: 8px; border: 1px solid #dbeafe;">
+                <div style="display: flex; justify-content: space-between;">
+                  <span><strong>${escapeHtml(path.entryPoint?.name || `路径 ${idx + 1}`)}</strong></span>
+                  <span class="badge ${path.criticality >= 70 ? 'high' : path.criticality >= 40 ? 'medium' : 'low'}">
+                    关键度: ${path.criticality}%
+                  </span>
+                </div>
+                <div style="font-size: 13px; color: #667eea; margin-top: 4px;">
+                  ${path.nodeCount} 个节点 · ${path.edgeCount} 条边 · 深度 ${path.depth}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+
+      ${hotspots?.length > 0 ? `
+        <div class="sub-card" style="margin-top: 16px;">
+          <h4>热点节点（高连接度）</h4>
+          <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+            ${hotspots.slice(0, 10).map(hotspot => `
+              <div style="padding: 8px; background: #fff; border-radius: 8px; border: 1px solid #dbeafe;">
+                <div style="font-size: 14px; font-weight: bold;">${escapeHtml(hotspot.name)}</div>
+                <div style="font-size: 12px; color: #667eea;">
+                  连接度: ${hotspot.degree} · ${escapeHtml(hotspot.community)}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+
+      ${knowledgeGaps?.isolatedNodes?.length > 0 || knowledgeGaps?.untestedHotspots?.length > 0 ? `
+        <div class="sub-card" style="margin-top: 16px;">
+          <h4>知识缺口分析</h4>
+          <div style="display: grid; gap: 8px;">
+            ${knowledgeGaps.isolatedNodes?.length > 0 ? `
+              <div>
+                <strong>孤立节点：</strong>${knowledgeGaps.isolatedNodes.length} 个
+                <span style="font-size: 12px; color: #667eea;">（可能是死代码）</span>
+              </div>
+            ` : ''}
+            ${knowledgeGaps.untestedHotspots?.length > 0 ? `
+              <div>
+                <strong>未测试热点：</strong>${knowledgeGaps.untestedHotspots.length} 个
+                <span style="font-size: 12px; color: #f59e0b;">（建议添加测试）</span>
+              </div>
+            ` : ''}
+            ${knowledgeGaps.orphanFiles?.length > 0 ? `
+              <div>
+                <strong>孤立文件：</strong>${knowledgeGaps.orphanFiles.length} 个
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      ` : ''}
+
+      ${recommendations?.length > 0 ? `
+        <div class="sub-card" style="margin-top: 16px;">
+          <h4>架构优化建议</h4>
+          <ol>
+            ${recommendations.slice(0, 5).map((rec, idx) => `
+              <li style="margin-bottom: 8px;">
+                <span class="badge ${rec.severity}">${rec.severity === 'high' ? '重要' : rec.severity === 'medium' ? '建议' : '参考'}</span>
+                <strong>${escapeHtml(rec.message)}</strong>
+                <p style="font-size: 13px; color: #667eea; margin: 4px 0 0 0;">${escapeHtml(rec.suggestion)}</p>
+              </li>
+            `).join('')}
+          </ol>
+        </div>
+      ` : ''}
+
+      <style>
+        .warning-item {
+          padding: 8px;
+          border-radius: 8px;
+          margin-bottom: 8px;
+          list-style: none;
+        }
+        .warning-item.high {
+          background: #fee2e2;
+          border: 1px solid #fecaca;
+        }
+        .warning-item.medium {
+          background: #fef3c7;
+          border: 1px solid #fde68a;
+        }
+        .warning-item.low {
+          background: #dbeafe;
+          border: 1px solid #bfdbfe;
+        }
+        .severity-badge {
+          display: inline-block;
+          padding: 2px 6px;
+          border-radius: 4px;
+          font-size: 11px;
+          margin-right: 8px;
+          color: white;
+        }
+        .severity-badge.high { background: #ef4444; }
+        .severity-badge.medium { background: #f59e0b; }
+        .severity-badge.low { background: #3b82f6; }
+      </style>
+    </section>
+  `;
 }
 
 const SARIF_SEVERITY = {

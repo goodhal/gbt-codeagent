@@ -1,4 +1,5 @@
 import { withRetry } from './retry.js';
+import { EVIDENCE_REQUIRED_MAP } from '../config/llmPrompts.js';
 
 const THOUGHT_PATTERN = /^(?:Thought|思考)[:：]\s*([\s\S]*?)$/im;
 const ACTION_PATTERN = /^(?:Action|行动)[:：]\s*(\w+)\s*(?:\(([^)]*)\))?$/im;
@@ -102,6 +103,53 @@ class ReActAuditor {
     this.config = config;
     this.messages = [];
     this.result = new ReActResult();
+    this.evidencePoints = [];
+    this.discoveryHistory = [];
+    
+    this.registeredTools = {
+      read: {
+        name: 'read',
+        description: '读取指定文件的内容',
+        params: { filePath: '文件路径' },
+        returns: '文件内容字符串'
+      },
+      grep: {
+        name: 'grep',
+        description: '在项目中搜索指定的关键词或模式',
+        params: { pattern: '搜索模式', path: '搜索路径（可选）' },
+        returns: '匹配结果列表'
+      },
+      glob: {
+        name: 'glob',
+        description: '查找匹配指定模式的文件',
+        params: { pattern: '文件模式' },
+        returns: '匹配的文件路径列表'
+      },
+      astQuery: {
+        name: 'astQuery',
+        description: '查询AST节点信息，如类、方法、继承关系',
+        params: { query: '查询类型', className: '类名', methodName: '方法名' },
+        returns: 'AST节点信息'
+      },
+      traceDataFlow: {
+        name: 'traceDataFlow',
+        description: '追踪数据从输入到危险函数的传播路径',
+        params: { sourceFile: '源文件', sourceLine: '源行号', sinkType: '目标类型' },
+        returns: '数据流追踪结果'
+      },
+      checkReachability: {
+        name: 'checkReachability',
+        description: '检查从入口点到敏感操作的可达性',
+        params: { entryPoint: '入口方法', sensitiveOperation: '敏感操作' },
+        returns: '可达性分析结果'
+      },
+      getEvidence: {
+        name: 'getEvidence',
+        description: '获取漏洞证据点信息',
+        params: { vulnType: '漏洞类型', location: '位置' },
+        returns: '证据点列表'
+      }
+    };
   }
 
   _log(level, ...args) {
@@ -110,10 +158,67 @@ class ReActAuditor {
     }
   }
 
+  _getToolDescription() {
+    const toolDescriptions = [];
+    for (const [name, tool] of Object.entries(this.registeredTools)) {
+      const paramsStr = Object.entries(tool.params).map(([key, desc]) => `${key}: ${desc}`).join(', ');
+      toolDescriptions.push(`${name}(${paramsStr}) - ${tool.description}`);
+    }
+    return toolDescriptions.join('\n');
+  }
+
   _buildSystemPrompt(systemPromptContent) {
+    const toolDesc = this._getToolDescription();
     return [
-      { role: 'system', content: systemPromptContent }
+      { role: 'system', content: `
+${systemPromptContent}
+
+【可用工具】
+${toolDesc}
+
+【工具使用格式】
+Thought: 思考内容
+Action: 工具名(参数)
+
+【输出格式】
+- 如果需要更多信息，输出: Thought + Action
+- 如果分析完成，输出: Final Answer: {"issues": [...], "recommendations": [...]}
+
+【证据收集要求】
+每个漏洞发现必须收集以下证据点：
+1. EVID_* 证据点标识
+2. 代码片段位置
+3. 数据流追踪路径（如适用）
+4. 验证结果
+      `.trim() }
     ];
+  }
+
+  _recordDiscovery(finding) {
+    this.discoveryHistory.push({
+      timestamp: Date.now(),
+      ...finding
+    });
+  }
+
+  _addEvidencePoint(evidence) {
+    if (!this.evidencePoints.includes(evidence)) {
+      this.evidencePoints.push(evidence);
+    }
+  }
+
+  _validateEvidenceCompleteness(vulnType) {
+    const requiredEvidence = this._getRequiredEvidence(vulnType);
+    const missing = requiredEvidence.filter(e => !this.evidencePoints.includes(e));
+    return {
+      complete: missing.length === 0,
+      missing,
+      collected: this.evidencePoints.filter(e => requiredEvidence.includes(e))
+    };
+  }
+
+  _getRequiredEvidence(vulnType) {
+    return EVIDENCE_REQUIRED_MAP[vulnType] || [];
   }
 
   _buildInitialMessage(userPromptContent) {

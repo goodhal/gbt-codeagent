@@ -8,7 +8,7 @@ import { GitUrlScoutAgent } from "./src/agents/gitUrlScoutAgent.js";
 import { ZipUploadScoutAgent } from "./src/agents/zipUploadScoutAgent.js";
 import { AuditAnalystAgent } from "./src/agents/auditAnalystAgent.js";
 import { getAuditSkillCatalog, getAllProfiles, getSkillsByProfile, getProfileConfig } from "./src/config/auditSkills.js";
-import { getProviderPreset, maskSecret, resolveLlmConfig } from "./src/config/llmProviders.js";
+import { getProviderPreset, maskSecret, resolveLlmConfig, getProviderCatalog } from "./src/config/llmProviders.js";
 import { buildEnvironmentReport } from "./src/services/environmentReport.js";
 import { DefensiveLlmReviewer } from "./src/services/llmReviewService.js";
 import { createMemoryStore } from "./src/services/memoryStore.js";
@@ -19,6 +19,7 @@ import { createTaskStore } from "./src/store/taskStore.js";
 import { recordRequest, getPerformanceMetrics, getCache, setCache, withCache, measurePerformance } from "./src/core/performance.js";
 
 import { warmupService } from "./src/services/warmupService.js";
+import { stripTrailingSlash } from "./src/utils/fileUtils.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const publicDir = path.join(__dirname, "public");
@@ -79,6 +80,10 @@ const server = http.createServer(async (req, res) => {
       const skills = getAuditSkillCatalog();
       recordRequest(url.pathname, performance.now() - start, true);
       return sendJson(res, 200, skills);
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/provider-defaults") {
+      return sendJson(res, 200, getProviderCatalog());
     }
 
     if (req.method === "GET" && url.pathname === "/api/profiles") {
@@ -441,6 +446,37 @@ const server = http.createServer(async (req, res) => {
       return serveFile(res, path.join(reportsDir, decodeURIComponent(url.pathname.replace("/reports/", ""))));
     }
 
+    if (req.method === "GET" && url.pathname === "/api/export-json") {
+      const taskId = url.searchParams.get("taskId");
+      if (!taskId) return sendJson(res, 400, { error: "Missing taskId parameter" });
+      const task = tasks.getTask(taskId);
+      if (!task) return sendJson(res, 404, { error: "Task not found" });
+      const auditResult = task.auditResult;
+      if (!auditResult) return sendJson(res, 404, { error: "Audit result not found" });
+
+      const allFindings = collectExportFindings(auditResult);
+      const jsonFileName = `audit-report-${taskId}.json`;
+      const jsonFilePath = path.join(reportsDir, jsonFileName);
+      await fs.writeFile(jsonFilePath, JSON.stringify({ taskId, query: task.query, findingsCount: allFindings.length, findings: allFindings }, null, 2), "utf8");
+      return sendJson(res, 200, { success: true, fileName: jsonFileName, downloadPath: `/reports/${jsonFileName}`, findingsCount: allFindings.length });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/export-markdown") {
+      const taskId = url.searchParams.get("taskId");
+      if (!taskId) return sendJson(res, 400, { error: "Missing taskId parameter" });
+      const task = tasks.getTask(taskId);
+      if (!task) return sendJson(res, 404, { error: "Task not found" });
+      const auditResult = task.auditResult;
+      if (!auditResult) return sendJson(res, 404, { error: "Audit result not found" });
+
+      const allFindings = collectExportFindings(auditResult);
+      const md = buildMarkdownReport(task, auditResult, allFindings);
+      const mdFileName = `audit-report-${taskId}.md`;
+      const mdFilePath = path.join(reportsDir, mdFileName);
+      await fs.writeFile(mdFilePath, md, "utf8");
+      return sendJson(res, 200, { success: true, fileName: mdFileName, downloadPath: `/reports/${mdFileName}`, findingsCount: allFindings.length });
+    }
+
     if (req.method === "GET" && url.pathname === "/api/export-sarif") {
       const taskId = url.searchParams.get("taskId");
       if (!taskId) {
@@ -457,15 +493,7 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 404, { error: "Audit result not found" });
       }
 
-      const allFindings = [];
-      for (const project of auditResult.projects || []) {
-        for (const finding of project.heuristicFindings || []) {
-          allFindings.push(finding);
-        }
-        for (const finding of project.llmAudit?.findings || []) {
-          allFindings.push(finding);
-        }
-      }
+      const allFindings = collectExportFindings(auditResult);
 
       const sarifFileName = `sarif-report-${taskId}.json`;
       const sarifFilePath = path.join(reportsDir, sarifFileName);
@@ -486,6 +514,41 @@ const server = http.createServer(async (req, res) => {
       } catch (err) {
         return sendJson(res, 500, { error: "Failed to generate SARIF report", detail: err.message });
       }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/regenerate-report") {
+      const body = await readJson(req);
+      const taskId = body.taskId;
+      if (!taskId) return sendJson(res, 400, { error: "Missing taskId" });
+      const task = tasks.getTask(taskId);
+      if (!task) return sendJson(res, 404, { error: "Task not found" });
+      const auditResult = task.auditResult;
+      if (!auditResult) return sendJson(res, 404, { error: "Audit result not found" });
+      const selectedProjects = task.selectedProjects || [];
+
+      await fs.mkdir(reportsDir, { recursive: true });
+      const htmlReport = await writeAuditHtmlReport({
+        reportsDir,
+        task: { ...task, selectedProjectIds: task.selectedProjectIds || [] },
+        selectedProjects,
+        auditResult,
+        architectureAnalysis: auditResult.architectureAnalysis
+      });
+
+      const allFindings = collectExportFindings(auditResult);
+      await fs.writeFile(
+        path.join(reportsDir, `audit-report-${taskId}.json`),
+        JSON.stringify({ taskId, query: task.query, findingsCount: allFindings.length, findings: allFindings }, null, 2),
+        "utf8"
+      );
+
+      return sendJson(res, 200, {
+        success: true,
+        reportPath: htmlReport.downloadPath,
+        findingsCount: allFindings.length,
+        ruleFindings: auditResult.heuristicFindingsCount || 0,
+        llmFindings: auditResult.llmFindingsCount || 0
+      });
     }
 
     if (req.method === "GET") {
@@ -750,7 +813,13 @@ async function runAudit(taskId, selectedProjectIds) {
     };
     
     // 生成 HTML 报告
-    const htmlReport = await writeAuditHtmlReport({ reportsDir, task: finalTaskSnapshot, selectedProjects, auditResult });
+    const htmlReport = await writeAuditHtmlReport({ 
+      reportsDir, 
+      task: finalTaskSnapshot, 
+      selectedProjects, 
+      auditResult,
+      architectureAnalysis: auditResult.architectureAnalysis 
+    });
     
     const memorySummary = buildMemorySummary(finalTaskSnapshot, { projects: selectedProjects }, auditResult);
     if (task.useMemory) {
@@ -1033,10 +1102,6 @@ async function testLlmConnection(llm) {
   }
 }
 
-function stripTrailingSlash(value) {
-  return value.replace(/\/+$/, "");
-}
-
 function applyMemoryDefaults(body, memory) {
   const useMemory = body.useMemory !== false;
   const sourceType = body.sourceType || "github";
@@ -1193,6 +1258,58 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload, null, 2));
 }
 
+function collectExportFindings(auditResult) {
+  const allFindings = [];
+  for (const project of auditResult.projects || []) {
+    for (const finding of project.findings || []) {
+      allFindings.push(finding);
+    }
+  }
+  return allFindings;
+}
+
+function buildMarkdownReport(task, auditResult, allFindings) {
+  const lines = [];
+  lines.push(`# 代码安全审计报告`);
+  lines.push("");
+  lines.push(`**任务ID**: ${task.id}`);
+  lines.push(`**查询**: ${task.query || "N/A"}`);
+  lines.push(`**审计时间**: ${auditResult.reviewedAt || new Date().toISOString()}`);
+  lines.push(`**发现总数**: ${allFindings.length}`);
+  lines.push("");
+
+  if (allFindings.length) {
+    lines.push("## 发现列表");
+    lines.push("");
+    lines.push("| 严重程度 | 类型 | 文件 | 行号 | 标题 |");
+    lines.push("|---------|------|------|------|------|");
+    for (const finding of allFindings) {
+      const severity = (finding.severity || "medium").toUpperCase();
+      const type = finding.type || finding.vulnType || "未知";
+      const file = finding.file || (finding.location || "n/a").split(':')[0];
+      const line = finding.line || "";
+      const title = (finding.title || finding.description || "").replace(/\|/g, "\\|").substring(0, 60);
+      lines.push(`| ${severity} | ${type} | ${file} | ${line} | ${title} |`);
+    }
+    lines.push("");
+
+    lines.push("## 详细发现");
+    lines.push("");
+    allFindings.forEach((finding, idx) => {
+      lines.push(`### ${idx + 1}. ${finding.title || "未命名"}`);
+      lines.push("");
+      lines.push(`- **严重程度**: ${finding.severity || "N/A"}`);
+      lines.push(`- **类型**: ${finding.type || finding.vulnType || "N/A"}`);
+      lines.push(`- **位置**: ${finding.location || "N/A"}`);
+      if (finding.description) lines.push(`- **描述**: ${finding.description}`);
+      if (finding.remediation) lines.push(`- **修复建议**: ${finding.remediation}`);
+      lines.push("");
+    });
+  }
+
+  return lines.join("\n");
+}
+
 async function parseMultipartForm(req) {
   const contentType = req.headers["content-type"] || "";
   const boundaryMatch = contentType.match(/boundary=(.+)$/);
@@ -1258,7 +1375,7 @@ async function parseMultipartForm(req) {
 
   return { fields, files };
 }
-await warmupService.warmup();
+warmupService.warmup();
 
 const port = process.env.PORT || 3001;
 server.listen(port, '0.0.0.0', () => console.log(`Safe audit agents listening on http://0.0.0.0:${port}`));

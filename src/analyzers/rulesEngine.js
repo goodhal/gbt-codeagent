@@ -133,6 +133,188 @@ export class RulesEngine {
     };
   }
 
+  registerQuickScanPatterns(patternsByLanguage) {
+    if (!this.rules) {
+      this._createDefaultRules();
+    }
+    if (!this.rules.taintTracking) {
+      this.rules.taintTracking = { sources: {}, sinks: {}, sanitizers: {} };
+    }
+    if (!this.rules.taintTracking.sinks) {
+      this.rules.taintTracking.sinks = {};
+    }
+
+    for (const [lang, patterns] of Object.entries(patternsByLanguage)) {
+      if (!this.rules.taintTracking.sinks[lang]) {
+        this.rules.taintTracking.sinks[lang] = [];
+      }
+
+      const existingSinks = this.rules.taintTracking.sinks[lang];
+      const existingIds = new Set(existingSinks.map(s => s.id));
+
+      for (const qsPattern of patterns) {
+        const sinkId = `QS-${qsPattern.vulnType}-${lang.toUpperCase()}`;
+        if (existingIds.has(sinkId)) continue;
+
+        existingSinks.push({
+          id: sinkId,
+          name: qsPattern.vulnType,
+          patterns: [qsPattern.pattern.source],
+          category: this._mapVulnTypeToCategory(qsPattern.vulnType),
+          severity: this._mapChineseSeverity(qsPattern.severity),
+          profiles: ['security', 'default'],
+          guidelines: {
+            cwe: [qsPattern.cwe.replace('CWE-', '')],
+            gbt: [qsPattern.vulnType]
+          },
+          _quickScan: true,
+          _vulnType: qsPattern.vulnType,
+          _cwe: qsPattern.cwe,
+          _chineseSeverity: qsPattern.severity
+        });
+        existingIds.add(sinkId);
+      }
+    }
+
+    this._buildIndex();
+  }
+
+  _mapChineseSeverity(chinese) {
+    const map = { '严重': 'CRITICAL', '高危': 'HIGH', '中危': 'MEDIUM', '低危': 'LOW' };
+    return map[chinese] || 'MEDIUM';
+  }
+
+  _mapVulnTypeToCategory(vulnType) {
+    const map = {
+      COMMAND_INJECTION: 'command_exec',
+      SQL_INJECTION: 'sql_injection',
+      CODE_INJECTION: 'code_injection',
+      SPEL_INJECTION: 'code_injection',
+      SSTI: 'code_injection',
+      PATH_TRAVERSAL: 'file_operation',
+      HARD_CODE_PASSWORD: 'hard_coded_secret',
+      PLAINTEXT_PASSWORD: 'hard_coded_secret',
+      WEAK_CRYPTO: 'weak_crypto',
+      WEAK_HASH: 'weak_hash',
+      PREDICTABLE_RANDOM: 'weak_random',
+      WEAK_RANDOM: 'weak_random',
+      DESERIALIZATION: 'deserialization',
+      SSRF: 'ssrf',
+      XXE: 'xxe',
+      AUTH_BYPASS: 'auth_bypass',
+      REFERER_AUTH_BYPASS: 'auth_bypass',
+      AUTH_INFO_EXPOSURE: 'info_leak',
+      IDOR: 'idor',
+      INFO_LEAK: 'info_leak',
+      LOG_INJECTION: 'log_injection',
+      SESSION_FIXATION: 'session_fixation',
+      COOKIE_MANIPULATION: 'cookie_manipulation',
+      XSS: 'xss',
+      XPATH_INJECTION: 'xpath',
+      BUFFER_OVERFLOW: 'buffer_overflow',
+      FORMAT_STRING: 'format_string',
+      INTEGER_OVERFLOW: 'integer_overflow',
+      PROCESS_CONTROL: 'process_control',
+      OPEN_REDIRECT: 'open_redirect',
+      CORS_MISCONFIGURATION: 'cors',
+      CSRF: 'csrf',
+      RACE_CONDITION: 'race_condition',
+      UNCONTROLLED_MEMORY: 'memory',
+      IMPROPER_EXCEPTION_HANDLING: 'exception',
+      INFINITE_LOOP: 'infinite_loop',
+      WEAK_PASSWORD_POLICY: 'weak_password',
+      PLAINTEXT_TRANSMISSION: 'plaintext_transmission'
+    };
+    return map[vulnType] || 'other';
+  }
+
+  matchQuickScan(code, language) {
+    const lang = language.toLowerCase();
+    const results = [];
+
+    const yamlSinks = this.getTaintSinks(lang);
+
+    for (const sink of yamlSinks) {
+      for (const patternStr of sink.patterns || []) {
+        const regex = this._createRegex(patternStr);
+        if (!regex) continue;
+
+        let match;
+        while ((match = regex.exec(code)) !== null) {
+          results.push({
+            ...sink,
+            pattern: patternStr,
+            match: match[0],
+            index: match.index,
+            line: this._getLineNumber(code, match.index),
+            vulnType: this._resolveVulnType(sink),
+            cwe: this._resolveCwe(sink),
+            severity: sink._chineseSeverity || this._mapSeverityToChinese(sink.severity),
+            _quickScan: !!sink._quickScan
+          });
+        }
+      }
+    }
+
+    return results;
+  }
+
+  _resolveVulnType(sink) {
+    if (sink._vulnType) return sink._vulnType;
+    const categoryToVuln = {
+      command_exec: 'COMMAND_INJECTION',
+      sql_injection: 'SQL_INJECTION',
+      code_injection: 'CODE_INJECTION',
+      file_operation: 'PATH_TRAVERSAL',
+      deserialization: 'DESERIALIZATION',
+      ssrf: 'SSRF',
+      xxe: 'XXE',
+      xss: 'XSS',
+      hard_coded_secret: 'HARD_CODE_PASSWORD',
+      weak_crypto: 'WEAK_CRYPTO',
+      weak_hash: 'WEAK_HASH',
+      weak_random: 'PREDICTABLE_RANDOM',
+      auth_bypass: 'AUTH_BYPASS',
+      info_leak: 'INFO_LEAK',
+      idor: 'IDOR',
+      log_injection: 'LOG_INJECTION',
+      session_fixation: 'SESSION_FIXATION',
+      cookie_manipulation: 'COOKIE_MANIPULATION',
+      xpath: 'XPATH_INJECTION',
+      buffer_overflow: 'BUFFER_OVERFLOW',
+      format_string: 'FORMAT_STRING',
+      integer_overflow: 'INTEGER_OVERFLOW',
+      process_control: 'PROCESS_CONTROL',
+      open_redirect: 'OPEN_REDIRECT',
+      cors: 'CORS_MISCONFIGURATION',
+      csrf: 'CSRF',
+      race_condition: 'RACE_CONDITION',
+      memory: 'UNCONTROLLED_MEMORY',
+      exception: 'IMPROPER_EXCEPTION_HANDLING',
+      infinite_loop: 'INFINITE_LOOP',
+      weak_password: 'WEAK_PASSWORD_POLICY',
+      plaintext_transmission: 'PLAINTEXT_TRANSMISSION'
+    };
+    if (sink.category && categoryToVuln[sink.category]) {
+      return categoryToVuln[sink.category];
+    }
+    return sink.name || sink.category || 'UNKNOWN';
+  }
+
+  _resolveCwe(sink) {
+    if (sink._cwe) return sink._cwe;
+    if (sink.guidelines?.cwe && sink.guidelines.cwe.length > 0) {
+      const cwe = sink.guidelines.cwe[0];
+      return cwe.startsWith('CWE-') ? cwe : `CWE-${cwe}`;
+    }
+    return 'CWE-NONE';
+  }
+
+  _mapSeverityToChinese(severity) {
+    const map = { CRITICAL: '严重', HIGH: '高危', MEDIUM: '中危', LOW: '低危' };
+    return map[severity?.toUpperCase()] || '中危';
+  }
+
   _buildIndex() {
     this._sourceIndex = new Map();
     this._sinkIndex = new Map();

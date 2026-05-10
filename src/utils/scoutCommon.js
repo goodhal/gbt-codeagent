@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { execSync } from "node:child_process";
+import pLimit from "p-limit";
 import { CODE_EXTENSIONS, extensionToLanguage } from "./fileUtils.js";
 
 /**
@@ -218,7 +219,7 @@ export function execWithTimeout(command, options = {}) {
 }
 
 /**
- * 批量处理项目
+ * 批量处理项目（并行版本）
  * @param {Array} items - 待处理项目列表
  * @param {Function} processOne - 处理单个项目的函数 (item) => Promise<Object>
  * @param {Object} options - 选项
@@ -226,6 +227,7 @@ export function execWithTimeout(command, options = {}) {
  * @param {string} options.labelTemplate - 标签模板
  * @param {Function} options.getDetail - 获取详情的函数 (item) => string
  * @param {Function} options.onProgress - 进度回调
+ * @param {number} options.concurrency - 并行数，默认3
  * @returns {Promise<{projects: Array}>}
  */
 export async function runBatch(items, processOne, options = {}) {
@@ -233,35 +235,42 @@ export async function runBatch(items, processOne, options = {}) {
     stage = "processing",
     labelTemplate = "正在处理",
     getDetail = (item) => String(item),
-    onProgress = () => {}
+    onProgress = () => {},
+    concurrency = 3
   } = options;
 
   const projects = [];
   const total = items.length;
+  let completed = 0;
 
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    const current = i + 1;
+  const limiter = pLimit(concurrency);
 
-    try {
-      onProgress({
-        stage,
-        label: `${labelTemplate} (${current}/${total})`,
-        detail: getDetail(item),
-        percent: Math.round((current / total) * 100),
-        current,
-        total
-      });
+  const tasks = items.map((item, i) =>
+    limiter(async () => {
+      try {
+        const project = await processOne(item);
+        completed++;
 
-      const project = await processOne(item);
-      if (project) {
-        projects.push(project);
+        onProgress({
+          stage,
+          label: `${labelTemplate} (${completed}/${total})`,
+          detail: getDetail(item),
+          percent: Math.round((completed / total) * 100),
+          current: completed,
+          total
+        });
+
+        if (project) {
+          projects.push(project);
+        }
+      } catch (error) {
+        completed++;
+        console.error(`[处理失败] ${getDetail(item)}:`, error.message);
       }
-    } catch (error) {
-      console.error(`[处理失败] ${getDetail(item)}:`, error.message);
-      // 继续处理下一个，不中断整个流程
-    }
-  }
+    })
+  );
+
+  await Promise.all(tasks);
 
   return { projects };
 }

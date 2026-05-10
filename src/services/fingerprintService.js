@@ -206,10 +206,13 @@ async function collectProjectFiles(root, options = {}) {
 
 async function walk(root, current, output, { readContent = true } = {}) {
   const entries = await safeReadDir(current);
+  const pendingDirs = [];
+  const pendingFiles = [];
+
   for (const entry of entries) {
     const target = path.join(current, entry.name);
     if (entry.isDirectory()) {
-      await walk(root, target, output, { readContent });
+      pendingDirs.push(target);
       continue;
     }
     if (!entry.isFile()) {
@@ -218,17 +221,30 @@ async function walk(root, current, output, { readContent = true } = {}) {
     if (entry.name === "SAFE_SAMPLE.md") {
       continue;
     }
+    pendingFiles.push(target);
+  }
 
-    const relativePath = path.relative(root, target).replaceAll("\\", "/");
-    const item = { fullPath: target, relativePath };
-    if (readContent) {
+  if (readContent) {
+    const fileReads = pendingFiles.map(async (target) => {
+      const relativePath = path.relative(root, target).replaceAll("\\", "/");
+      const item = { fullPath: target, relativePath };
       try {
         item.content = await fs.readFile(target, "utf8");
       } catch {
         item.content = "";
       }
+      output.push(item);
+    });
+    await Promise.all(fileReads);
+  } else {
+    for (const target of pendingFiles) {
+      const relativePath = path.relative(root, target).replaceAll("\\", "/");
+      output.push({ fullPath: target, relativePath });
     }
-    output.push(item);
+  }
+
+  for (const dir of pendingDirs) {
+    await walk(root, dir, output, { readContent });
   }
 }
 

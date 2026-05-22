@@ -1,22 +1,22 @@
 import { promises as fs } from 'node:fs';
 import path from 'path';
 
-const LOW_RISK_EXTENSIONS = [
+const LOW_RISK_EXTENSIONS = new Set([
   '.md', '.txt', '.json', '.yaml', '.yml', '.xml',
   '.svg', '.png', '.jpg', '.jpeg', '.gif', '.ico',
   '.css', '.scss', '.less',
   '.lock', '.gitignore', '.dockerignore',
   '.md5', '.sha256',
   '.log', '.tmp', '.bak'
-];
+]);
 
-const HIGH_RISK_EXTENSIONS = [
+const HIGH_RISK_EXTENSIONS = new Set([
   '.java', '.py', '.js', '.ts', '.tsx', '.jsx',
   '.php', '.go', '.rs', '.rb',
   '.cpp', '.c', '.cxx', '.h', '.hpp',
   '.cs', '.vb', '.asp', '.aspx',
   '.sql', '.pl', '.pm', '.tpl'
-];
+]);
 
 const HIGH_RISK_PATTERNS = [
   /controller/i,
@@ -82,10 +82,21 @@ const EALOC_WEIGHTS = {
   T3: 0.1
 };
 
+const MAX_CACHE_SIZE = 5000;
+
+function matchesAny(str, patterns) {
+  for (let i = 0; i < patterns.length; i++) {
+    if (patterns[i].test(str)) return true;
+  }
+  return false;
+}
+
 export class SmartFileFilter {
   constructor() {
     this.cache = new Map();
     this.cacheTtl = 300000;
+    this._cacheAccessOrder = [];
+    this._maxCacheSize = MAX_CACHE_SIZE;
   }
 
   shouldAuditFile(filePath, options = {}) {
@@ -98,12 +109,18 @@ export class SmartFileFilter {
 
     const result = this._evaluateFile(filePath, options);
     
-    this.cache.set(cacheKey, {
-      result,
-      expires: Date.now() + this.cacheTtl
-    });
+    this._addToCache(cacheKey, { result, expires: Date.now() + this.cacheTtl });
 
     return result;
+  }
+
+  _addToCache(key, entry) {
+    if (this.cache.size >= this._maxCacheSize) {
+      const oldest = this._cacheAccessOrder.shift();
+      this.cache.delete(oldest);
+    }
+    this.cache.set(key, entry);
+    this._cacheAccessOrder.push(key);
   }
 
   _evaluateFile(filePath, options) {
@@ -111,11 +128,11 @@ export class SmartFileFilter {
     const ext = path.extname(filePath).toLowerCase();
     const dirname = path.dirname(filePath).toLowerCase();
 
-    if (LOW_RISK_EXTENSIONS.includes(ext)) {
+    if (LOW_RISK_EXTENSIONS.has(ext)) {
       return { shouldAudit: false, reason: 'low_risk_extension', confidence: 0.9 };
     }
 
-    if (options.skipTests && LOW_RISK_PATTERNS.some(p => p.test(basename))) {
+    if (options.skipTests && matchesAny(basename, LOW_RISK_PATTERNS)) {
       return { shouldAudit: false, reason: 'test_file', confidence: 0.85 };
     }
 
@@ -133,22 +150,22 @@ export class SmartFileFilter {
 
     let score = 0.5;
 
-    if (HIGH_RISK_EXTENSIONS.includes(ext)) {
+    if (HIGH_RISK_EXTENSIONS.has(ext)) {
       score += 0.3;
     }
 
-    if (HIGH_RISK_PATTERNS.some(p => p.test(basename))) {
+    if (matchesAny(basename, HIGH_RISK_PATTERNS)) {
       score += 0.2;
     }
 
-    if (HIGH_RISK_PATTERNS.some(p => p.test(dirname))) {
+    if (matchesAny(dirname, HIGH_RISK_PATTERNS)) {
       score += 0.1;
     }
 
     score = Math.min(score, 0.95);
 
     return {
-      shouldAudit: score >= options.minScore || 0.6,
+      shouldAudit: score >= (options.minScore || 0.6),
       reason: score >= 0.8 ? 'high_risk' : score >= 0.6 ? 'medium_risk' : 'low_risk',
       confidence: score,
       riskScore: score
@@ -213,6 +230,7 @@ export class SmartFileFilter {
 
   clearCache() {
     this.cache.clear();
+    this._cacheAccessOrder = [];
   }
 
   getCacheStats() {
@@ -283,6 +301,8 @@ export class SmartFileFilter {
 }
 
 const ANALYSIS_CACHE = new Map();
+const _acCacheAccessOrder = [];
+const _MAX_AC_CACHE_SIZE = 2000;
 
 export class AnalysisCache {
   static get(key) {
@@ -294,80 +314,28 @@ export class AnalysisCache {
   }
 
   static set(key, data, ttl = 3600000) {
+    if (ANALYSIS_CACHE.size >= _MAX_AC_CACHE_SIZE) {
+      const oldest = _acCacheAccessOrder.shift();
+      ANALYSIS_CACHE.delete(oldest);
+    }
     ANALYSIS_CACHE.set(key, {
       data,
       expires: Date.now() + ttl,
-      createdAt: Date.now()
     });
-  }
-
-  static has(key) {
-    const entry = ANALYSIS_CACHE.get(key);
-    return entry && Date.now() < entry.expires;
-  }
-
-  static delete(key) {
-    ANALYSIS_CACHE.delete(key);
+    _acCacheAccessOrder.push(key);
+    return true;
   }
 
   static clear() {
     ANALYSIS_CACHE.clear();
-  }
-
-  static prune() {
-    const now = Date.now();
-    for (const [key, entry] of ANALYSIS_CACHE) {
-      if (now >= entry.expires) {
-        ANALYSIS_CACHE.delete(key);
-      }
-    }
+    _acCacheAccessOrder.length = 0;
   }
 
   static getStats() {
-    let size = 0;
-    for (const entry of ANALYSIS_CACHE.values()) {
-      size += JSON.stringify(entry.data).length;
-    }
     return {
       entries: ANALYSIS_CACHE.size,
-      approximateSize: size,
-      approximateSizeKB: Math.round(size / 1024)
+      maxSize: _MAX_AC_CACHE_SIZE
     };
-  }
-}
-
-export async function calculateFileRiskScore(filePath) {
-  try {
-    const content = await fs.readFile(filePath, 'utf8');
-    const lines = content.split('\n');
-    
-    let score = 0.5;
-    const features = {
-      hasExec: /\b(exec|system|shell_exec|subprocess|ProcessBuilder)\b/.test(content),
-      hasSql: /\b(query|execute|Statement|raw.*sql)\b/i.test(content),
-      hasAuth: /\b(authenticate|login|password|token|jwt|session)\b/i.test(content),
-      hasCrypto: /\b(encrypt|decrypt|md5|sha1|base64|secret)\b/i.test(content),
-      hasFile: /\b(readFile|writeFile|open|fs\.)/i.test(content),
-      hasNetwork: /\b(fetch|axios|http\.get|request|socket)\b/i.test(content),
-      hasEval: /\b(eval|new Function)\b/.test(content),
-      hasDeserialize: /\b(pickle|unserialize|JSON\.parse|yaml\.load)\b/i.test(content)
-    };
-
-    if (features.hasExec) score += 0.15;
-    if (features.hasSql) score += 0.1;
-    if (features.hasAuth) score += 0.1;
-    if (features.hasCrypto) score += 0.08;
-    if (features.hasFile) score += 0.05;
-    if (features.hasNetwork) score += 0.05;
-    if (features.hasEval) score += 0.1;
-    if (features.hasDeserialize) score += 0.1;
-
-    const complexity = Math.min(lines.length / 1000, 1);
-    score += complexity * 0.05;
-
-    return Math.min(Math.round(score * 100) / 100, 1.0);
-  } catch {
-    return 0.5;
   }
 }
 

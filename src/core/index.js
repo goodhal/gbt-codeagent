@@ -55,3 +55,13 @@ export {
   getFinalAnswerGuidance,
   loadReActPrompts
 } from './reactPrompts.js';
+export {
+  SEVERITY_LEVEL,
+  DEFAULT_GATE_CONFIG,
+  scoreFindings,
+  scoreBySource,
+  formatScoreReport,
+  mapSeverity,
+  calcScore,
+  evaluateGate
+} from './auditScoreEngine.js';

@@ -78,6 +78,8 @@ export class RulesEngine {
     this._testFilePatterns = [
       /test/i, /spec/i, /mock/i, /fixture/i, /example/i, /sample/i, /demo/i, /stub/i, /placeholder/i, /dummy/i
     ];
+
+    this._codeContextCache = new LRUCache(16);
   }
 
   async initialize(configPath = null) {
@@ -545,17 +547,51 @@ export class RulesEngine {
     }
   }
 
+  _ensureCodeContext(code) {
+    let ctx = this._codeContextCache.get(code);
+    if (ctx) return ctx;
+    ctx = this._computeCodeContext(code);
+    this._codeContextCache.set(code, ctx);
+    return ctx;
+  }
+
+  _computeCodeContext(code) {
+    const lineOffsets = [];
+    let pos = 0;
+    while (true) {
+      lineOffsets.push(pos);
+      const next = code.indexOf('\n', pos);
+      if (next === -1) break;
+      pos = next + 1;
+    }
+    const lines = code.split('\n');
+    return { lineOffsets, lines };
+  }
+
   _getLineNumber(code, index) {
-    return code.substring(0, index).split('\n').length;
+    const ctx = this._ensureCodeContext(code);
+    const { lineOffsets } = ctx;
+    let lo = 0, hi = lineOffsets.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (lineOffsets[mid] <= index) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return lo + 1;
   }
 
   _getLineContent(code, lineNumber) {
-    const lines = code.split('\n');
+    const ctx = this._ensureCodeContext(code);
+    const { lines } = ctx;
     return lines[lineNumber - 1] || '';
   }
 
   _getSurroundingContext(code, lineNumber, contextWindow) {
-    const lines = code.split('\n');
+    const ctx = this._ensureCodeContext(code);
+    const { lines } = ctx;
     const start = Math.max(0, lineNumber - contextWindow - 1);
     const end = Math.min(lines.length, lineNumber + contextWindow);
     
@@ -627,11 +663,13 @@ export class RulesEngine {
   _calculateCodeComplexity(code) {
     if (!code) return 0;
     
-    const lines = code.split('\n').filter(l => l.trim().length > 0);
-    const avgLength = lines.reduce((sum, l) => sum + l.length, 0) / lines.length;
+    const ctx = this._ensureCodeContext(code);
+    const nonEmptyLines = ctx.lines.filter(l => l.trim().length > 0);
+    if (nonEmptyLines.length === 0) return 0;
+    const avgLength = nonEmptyLines.reduce((sum, l) => sum + l.length, 0) / nonEmptyLines.length;
     const keywordCount = (code.match(/\b(function|class|if|else|for|while|switch|case|return)\b/gi) || []).length;
     
-    return Math.min(1.0, (avgLength / 80 + keywordCount / lines.length) / 2);
+    return Math.min(1.0, (avgLength / 80 + keywordCount / nonEmptyLines.length) / 2);
   }
 
   _looksLikeTestCode(content) {
@@ -760,24 +798,28 @@ export class RulesEngine {
   _levenshteinDistance(s1, s2) {
     if (s1.length === 0) return s2.length;
     if (s2.length === 0) return s1.length;
+    if (s1.length < s2.length) { const t = s1; s1 = s2; s2 = t; }
     
-    const dp = Array(s1.length + 1).fill(null).map(() => Array(s2.length + 1).fill(0));
+    let prev = new Array(s2.length + 1);
+    let curr = new Array(s2.length + 1);
     
-    for (let i = 0; i <= s1.length; i++) dp[i][0] = i;
-    for (let j = 0; j <= s2.length; j++) dp[0][j] = j;
+    for (let j = 0; j <= s2.length; j++) prev[j] = j;
     
     for (let i = 1; i <= s1.length; i++) {
+      curr[0] = i;
+      const si = s1[i - 1];
       for (let j = 1; j <= s2.length; j++) {
-        const cost = s1[i - 1] === s2[j - 1] ? 0 : 1;
-        dp[i][j] = Math.min(
-          dp[i - 1][j] + 1,
-          dp[i][j - 1] + 1,
-          dp[i - 1][j - 1] + cost
+        const cost = si === s2[j - 1] ? 0 : 1;
+        curr[j] = Math.min(
+          prev[j] + 1,
+          curr[j - 1] + 1,
+          prev[j - 1] + cost
         );
       }
+      [prev, curr] = [curr, prev];
     }
     
-    return dp[s1.length][s2.length];
+    return prev[s2.length];
   }
 
   matchWithContext(code, language, options = {}) {
@@ -977,6 +1019,7 @@ export class RulesEngine {
   clearCache() {
     this._cache.clear();
     this._regexCache.clear();
+    this._codeContextCache.clear();
   }
 
   getPerformanceStats() {

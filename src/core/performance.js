@@ -1,12 +1,17 @@
 import { performance } from "node:perf_hooks";
 
-// 性能监控
+const MAX_DURATIONS = 1000;
+const MAX_API_DURATIONS = 100;
+const MAX_CACHE_SIZE = 2000;
+
 const metrics = {
   requests: {
     total: 0,
     success: 0,
     failed: 0,
-    durations: []
+    durations: new Array(MAX_DURATIONS),
+    _writeIdx: 0,
+    _count: 0
   },
   api: {},
   cache: {
@@ -15,6 +20,24 @@ const metrics = {
   }
 };
 
+function _addToBuffer(buf, maxSize, value) {
+  buf[buf._writeIdx] = value;
+  buf._writeIdx = (buf._writeIdx + 1) % maxSize;
+  if (buf._count < maxSize) buf._count++;
+}
+
+function _getBufferValues(buf) {
+  const { _writeIdx, _count } = buf;
+  if (_count < buf.length) return buf.slice(0, _count);
+  const result = new Array(_count);
+  let idx = _writeIdx;
+  for (let i = 0; i < _count; i++) {
+    result[i] = buf[idx % buf.length];
+    idx++;
+  }
+  return result;
+}
+
 export function recordRequest(path, duration, success) {
   metrics.requests.total++;
   if (success) {
@@ -22,36 +45,40 @@ export function recordRequest(path, duration, success) {
   } else {
     metrics.requests.failed++;
   }
-  metrics.requests.durations.push(duration);
-  if (metrics.requests.durations.length > 1000) {
-    metrics.requests.durations.shift();
-  }
+  _addToBuffer(metrics.requests.durations, MAX_DURATIONS, duration);
+
   if (!metrics.api[path]) {
-    metrics.api[path] = { count: 0, durations: [] };
+    metrics.api[path] = {
+      count: 0,
+      durations: new Array(MAX_API_DURATIONS),
+      _writeIdx: 0,
+      _count: 0
+    };
   }
   metrics.api[path].count++;
-  metrics.api[path].durations.push(duration);
-  if (metrics.api[path].durations.length > 100) {
-    metrics.api[path].durations.shift();
-  }
+  _addToBuffer(metrics.api[path].durations, MAX_API_DURATIONS, duration);
 }
 
 export function getPerformanceMetrics() {
-  const durations = metrics.requests.durations;
+  const durations = _getBufferValues(metrics.requests.durations);
   const avgDuration = durations.length ? durations.reduce((a, b) => a + b, 0) / durations.length : 0;
   const sorted = [...durations].sort((a, b) => a - b);
   const p95 = sorted.length >= 95 ? sorted[Math.floor(sorted.length * 0.95)] : 0;
   const p99 = sorted.length >= 99 ? sorted[Math.floor(sorted.length * 0.99)] : 0;
   return {
     requests: {
-      ...metrics.requests,
+      total: metrics.requests.total,
+      success: metrics.requests.success,
+      failed: metrics.requests.failed,
+      durations: _getBufferValues(metrics.requests.durations),
       avgDuration,
       p95,
       p99
     },
     api: Object.fromEntries(
       Object.entries(metrics.api).map(([path, data]) => {
-        const avg = data.durations.length ? data.durations.reduce((a, b) => a + b, 0) / data.durations.length : 0;
+        const raw = _getBufferValues(data.durations);
+        const avg = raw.length ? raw.reduce((a, b) => a + b, 0) / raw.length : 0;
         return [path, { count: data.count, avgDuration: avg }];
       })
     ),
@@ -61,13 +88,23 @@ export function getPerformanceMetrics() {
   };
 }
 
-// 内存缓存
 const cache = new Map();
 const cacheTimers = new Map();
 
-const DEFAULT_TTL = 5 * 60 * 1000; // 5分钟
+const DEFAULT_TTL = 5 * 60 * 1000;
 
 export function setCache(key, value, ttl = DEFAULT_TTL) {
+  if (cache.size >= MAX_CACHE_SIZE && !cache.has(key)) {
+    const iter = cache.keys().next();
+    if (!iter.done) {
+      const oldestKey = iter.value;
+      if (cacheTimers.has(oldestKey)) {
+        clearTimeout(cacheTimers.get(oldestKey));
+        cacheTimers.delete(oldestKey);
+      }
+      cache.delete(oldestKey);
+    }
+  }
   cache.set(key, { value, expires: Date.now() + ttl });
   if (cacheTimers.has(key)) {
     clearTimeout(cacheTimers.get(key));
@@ -112,7 +149,6 @@ export function clearCache() {
   cacheTimers.clear();
 }
 
-// 性能装饰器
 export function measurePerformance(fn, name) {
   return async (...args) => {
     const start = performance.now();
@@ -142,7 +178,6 @@ export function withCache(fn, keyFn, ttl = DEFAULT_TTL) {
   };
 }
 
-// 连接池 (简化版用于演示)
 const connectionPool = {
   size: 10,
   available: [],

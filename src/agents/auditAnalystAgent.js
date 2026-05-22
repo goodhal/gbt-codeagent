@@ -9,6 +9,8 @@ import { CodeAnalysisTool } from "../services/codeAnalysis.js";
 import { ASTBuilderService } from "../utils/astBuilder.js";
 import { QueryEngine } from "../utils/queryEngine.js";
 import { deduplicateFindings, deduplicateAndSort, severityScore } from "../utils/findingsUtils.js";
+import { scoreFindings, scoreBySource } from "../core/auditScoreEngine.js";
+import { enhanceFindingsWithContext } from "../services/contextAwareFilter.js";
 import { collectFiles } from "../utils/fileUtils.js";
 import { globalCheckpointManager, AuditState, AgentStatus } from "../core/stateManager.js";
 import { generateExploitChainReport } from "../services/exploitChainAnalyzer.js";
@@ -17,7 +19,7 @@ import { ArchitectureAnalyzer } from "../services/architectureAnalyzer.js";
 import { getGlobalIncrementalAnalyzer } from "../services/incrementalAnalyzer.js";
 import { CodeGraph } from "../services/codeGraph.js";
 
-const MAX_PARALLEL_PROJECTS = 4;
+import { getMaxParallelProjects, getCheckpointInterval } from "../config/auditParamsConfig.js";
 
 export class AuditAnalystAgent {
   constructor({ llmReviewer }) {
@@ -26,7 +28,7 @@ export class AuditAnalystAgent {
     this.validationService = new ValidationService();
   }
 
-  async run({ taskId, projects, selectedSkillIds, llmConfig, useReAct = false, reactConfig = {}, enableLlmAudit = true, onProgress, shouldCancel, tasks, onProjectGroupComplete }) {
+  async run({ taskId, projects, selectedSkillIds, llmConfig, useReAct = false, useStreaming = false, reactConfig = {}, enableLlmAudit = true, onProgress, shouldCancel, tasks, onProjectGroupComplete }) {
     const reviewProfile = resolveAuditSkills(selectedSkillIds);
     const results = [];
     const isGbtAudit = reviewProfile.some(skill => skill.id === "gbt-code-audit");
@@ -38,13 +40,13 @@ export class AuditAnalystAgent {
     auditState.taskContext = { taskId, projectCount: projects.length, selectedSkillIds };
     auditState.start();
 
-    const CHECKPOINT_INTERVAL = 3;
+    const checkpointInterval = getCheckpointInterval();
     let checkpointCounter = 0;
 
     async function createCheckpoint(name) {
       try {
         checkpointCounter++;
-        if (checkpointCounter % CHECKPOINT_INTERVAL === 0) {
+        if (checkpointCounter % checkpointInterval === 0) {
           auditState.findings = results.flatMap(r => r.findings || []);
           auditState.status = AgentStatus.RUNNING;
           const filepath = await globalCheckpointManager.createCheckpoint(auditState, name);
@@ -90,7 +92,16 @@ export class AuditAnalystAgent {
         label: `正在分析规则层：${project.name}`
       });
 
-      const heuristicFindings = await buildHeuristicFindings(project, reviewProfile);
+      const rawHeuristicFindings = await buildHeuristicFindings(project, reviewProfile);
+
+      const sourceRoot = path.join(process.cwd(), "workspace", "downloads", project.id);
+      let heuristicFindings = rawHeuristicFindings.length > 0
+        ? await enhanceFindingsWithContext(rawHeuristicFindings, sourceRoot)
+        : rawHeuristicFindings;
+      const suppressionCount = rawHeuristicFindings.length - heuristicFindings.filter(f => (f.confidence || 0) >= 0.3).length;
+      if (suppressionCount > 0) {
+        console.log(`[审计分析] 上下文感知过滤器抑制了 ${suppressionCount} 个低置信度发现`);
+      }
   
       // 快速扫描后检查是否需要暂停
       if (shouldCancel?.()) {
@@ -114,8 +125,6 @@ export class AuditAnalystAgent {
           findings: heuristicFindings
         };
       }
-
-      const sourceRoot = path.join(process.cwd(), "workspace", "downloads", project.id);
 
       const doAstEnhance = heuristicFindings.length > 0;
       const doLlmAudit = !!(this.llmReviewer) && (enableLlmAudit !== false);
@@ -170,8 +179,6 @@ export class AuditAnalystAgent {
       });
 
       if (doLlmAudit) {
-        const sourceRoot = path.join(process.cwd(), "workspace", "downloads", project.id);
-        
         let codeGraphContext = null;
         let codeGraph = null;
         try {
@@ -217,7 +224,7 @@ export class AuditAnalystAgent {
           codeGraphContext = {
             entryPoints: entryPoints.slice(0, 10).map(e => ({ name: e.name, file: e.file })),
             hubNodes: hubNodes.slice(0, 5).map(h => ({ name: h.name, file: h.file, degree: h.degree })),
-            criticalPaths: criticalPaths.slice(0, 3).map(p => p.join(' → ')),
+          criticalPaths: Array.isArray(criticalPaths) ? criticalPaths.slice(0, 3).map(p => typeof p === 'string' ? p : (Array.isArray(p) ? p.join(' → ') : String(p))) : [],
             architectureOverview: {
               totalNodes: architectureOverview.totalNodes,
               totalEdges: architectureOverview.totalEdges,
@@ -253,6 +260,8 @@ export class AuditAnalystAgent {
             selectedSkills: reviewProfile,
             llmConfig,
             codeGraphContext,
+            codeGraph,
+            useStreaming,
             onProgress: (detail) =>
               onProgress?.({
                 stage: "llm-audit",
@@ -328,6 +337,8 @@ export class AuditAnalystAgent {
         ...(Array.isArray(llmAudit.findings) ? llmAudit.findings : [])
       ]);
 
+      const auditScore = scoreFindings(mergedFindings);
+      const sourceScores = scoreBySource(mergedFindings);
       const unresolvedRisks = await this.validationService.checkUnresolvedRisks(mergedFindings);
       const riskPoolReport = this.validationService.generateRiskPoolReport(unresolvedRisks);
       const exploitChainReport = generateExploitChainReport(mergedFindings);
@@ -343,6 +354,8 @@ export class AuditAnalystAgent {
         llmCount: llmAudit?.findings?.length || 0,
         unresolvedRiskCount: unresolvedRisks.length,
         exploitChainCount: exploitChainReport.totalChains,
+        auditScore: auditScore.score,
+        auditGate: auditScore.gate.passed ? 'passed' : 'blocked',
         useReAct,
         label: `已完成：${project.name}`
       });
@@ -356,15 +369,17 @@ export class AuditAnalystAgent {
         heuristicFindings: astEnhancedFindings,
         llmAudit,
         findings: mergedFindings,
+        auditScore,
+        sourceScores,
         riskPool: riskPoolReport,
         exploitChains: exploitChainReport
       };
     }
 
-    for (let i = 0; i < projects.length; i += MAX_PARALLEL_PROJECTS) {
-      const projectGroup = projects.slice(i, i + MAX_PARALLEL_PROJECTS);
-      const currentStep = Math.floor(i / MAX_PARALLEL_PROJECTS) + 1;
-      const totalSteps = Math.ceil(projects.length / MAX_PARALLEL_PROJECTS);
+    for (let i = 0; i < projects.length; i += getMaxParallelProjects()) {
+      const projectGroup = projects.slice(i, i + getMaxParallelProjects());
+      const currentStep = Math.floor(i / getMaxParallelProjects()) + 1;
+      const totalSteps = Math.ceil(projects.length / getMaxParallelProjects());
 
       auditState.updateProgress(currentStep, totalSteps, `处理项目组 ${currentStep}/${totalSteps}`);
       auditState.recordResourceUsage();
@@ -902,25 +917,43 @@ async function detectVulnerabilitiesWithAST(queryEngine, filePath, content, lang
   ];
 
   const lines = content.split('\n');
+  const lineOffsets = [];
+  let pos = 0;
+  while (true) {
+    lineOffsets.push(pos);
+    const next = content.indexOf('\n', pos);
+    if (next === -1) break;
+    pos = next + 1;
+  }
+
+  function getLineNum(idx) {
+    let lo = 0, hi = lineOffsets.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (lineOffsets[mid] <= idx) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo + 1;
+  }
 
   for (const { pattern, type, sink, severity } of dangerousPatterns) {
     let match;
     const regex = new RegExp(pattern.source, pattern.flags);
     while ((match = regex.exec(content)) !== null) {
-      const lineNum = content.substring(0, match.index).split('\n').length;
+      const lineNum = getLineNum(match.index);
       const location = `${relativePath}:${lineNum}`;
       const key = `${location}:${type}`;
 
       if (existingLocations.has(key)) continue;
 
-      const nearbySources = findNearbyTaintSources(content, lineNum);
+      const nearbySources = findNearbyTaintSourcesLines(lines, lineNum);
       if (nearbySources.length === 0) continue;
 
-      const hasSanitizer = checkForSanitizers(content, nearbySources[0].line, lineNum);
+      const hasSanitizer = checkForSanitizersLines(lines, nearbySources[0].line, lineNum);
       if (hasSanitizer) continue;
 
       const methodContext = queryEngine.getMethodsByName(sink);
-      const classContext = extractClassContext(content, lineNum);
+      const classContext = extractClassContextLines(lines, lineNum);
 
       const finding = createFinding({
         source: "taint",
@@ -953,7 +986,7 @@ async function detectVulnerabilitiesWithAST(queryEngine, filePath, content, lang
   return findings;
 }
 
-function findNearbyTaintSources(content, sinkLine) {
+function findNearbyTaintSourcesLines(lines, sinkLine) {
   const sources = [];
   const sourcePatterns = [
     { name: 'GET', pattern: /\$_(GET|POST|REQUEST|COOKIE)\[/ },
@@ -963,7 +996,6 @@ function findNearbyTaintSources(content, sinkLine) {
     { name: 'request', pattern: /req\.(body|params|query)/ }
   ];
 
-  const lines = content.split('\n');
   for (let i = Math.max(0, sinkLine - 30); i < Math.min(lines.length, sinkLine); i++) {
     for (const { name, pattern } of sourcePatterns) {
       if (pattern.test(lines[i])) {
@@ -975,7 +1007,7 @@ function findNearbyTaintSources(content, sinkLine) {
   return sources;
 }
 
-function checkForSanitizers(content, sourceLine, sinkLine) {
+function checkForSanitizersLines(lines, sourceLine, sinkLine) {
   const sanitizerPatterns = [
     /htmlspecialchars\s*\(/,
     /htmlentities\s*\(/,
@@ -990,7 +1022,6 @@ function checkForSanitizers(content, sourceLine, sinkLine) {
     /Number\s*\(/
   ];
 
-  const lines = content.split('\n');
   for (let i = sourceLine; i < sinkLine; i++) {
     for (const pattern of sanitizerPatterns) {
       if (pattern.test(lines[i])) {
@@ -1001,8 +1032,7 @@ function checkForSanitizers(content, sourceLine, sinkLine) {
   return false;
 }
 
-function extractClassContext(content, lineNum) {
-  const lines = content.split('\n');
+function extractClassContextLines(lines, lineNum) {
   const beforeLines = lines.slice(Math.max(0, lineNum - 20), lineNum);
 
   for (let i = beforeLines.length - 1; i >= 0; i--) {

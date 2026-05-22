@@ -71,7 +71,7 @@ function buildHtml({ task, selectedProjects, auditResult, architectureAnalysis }
           </div>
 
           <div class="sub-card">
-            <h4>LLM 复核摘要</h4>
+            <h4>LLM 复核摘要</h4>${renderScoreCard(projectResult.auditScore)}
             <div class="status-row">
               <span class="badge status">${escapeHtml(llmState.statusText)}</span>
               <span class="badge ${escapeHtml(llmState.badgeClass)}">${escapeHtml(llmState.callText)}</span>
@@ -98,6 +98,17 @@ function buildHtml({ task, selectedProjects, auditResult, architectureAnalysis }
     body{font-family:Segoe UI,PingFang SC,sans-serif;margin:0;background:#f0f5ff;color:#1a1a1a}
     main{max-width:1120px;margin:0 auto;padding:32px 20px 64px}
     .card{background:#fff;border:1px solid #dbeafe;border-radius:24px;padding:22px;box-shadow:0 18px 40px rgba(59,130,246,.12);margin-bottom:20px}
+    .score-card{display:flex;align-items:center;gap:20px;margin:12px 0;padding:12px 18px;border-radius:16px;background:#fff;border:1px solid #e0e7ff;flex-wrap:wrap}
+    .score-ring{width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;flex-shrink:0}
+    .score-ring.high{background:#d1fae5;color:#065f46;border:3px solid #6ee7b7}
+    .score-ring.medium{background:#fef3c7;color:#92400e;border:3px solid #fcd34d}
+    .score-ring.low{background:#fecaca;color:#991b1b;border:3px solid #fca5a5}
+    .score-detail{flex:1;min-width:200px}
+    .score-detail .counts{display:flex;gap:14px;flex-wrap:wrap;font-size:13px}
+    .score-detail .counts span{white-space:nowrap}
+    .score-gate{padding:4px 12px;border-radius:999px;font-size:12px;font-weight:600}
+    .score-gate.pass{background:#d1fae5;color:#065f46}
+    .score-gate.block{background:#fecaca;color:#991b1b}
     .hero{background:linear-gradient(135deg,#eff6ff,#dbeafe)}
     .hero h1,.project h3,.finding h4,.sub-card h4{font-family:Georgia,Noto Serif SC,serif}
     .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:18px}
@@ -278,6 +289,28 @@ function getLlmSkipReasonLabel(reason) {
         empty: "本项目的 LLM 复核被跳过。"
       };
   }
+}
+
+function renderScoreCard(auditScore) {
+  if (!auditScore || typeof auditScore.score !== 'number') {
+    return '';
+  }
+  const { score, counts, gate, rating } = auditScore;
+  const ringClass = score >= 85 ? 'high' : score >= 70 ? 'medium' : 'low';
+  return `
+    <div class="score-card">
+      <div class="score-ring ${ringClass}">${score}</div>
+      <div class="score-detail">
+        <strong>审计评分: ${score}/100 (${rating})</strong>
+        <div class="counts">
+          <span>🔴 ${counts.blocker}</span>
+          <span>🟡 ${counts.major}</span>
+          <span>🟢 ${counts.minor}</span>
+          <span>🔵 ${counts.info}</span>
+        </div>
+      </div>
+      <span class="score-gate ${gate.passed ? 'pass' : 'block'}">${gate.passed ? '✅ 通过' : '❌ 阻塞'}${gate.reasons.length ? ': ' + gate.reasons.join(', ') : ''}</span>
+    </div>`;
 }
 
 function buildVerdictMap(validatedFindings) {

@@ -24,11 +24,10 @@ import {
 } from "../config/llmPrompts.js";
 import OWASP_MAPPING from "../config/owaspMapping.js";
 
-const MAX_BATCHES = 16;
-const MAX_FILES_PER_BATCH = 6;
-const MAX_CHARS_PER_BATCH = 35_000;
-const MAX_PARALLEL_REQUESTS = 5;
-const FETCH_TIMEOUT_MS = 150_000;
+import { AuditCandidateFilter } from "./auditCandidateFilter.js";
+import { AuditFailureTracker, TokenPreChecker, AgentOutputValidator, buildDependencyContext, formatDependencyContextText } from "./auditEnhancer.js";
+
+import { loadAuditParams, getMaxBatches, getMaxFilesPerBatch, getMaxCharsPerBatch, getMaxParallelRequests, getFetchTimeoutMs, getCodeIndexMinFiles } from "../config/auditParamsConfig.js";
 
 const llmCircuitBreaker = new CircuitBreaker("llm-service", {
   failureThreshold: 3,
@@ -42,6 +41,11 @@ const promptCompressor = new PromptCompressor();
 const promptCacheManager = new PromptCacheManager();
 const llmOptimizer = new LLMOptimizer();
 llmOptimizer.initialize().catch(err => console.warn('[LLM审计] 优化器初始化失败:', err.message));
+
+const auditCandidateFilter = new AuditCandidateFilter({ candidateScoreThreshold: 12 });
+const auditFailureTracker = new AuditFailureTracker(0.3);
+const tokenPreChecker = new TokenPreChecker({ overheadTokens: 512, safetyMargin: 0.85 });
+const agentOutputValidator = new AgentOutputValidator();
 
 // 初始化 RAG 服务
 async function initializeRAG() {
@@ -59,7 +63,7 @@ async function initializeRAG() {
 initializeRAG();
 
 export class DefensiveLlmReviewer {
-  async reviewProject({ project, selectedSkills, heuristicFindings, llmConfig, onProgress }) {
+  async reviewProject({ project, selectedSkills, heuristicFindings, llmConfig, onProgress, useStreaming = false }) {
     if (!llmConfig?.apiKey) {
       return {
         status: "skipped",
@@ -73,6 +77,7 @@ export class DefensiveLlmReviewer {
 
     const sourceRoot = path.join(process.cwd(), "workspace", "downloads", project.id);
     const files = await collectFilesWithContent(sourceRoot);
+    auditFailureTracker.reset();
     if (!files.length) {
       return {
         status: "skipped",
@@ -130,6 +135,26 @@ export class DefensiveLlmReviewer {
     }
 
     const prioritizedFiles = rankFiles(filesToAudit, heuristicFindings, selectedSkills);
+
+    if (heuristicFindings && heuristicFindings.length > 0) {
+      const filterResult = auditCandidateFilter.filterCandidatesLenient(heuristicFindings);
+      if (filterResult.stats.filtered > 0) {
+        console.log(`[LLM审计] 候选预筛选: ${filterResult.stats.passed}/${filterResult.stats.totalCandidates} 高分候选送入LLM, ${filterResult.stats.filtered} 低风险跳过`);
+        for (const item of filterResult.filtered.slice(0, 3)) {
+          console.log(`[LLM审计]   跳过: ${item.title} (评分: ${item._auditScore}, 优先级: ${item._auditPriority})`);
+        }
+      }
+      for (const item of filterResult.passed) {
+        if (item._auditPriority === "high" || item._auditPriority === "medium") {
+          const idx = prioritizedFiles.findIndex(f => f.relativePath === item.location);
+          if (idx >= 0) {
+            prioritizedFiles[idx].score += item._auditScore * 2;
+          }
+        }
+      }
+      prioritizedFiles.sort((a, b) => (b.score || 0) - (a.score || 0));
+    }
+
     const batches = buildBatches(prioritizedFiles);
     const findings = [];
     const warnings = [];
@@ -154,7 +179,7 @@ export class DefensiveLlmReviewer {
       incrementalPrompt = createIncrementalAuditPrompt(cachedResult.changedFiles);
     }
 
-    const validBatches = batches.slice(0, MAX_BATCHES);
+    const validBatches = batches.slice(0, getMaxBatches());
 
     onProgress?.({
       type: "llm-start",
@@ -165,7 +190,10 @@ export class DefensiveLlmReviewer {
       label: `正在准备 LLM 复核：${project.name}`
     });
 
+    const maxParallel = useStreaming ? 1 : getMaxParallelRequests();
+
     async function processBatch(batch, batchIndex) {
+      const labelPrefix = useStreaming ? '流式' : '并行';
       onProgress?.({
         type: "llm-batch",
         currentBatch: batchIndex + 1,
@@ -174,27 +202,55 @@ export class DefensiveLlmReviewer {
         reviewedFiles,
         reviewedBatches: completedBatches,
         totalFiles: prioritizedFiles.length,
-        label: `正在并行 LLM 复核：第 ${batchIndex + 1} / ${validBatches.length} 批`
+        label: `正在${labelPrefix} LLM 复核：第 ${batchIndex + 1} / ${validBatches.length} 批`
       });
 
       try {
-        const healthScore = llmCircuitBreaker.getHealthScore?.();
-        console.debug(`[LLM审计] 熔断器健康评分: ${healthScore}`);
+        const userPrompt = buildUserPrompt({ project, selectedSkills, heuristicFindings, batch, incrementalPrompt });
+        const tokenCheck = tokenPreChecker.checkPrompts(fullSystemPrompt, userPrompt, llmConfig.model);
+        if (!tokenCheck.ok) {
+          console.warn(`[LLM审计] Token预检失败: ${tokenCheck.error}`);
+          console.log(`[LLM审计] Token详情 - system: ${tokenCheck.systemTokens}, user: ${tokenCheck.userTokens}, 上限: ${tokenCheck.maxTokens}`);
+        } else {
+          console.log(`[LLM审计] Token预检通过 - 总计: ${tokenCheck.currentTokens}, 上限: ${tokenCheck.maxTokens} (${tokenCheck.usagePercent}%)`);
+        }
 
-        const responseText = await withReviewRetry(() => llmCircuitBreaker.callWithFallback(() =>
-          requestStructuredReview({
+        let responseText;
+        if (useStreaming) {
+          streamService.emitLLMStart(llmConfig.model, { batchIndex: batchIndex + 1, totalBatches: validBatches.length });
+          responseText = await requestStructuredReviewStream({
             llmConfig,
             systemPrompt: fullSystemPrompt,
-            userPrompt: buildUserPrompt({ project, selectedSkills, heuristicFindings, batch, incrementalPrompt })
-          }),
-          () => {
-            console.warn('[LLM审计] LLM服务熔断，使用降级方案');
-            return JSON.stringify({ findings: [] });
-          }
-        ));
+            userPrompt,
+            batchIndex: batchIndex + 1,
+            totalBatches: validBatches.length
+          });
+        } else {
+          responseText = await withReviewRetry(() => llmCircuitBreaker.callWithFallback(() =>
+            requestStructuredReview({
+              llmConfig,
+              systemPrompt: fullSystemPrompt,
+              userPrompt
+            }),
+            () => {
+              console.warn('[LLM审计] LLM服务熔断，使用降级方案');
+              return JSON.stringify({ findings: [] });
+            }
+          ));
+        }
 
         const parsed = parseJsonResponse(responseText);
-        const normalized = normalizeFindings(parsed?.findings, selectedSkills);
+        const rawFindings = parsed?.findings || [];
+        const validationResult = agentOutputValidator.validateFindings(rawFindings);
+        if (validationResult.totalInvalid > 0) {
+          console.warn(`[LLM审计] 批次 ${batchIndex + 1} 输出校验: ${validationResult.totalValid}/${validationResult.totalIn} 有效, ${validationResult.totalInvalid} 无效`);
+          for (const inv of validationResult.invalid.slice(0, 3)) {
+            console.warn(`[LLM审计]   无效项: ${inv.issues.join('; ')}`);
+          }
+        }
+
+        const normalized = normalizeFindings(validationResult.valid, selectedSkills);
+        auditFailureTracker.recordSuccess();
 
         onProgress?.({
           type: "llm-batch-complete",
@@ -210,6 +266,8 @@ export class DefensiveLlmReviewer {
         return { success: true, findings: normalized, batchSize: batch.length };
       } catch (error) {
         console.error(`[LLM审计] 批次 ${batchIndex + 1} 出现错误:`, error.message);
+        streamService.emitError(`LLM审计批次${batchIndex + 1}`, error.message);
+        auditFailureTracker.recordFailure(error.message);
 
         onProgress?.({
           type: "llm-batch-error",
@@ -226,8 +284,9 @@ export class DefensiveLlmReviewer {
       }
     }
 
-    for (let i = 0; i < validBatches.length; i += MAX_PARALLEL_REQUESTS) {
-      const batchGroup = validBatches.slice(i, i + MAX_PARALLEL_REQUESTS);
+    const effectiveMaxParallel = useStreaming ? 1 : getMaxParallelRequests();
+    for (let i = 0; i < validBatches.length; i += effectiveMaxParallel) {
+      const batchGroup = validBatches.slice(i, i + effectiveMaxParallel);
       const results = await Promise.all(
         batchGroup.map((batch, idx) => processBatch(batch, i + idx))
       );
@@ -259,7 +318,7 @@ export class DefensiveLlmReviewer {
 
     const confidenceFiltered = llmOptimizer.filterByConfidence(validFindings, 0.5);
     const dedupedFindings = llmOptimizer.deduplicateFindings(confidenceFiltered);
-    const rankedFindings = llmOptimizer.rankFindings(dedupedFindings).slice(0, 12);
+    const rankedFindings = llmOptimizer.rankFindings(dedupedFindings);
     const truncated = prioritizedFiles.length > validBatches.flat().length;
 
     llmOptimizer.cacheResults(projectHash, files, rankedFindings);
@@ -271,6 +330,8 @@ export class DefensiveLlmReviewer {
       findings: rankedFindings
     });
 
+    const incompleteReport = auditFailureTracker.isAboveThreshold() ? auditFailureTracker.buildIncompleteReport() : null;
+
     return {
       status: warnings.length && !reviewedBatches ? "failed" : warnings.length ? "partial" : "completed",
       called: true,
@@ -281,14 +342,18 @@ export class DefensiveLlmReviewer {
       totalCandidateFiles: prioritizedFiles.length,
       reviewedBatches,
       skillsUsed: selectedSkills.map((skill) => skill.id),
-      summary: buildSummary({ reviewedFiles, reviewedBatches, findings: rankedFindings, truncated }),
-      warnings,
+      summary: incompleteReport
+        ? `${buildSummary({ reviewedFiles, reviewedBatches, findings: rankedFindings, truncated })} [警告: ${incompleteReport.message}]`
+        : buildSummary({ reviewedFiles, reviewedBatches, findings: rankedFindings, truncated }),
+      warnings: [...warnings, ...(incompleteReport ? [incompleteReport.message] : [])],
       findings: rankedFindings.map((finding) => ({ ...finding, source: "llm" })),
-      optimizerReport: optimizationReport
+      optimizerReport: optimizationReport,
+      failureTracker: incompleteReport,
+      failureStats: auditFailureTracker.getStats()
     };
   }
 
-  async auditProject({ project, selectedSkills, llmConfig, codeGraphContext, onProgress }) {
+  async auditProject({ project, selectedSkills, llmConfig, codeGraphContext, codeGraph, onProgress, useStreaming = false }) {
     console.log(`[LLM审计] auditProject 开始 - 项目: ${project.name}, 提供商: ${llmConfig.providerId}, 模型: ${llmConfig.model}`);
     console.log(`[LLM审计] 代码知识图谱上下文: ${codeGraphContext ? '已提供' : '未提供'}`);
     if (!llmConfig?.apiKey) {
@@ -304,6 +369,7 @@ export class DefensiveLlmReviewer {
 
     const sourceRoot = path.join(process.cwd(), "workspace", "downloads", project.id);
     const files = await collectFilesWithContent(sourceRoot);
+    auditFailureTracker.reset();
     if (!files.length) {
       return {
         status: "skipped",
@@ -317,17 +383,17 @@ export class DefensiveLlmReviewer {
 
     // 初始化代码检索器，建立项目代码索引
     // 自动判断：小项目（≤50文件）跳过索引，收益小而开销大
-    const EMBEDDING_MAX_CONCURRENCY = 5;
-    const CODE_INDEX_MIN_FILES = 50;
+    const embeddingConcurrency = getMaxParallelRequests();
+    const codeIndexThreshold = getCodeIndexMinFiles();
     let codeRetriever = null;
 
-    if (files.length >= CODE_INDEX_MIN_FILES) {
+    if (files.length >= codeIndexThreshold) {
       try {
         codeRetriever = new CodeRetriever({ maxChunkSize: 800, overlap: 50 });
         await codeRetriever.initialize();
-        console.log(`[LLM审计] 开始并行索引项目代码: ${files.length} 个文件 (并发 ${EMBEDDING_MAX_CONCURRENCY})`);
+        console.log(`[LLM审计] 开始并行索引项目代码: ${files.length} 个文件 (并发 ${embeddingConcurrency})`);
         const filesToIndex = files.slice(0, 100);
-        const indexLimit = pLimit(EMBEDDING_MAX_CONCURRENCY);
+        const indexLimit = pLimit(embeddingConcurrency);
         let indexedCount = 0;
 
         const tasks = filesToIndex.map((file) =>
@@ -355,7 +421,7 @@ export class DefensiveLlmReviewer {
         codeRetriever = null;
       }
     } else {
-      console.log(`[LLM审计] 跳过代码索引：项目文件数 ${files.length} < 阈值 ${CODE_INDEX_MIN_FILES}`);
+      console.log(`[LLM审计] 跳过代码索引：项目文件数 ${files.length} < 阈值 ${codeIndexThreshold}`);
     }
 
     // 对于独立审计，我们处理所有文件，而不仅仅是排名靠前的文件
@@ -369,7 +435,7 @@ export class DefensiveLlmReviewer {
     const languages = [...new Set(batches.flatMap(b => b.map(f => f.language)).filter(Boolean))];
     const auditKnowledge = await loadAuditKnowledge({ languages, vulnerabilityTypes: [] });
     const systemPrompt = await buildSystemPrompt(selectedSkills, auditKnowledge, languages);
-    const validBatches = batches.slice(0, MAX_BATCHES);
+    const validBatches = batches.slice(0, getMaxBatches());
 
     onProgress?.({
       type: "llm-start",
@@ -402,6 +468,7 @@ export class DefensiveLlmReviewer {
     }
 
     async function processAuditBatch(batch, batchIndex) {
+      const labelPrefix = useStreaming ? '流式' : '并行';
       onProgress?.({
         type: "llm-batch",
         currentBatch: batchIndex + 1,
@@ -410,40 +477,80 @@ export class DefensiveLlmReviewer {
         auditedFiles,
         auditedBatches: completedBatches,
         totalFiles: files.length,
-        label: `正在并行 LLM 审计：第 ${batchIndex + 1} / ${validBatches.length} 批`
+        label: `正在${labelPrefix} LLM 审计：第 ${batchIndex + 1} / ${validBatches.length} 批`
       });
 
       const skillContext = selectedSkills.map(s => s.name).join(" ");
-      const codeContext = await getCodeContextForBatch(batch, skillContext);
+      let codeContext = await getCodeContextForBatch(batch, skillContext);
+
+      if (codeGraphContext && codeGraph) {
+        try {
+          const depContext = buildDependencyContext({ qualifiedName: batch[0]?.relativePath }, codeGraph, { maxDepth: 2, maxNodes: 12 });
+          const depContextText = formatDependencyContextText(depContext);
+          if (depContextText) {
+            codeContext = (codeContext ? codeContext + "\n\n" : "") + "【依赖上下文分析】\n" + depContextText;
+            if (depContext.combinedRisk) {
+              console.log(`[LLM审计] 批次 ${batchIndex + 1} 检测到组合风险依赖上下文`);
+            }
+          }
+        } catch (e) {
+        }
+      }
+
+      const userPrompt = buildUserPrompt({ project, selectedSkills, heuristicFindings: [], batch, codeContext, codeGraphContext });
+      const tokenCheck = tokenPreChecker.checkPrompts(systemPrompt, userPrompt, llmConfig.model);
+      if (!tokenCheck.ok) {
+        console.warn(`[LLM审计] Token预检失败: ${tokenCheck.error}`);
+      } else {
+        console.log(`[LLM审计] Token预检通过 - 总计: ${tokenCheck.currentTokens}, 上限: ${tokenCheck.maxTokens} (${tokenCheck.usagePercent}%)`);
+      }
 
       try {
-        const healthScore = llmCircuitBreaker.getHealthScore?.();
-        console.debug(`[LLM审计] 熔断器健康评分: ${healthScore}`);
-
-        const responseText = await withReviewRetry(() => llmCircuitBreaker.callWithFallback(() =>
-          requestStructuredReview({
+        let responseText;
+        if (useStreaming) {
+          streamService.emitLLMStart(llmConfig.model, { batchIndex: batchIndex + 1, totalBatches: validBatches.length });
+          responseText = await requestStructuredReviewStream({
             llmConfig,
             systemPrompt,
-            userPrompt: buildUserPrompt({ project, selectedSkills, heuristicFindings: [], batch, codeContext, codeGraphContext })
-          }),
-          () => {
-            console.warn('[LLM审计] LLM服务熔断，使用降级方案');
-            return JSON.stringify({ findings: [] });
-          }
-        ));
+            userPrompt,
+            batchIndex: batchIndex + 1,
+            totalBatches: validBatches.length
+          });
+        } else {
+          responseText = await withReviewRetry(() => llmCircuitBreaker.callWithFallback(() =>
+            requestStructuredReview({
+              llmConfig,
+              systemPrompt,
+              userPrompt
+            }),
+            () => {
+              console.warn('[LLM审计] LLM服务熔断，使用降级方案');
+              return JSON.stringify({ findings: [] });
+            }
+          ));
+        }
 
         const parsed = parseJsonResponse(responseText);
-        const normalized = normalizeFindings(parsed?.findings, selectedSkills);
+        const rawFindings = parsed?.findings || [];
+        const validationResult = agentOutputValidator.validateFindings(rawFindings);
+        if (validationResult.totalInvalid > 0) {
+          console.warn(`[LLM审计] 批次 ${batchIndex + 1} 输出校验: ${validationResult.totalValid}/${validationResult.totalIn} 有效, ${validationResult.totalInvalid} 无效`);
+        }
+        const normalized = normalizeFindings(validationResult.valid, selectedSkills);
+        auditFailureTracker.recordSuccess();
 
         return { success: true, findings: normalized, batchSize: batch.length };
       } catch (error) {
         console.error(`[LLM审计] 批次 ${batchIndex + 1} 出现错误:`, error.message);
+        streamService.emitError(`LLM审计批次${batchIndex + 1}`, error.message);
+        auditFailureTracker.recordFailure(error.message);
         return { success: false, error: error.message, batchSize: batch.length };
       }
     }
 
-    for (let i = 0; i < validBatches.length; i += MAX_PARALLEL_REQUESTS) {
-      const batchGroup = validBatches.slice(i, i + MAX_PARALLEL_REQUESTS);
+    const effectiveMaxParallel = useStreaming ? 1 : getMaxParallelRequests();
+    for (let i = 0; i < validBatches.length; i += effectiveMaxParallel) {
+      const batchGroup = validBatches.slice(i, i + effectiveMaxParallel);
       const results = await Promise.all(
         batchGroup.map((batch, idx) => processAuditBatch(batch, i + idx))
       );
@@ -469,9 +576,11 @@ export class DefensiveLlmReviewer {
       }
     }
 
-    const dedupedFindings = deduplicateAndSort(findings).slice(0, 12);
+    const dedupedFindings = deduplicateAndSort(findings);
     const truncated = files.length > validBatches.flat().length;
     console.log(`[LLM审计] auditProject 完成 - 审计文件数: ${auditedFiles}, 审计批次: ${auditedBatches}, 发现问题数: ${dedupedFindings.length}, 警告数: ${warnings.length}`);
+
+    const incompleteReport = auditFailureTracker.isAboveThreshold() ? auditFailureTracker.buildIncompleteReport() : null;
 
     return {
       status: warnings.length && !auditedBatches ? "failed" : warnings.length ? "partial" : "completed",
@@ -483,9 +592,13 @@ export class DefensiveLlmReviewer {
       totalFiles: files.length,
       auditedBatches,
       skillsUsed: selectedSkills.map((skill) => skill.id),
-      summary: buildSummary({ reviewedFiles: auditedFiles, reviewedBatches: auditedBatches, findings: dedupedFindings, truncated }),
-      warnings,
-      findings: dedupedFindings.map((finding) => ({ ...finding, source: "llm" }))
+      summary: incompleteReport
+        ? `${buildSummary({ reviewedFiles: auditedFiles, reviewedBatches: auditedBatches, findings: dedupedFindings, truncated })} [警告: ${incompleteReport.message}]`
+        : buildSummary({ reviewedFiles: auditedFiles, reviewedBatches: auditedBatches, findings: dedupedFindings, truncated }),
+      warnings: [...warnings, ...(incompleteReport ? [incompleteReport.message] : [])],
+      findings: dedupedFindings.map((finding) => ({ ...finding, source: "llm" })),
+      failureTracker: incompleteReport,
+      failureStats: auditFailureTracker.getStats()
     };
   }
 
@@ -517,6 +630,7 @@ export class DefensiveLlmReviewer {
     };
 
     const auditor = createReActAuditor(adapter, toolExecutor, auditorConfig);
+    auditFailureTracker.reset();
 
     try {
       const files = await collectFiles(sourceRoot);
@@ -539,6 +653,16 @@ export class DefensiveLlmReviewer {
         language: files[0]?.language || 'unknown'
       };
 
+      const systemPrompt = await buildReActSystemPrompt();
+      const initialPrompt = buildReActInitialPrompt(codeDiff, projectInfo);
+      const tokenCheck = tokenPreChecker.checkPrompts(systemPrompt, initialPrompt, llmConfig.model);
+      if (!tokenCheck.ok) {
+        console.warn(`[ReAct审计] Token预检失败: ${tokenCheck.error}`);
+        console.log(`[ReAct审计] Token详情 - system: ${tokenCheck.systemTokens}, user: ${tokenCheck.userTokens}, 上限: ${tokenCheck.maxTokens}`);
+      } else {
+        console.log(`[ReAct审计] Token预检通过 - 总计: ${tokenCheck.currentTokens}, 上限: ${tokenCheck.maxTokens} (${tokenCheck.usagePercent}%)`);
+      }
+
       onProgress?.({
         type: "react-start",
         projectName: project.name,
@@ -547,12 +671,14 @@ export class DefensiveLlmReviewer {
       });
 
       const reactResult = await auditor.audit({
-        systemPrompt: await buildReActSystemPrompt(),
-        initialPrompt: buildReActInitialPrompt(codeDiff, projectInfo),
+        systemPrompt,
+        initialPrompt,
         projectInfo
       });
 
-      const findings = reactResult.issues.map(issue => ({
+      auditFailureTracker.recordSuccess();
+
+      const rawFindings = reactResult.issues.map(issue => ({
         title: issue.desc || issue.type || 'ReAct 发现',
         severity: issue.level || 'medium',
         confidence: 0.8,
@@ -564,6 +690,12 @@ export class DefensiveLlmReviewer {
         safeValidation: '建议使用工具验证问题代码并确认修复',
         source: 'react'
       }));
+
+      const validationResult = agentOutputValidator.validateFindings(rawFindings);
+      if (validationResult.totalInvalid > 0) {
+        console.warn(`[ReAct审计] 输出校验: ${validationResult.totalValid}/${validationResult.totalIn} 有效, ${validationResult.totalInvalid} 无效`);
+      }
+      const findings = validationResult.valid;
 
       onProgress?.({
         type: "react-complete",
@@ -584,10 +716,12 @@ export class DefensiveLlmReviewer {
         summary: `ReAct 推理审计完成，共 ${reactResult.steps.length} 步推理，发现 ${findings.length} 个安全问题。`,
         warnings: reactResult.error ? [reactResult.error] : [],
         findings,
-        reactResult: reactResult.toJSON()
+        reactResult: reactResult.toJSON(),
+        failureStats: auditFailureTracker.getStats()
       };
     } catch (error) {
       console.error(`[ReAct审计] auditWithReAct 错误:`, error.message);
+      auditFailureTracker.recordFailure(error.message);
       return {
         status: "failed",
         called: false,
@@ -665,7 +799,7 @@ async function requestStructuredReview({ llmConfig, systemPrompt, userPrompt }) 
     } catch (fetchError) {
       if (fetchError.name === 'AbortError') {
         console.error(`[LLM审计] Anthropic API请求超时`);
-        throw new Error(`LLM 复核超时：Anthropic 请求在 ${FETCH_TIMEOUT_MS / 1000} 秒内未返回`);
+        throw new Error(`LLM 复核超时：Anthropic 请求在 ${getFetchTimeoutMs() / 1000} 秒内未返回`);
       }
       console.error(`[LLM审计] Anthropic API请求异常:`, fetchError.message);
       throw fetchError;
@@ -701,7 +835,7 @@ async function requestStructuredReview({ llmConfig, systemPrompt, userPrompt }) 
     } catch (fetchError) {
       if (fetchError.name === 'AbortError') {
         console.error(`[LLM审计] Gemini API请求超时`);
-        throw new Error(`LLM 复核超时：Gemini 请求在 ${FETCH_TIMEOUT_MS / 1000} 秒内未返回`);
+        throw new Error(`LLM 复核超时：Gemini 请求在 ${getFetchTimeoutMs() / 1000} 秒内未返回`);
       }
       console.error(`[LLM审计] Gemini API请求异常:`, fetchError.message);
       throw fetchError;
@@ -737,8 +871,8 @@ async function requestStructuredReview({ llmConfig, systemPrompt, userPrompt }) 
     });
   } catch (fetchError) {
     if (fetchError.name === 'AbortError') {
-      console.error(`[LLM审计] API请求超时 - 超时时间: ${FETCH_TIMEOUT_MS}ms`);
-      throw new Error(`LLM 复核超时：请求在 ${FETCH_TIMEOUT_MS / 1000} 秒内未返回`);
+      console.error(`[LLM审计] API请求超时 - 超时时间: ${getFetchTimeoutMs()}ms`);
+      throw new Error(`LLM 复核超时：请求在 ${getFetchTimeoutMs() / 1000} 秒内未返回`);
     }
     console.error(`[LLM审计] API请求异常:`, fetchError.message);
     throw fetchError;
@@ -792,6 +926,170 @@ async function requestStructuredReview({ llmConfig, systemPrompt, userPrompt }) 
   return content;
 }
 
+async function requestStructuredReviewStream({ llmConfig, systemPrompt, userPrompt, onToken, batchIndex, totalBatches }) {
+  const compatibility = llmConfig.compatibility || llmConfig.defaults?.compatibility || "openai";
+  const model = llmConfig.model || 'gpt-3.5-turbo';
+  const maxTokens = getModelMaxTokens(model);
+
+  let optimizedSystem = systemPrompt;
+  let optimizedUser = userPrompt;
+  const systemTokens = estimateTokens(systemPrompt);
+  const userTokens = estimateTokens(userPrompt);
+  const totalTokens = systemTokens + userTokens;
+
+  if (totalTokens > maxTokens * ContextConfig.SAFETY_MARGIN) {
+    const availableTokens = Math.floor(maxTokens * ContextConfig.SAFETY_MARGIN) - systemTokens - 100;
+    if (availableTokens > 0) {
+      optimizedUser = promptCompressor.truncateToFit(userPrompt, availableTokens);
+    }
+  }
+
+  let fullText = '';
+
+  const emitToken = (token) => {
+    if (token) {
+      fullText += token;
+      streamService.emitLLMStreamToken(token, batchIndex, totalBatches);
+      if (onToken) onToken(token);
+    }
+  };
+
+  if (compatibility === "anthropic") {
+    const response = await fetchWithTimeout(`${stripTrailingSlash(llmConfig.baseUrl)}/v1/messages`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": llmConfig.apiKey,
+        "anthropic-version": "2023-06-01"
+      },
+      body: JSON.stringify({
+        model: llmConfig.model,
+        max_tokens: 4096,
+        temperature: 0.1,
+        stream: true,
+        system: optimizedSystem,
+        messages: [{ role: "user", content: optimizedUser }]
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`LLM 复核失败：Anthropic 返回 ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() || '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data: ')) continue;
+        try {
+          const evt = JSON.parse(trimmed.slice(6));
+          if (evt.type === 'content_block_delta') {
+            emitToken(evt.delta?.text || '');
+          }
+        } catch (e) { /* skip */ }
+      }
+    }
+
+    streamService.emitLLMComplete({ model, provider: llmConfig.providerId });
+    return fullText;
+  }
+
+  if (compatibility === "gemini") {
+    const response = await fetchWithTimeout(
+      `${stripTrailingSlash(llmConfig.baseUrl)}/v1beta/models/${encodeURIComponent(llmConfig.model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(llmConfig.apiKey)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: optimizedSystem }] },
+          contents: [{ role: "user", parts: [{ text: optimizedUser }] }],
+          generationConfig: { temperature: 0.1, maxOutputTokens: 4096 }
+        })
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`LLM 复核失败：Gemini 返回 ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() || '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data: ')) continue;
+        try {
+          const parsed = JSON.parse(trimmed.slice(6));
+          const text = parsed.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
+          if (text) emitToken(text);
+        } catch (e) { /* skip */ }
+      }
+    }
+
+    streamService.emitLLMComplete({ model, provider: llmConfig.providerId });
+    return fullText;
+  }
+
+  const response = await fetchWithTimeout(`${stripTrailingSlash(llmConfig.baseUrl)}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${llmConfig.apiKey}`
+    },
+    body: JSON.stringify({
+      model: llmConfig.model,
+      temperature: 0.1,
+      max_tokens: 4096,
+      stream: true,
+      messages: [
+        { role: "system", content: optimizedSystem },
+        { role: "user", content: optimizedUser }
+      ]
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`LLM 复核失败：模型端点返回 ${response.status}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop() || '';
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const data = line.slice(6);
+        if (data === '[DONE]') continue;
+        try {
+          const parsed = JSON.parse(data);
+          emitToken(parsed.choices?.[0]?.delta?.content || '');
+        } catch (e) { /* skip */ }
+      }
+    }
+  }
+
+  streamService.emitLLMComplete({ model, provider: llmConfig.providerId });
+  return fullText;
+}
+
 async function collectFilesWithContent(root) {
   try {
     const output = [];
@@ -824,13 +1122,32 @@ async function walk(root, currentPath, output) {
   }
 
   const fileReads = pendingFiles.map(async ({ target, language }) => {
-    const content = await fs.readFile(target, "utf8");
-    output.push({
-      fullPath: target,
-      relativePath: path.relative(root, target).replaceAll("\\", "/"),
-      content,
-      language
-    });
+    const rawContent = await fs.readFile(target, "utf8");
+    const relativePath = path.relative(root, target).replaceAll("\\", "/");
+
+    if (rawContent.length > 15000) {
+      try {
+        const { CodeSplitter } = await import("./splitter.js");
+        const splitter = new CodeSplitter({ maxChunkSize: 8000, overlap: 200 });
+        const chunks = splitter.splitFileSemantic(rawContent, relativePath, language, 8000);
+        for (const chunk of chunks) {
+          output.push({
+            fullPath: target,
+            relativePath: relativePath,
+            content: chunk.content,
+            language,
+            lineStart: chunk.lineStart,
+            lineEnd: chunk.lineEnd,
+            chunkLabel: `${relativePath}#L${chunk.lineStart}-L${chunk.lineEnd}`,
+            _semanticChunk: true
+          });
+        }
+      } catch {
+        output.push({ fullPath: target, relativePath, content: rawContent, language });
+      }
+    } else {
+      output.push({ fullPath: target, relativePath, content: rawContent, language });
+    }
   });
 
   await Promise.all(fileReads);
@@ -888,7 +1205,7 @@ function buildBatches(files) {
 
   for (const file of files) {
     const snippetLength = file.content.length + file.relativePath.length;
-    if (currentBatch.length && (currentBatch.length >= MAX_FILES_PER_BATCH || currentChars + snippetLength > MAX_CHARS_PER_BATCH)) {
+    if (currentBatch.length && (currentBatch.length >= getMaxFilesPerBatch() || currentChars + snippetLength > getMaxCharsPerBatch())) {
       batches.push(currentBatch);
       currentBatch = [];
       currentChars = 0;

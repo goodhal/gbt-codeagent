@@ -14,7 +14,10 @@ const MODEL_MAX_TOKENS = {
   'gpt-3.5-turbo': 4096,
   'gpt-3.5-turbo-16k': 16384,
   'qwen': 8192,
-  'deepseek': 4096,
+  'deepseek-chat': 65536,
+  'deepseek-v4': 65536,
+  'deepseek-r1': 65536,
+  'deepseek': 65536,
   'claude': 100000
 };
 

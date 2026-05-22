@@ -82,7 +82,36 @@ export const CORE_SECURITY_PRINCIPLES = `
 4. 质量优先
    - 高置信度发现优于低置信度猜测
    - 提供明确的证据和复现步骤
-   - 给出实际可行的修复建议`;
+   - 给出实际可行的修复建议
+
+5. 自检原则
+   - 每报一个 critical 或 high，先问自己："我能描述这个漏洞会导致的精确用户事故吗？"
+   - 如果答案模糊（"可能导致安全问题"），降级到 medium
+   - 如果答案明确且可复现（"攻击者可通过 /api/user?id=xxx 读取任意用户数据"），保留级别
+   - 如果你自己都不确定能不能被攻击，就不要报为 critical`;
+
+export const RUNTIME_CONTEXT_AWARENESS = `
+【运行时环境感知 - 同问题不同环境不同级别】
+
+同一类问题在不同运行时环境的影响完全不同，必须区分：
+
+服务端（Node.js/Deno/Python/Go/Java）：
+- 未处理异常 → 可能导致进程崩溃 → 🔴 critical
+- 资源泄漏（连接/文件句柄）→ 累积耗尽 → 🔴 critical
+- try-catch 空吞异常 → 静默故障，难以排查 → 🟠 high
+
+浏览器端（React/Vue/Angular）：
+- 未处理异常 → ErrorBoundary/全局 handler 兜底 → 最多 🟡 medium
+- 渲染 undefined → 框架渲染空，不崩溃 → 不算漏洞
+- 事件监听器未移除 → 内存增长 → 🟠 high
+
+后端 API 端点：
+- 缺少认证 → 数据泄露 → 🔴 critical
+- 缺少授权检查 → 越权访问 → 🔴 critical
+
+前端管理页面：
+- 缺少前端路由守卫 → 但后端已有全局拦截 → 最多 🟡 medium
+- loading/error 状态缺失 → 体验问题 → 🟢 low`;
 
 export const SEVERITY_CLASSIFICATION_GUIDE = `
 【严重级别判定标准 - 必须严格区分】
@@ -126,7 +155,26 @@ export const SEVERITY_CLASSIFICATION_GUIDE = `
 - 不确定时应降级而非升级：有疑问时选较低级别
 - 需要认证或特定条件才能利用的，不应评为 critical
 - 仅理论风险无实际攻击路径的，评为 low
-- 如果所有发现都是同一级别，说明判定标准有问题，请重新审视`;
+- 如果所有发现都是同一级别，说明判定标准有问题，请重新审视
+
+## 统计预期（校准用）
+- 一个正常项目的审计结果中，critical 应为 0-2 个，high 应为 0-5 个
+- 如果 critical 超过 5 个或 high 超过 15 个，说明严重度判定过于宽松，请重新审视并降级
+- 如果所有发现都是 medium，说明你可能漏掉了真正的严重问题
+- 如果所有发现都是 low，说明你过度保守，请提高对真实风险的认识
+
+### 🚫 明确不算漏洞的情况（必须遵守）
+
+以下情况绝对不能报为漏洞，即使看起来有问题：
+- JS/TS 渲染中访问可能为 undefined 的属性（框架渲染空值，不会崩溃）
+- "可以加可选链"但当前代码逻辑已经保证安全的场景
+- 纯理论风险，缺少真实输入能触发的路径
+- 仅代码风格 / 命名 / 重复代码问题（这些不是安全漏洞）
+- 测试代码 / 演示代码 / 示例代码 / mock 文件中的"漏洞"
+- 已被框架默认防护的潜在风险（如 Spring Security 已启用的 CSRF、框架自带的 XSS 过滤）
+- CSS 工具类的数值（如 Tailwind text-[11px]、mt-3）、hex 颜色、CSS 单位
+- 仅 import 语句但无实际调用的情况
+- 非安全相关的代码规范建议（如"变量命名不够语义化"）`;
 
 export const FILE_VALIDATION_RULES = `
 【文件路径验证规则 - 防止幻觉】
@@ -270,6 +318,16 @@ export const EVIDENCE_CONTRACT_GUIDE = `
 
 ⚠️ 注意：如果无法提供完整的证据链，必须将漏洞标记为"待验证"，不得直接标记为"已确认可利用"。`;
 
+export const DE_DUPLICATION_RULES = `
+【去重规则 - 必须遵守】
+
+LLM 最常见的问题是同一个模式在多个文件中被重复报告为独立漏洞。以下规则强制避免：
+
+- 同一类问题在多行命中 → 只报一次，在 desc 中列出最多 5 个受影响行号
+- 同一安全模式在全项目中反复出现（如全部 Controller 都缺 CSRF、全部路由都没有权限校验）→ 合并为一条，desc 中列出典型文件
+- 如果某个模式要报 10 个文件以上，说明这是系统性的代码风格、框架约定或项目惯例，不应逐条报告
+- 同一文件中相同类型的问题合并为一条`;
+
 export const LANGUAGE_GBT_MAP = {
   'java': 'GBT_34944-2017.md',
   'python': 'GBT_39412-2020.md',
@@ -294,6 +352,182 @@ export const VULNERABILITY_FILES = {
   'path_traversal': 'path_traversal.md',
   'weak_crypto': 'weak_crypto.md'
 };
+
+/**
+ * 借鉴 AiCodeAudit：语言级安全审计规则
+ * 为每种语言精确定义输入源、危险点、安全信号的识别模式
+ * 使 LLM 审计时能更准确地判定漏洞上下文中是否存在真实风险链路
+ */
+export const LANGUAGE_AUDIT_RULES = {
+  ".py": `
+[Python 审计规则]
+1. 输入源识别：request.args, request.form, request.json, request.values, request.files, input(), sys.argv, os.environ, getenv, 上传文件对象, URL/path 参数
+2. 危险点识别：eval(), exec(), pickle.load/loads, yaml.load (非 safe_load), subprocess.run/Popen/call (shell=True), os.system, SQL 字符串拼接, open/Path.open/read_text/write_text (用户可控路径), 模板直出 (Jinja2 未转义)
+3. 安全信号：yaml.safe_load, html.escape/MarkupSafe.escape, pathlib.Path.resolve(), subprocess 列表参数 (非 shell 模式), 参数化查询 (sqlite3 ?, psycopg2 %s, sqlalchemy bind), pydantic/marshmallow 校验
+4. 判定指引：看到 request 输入进入 SQL/命令/文件/URL/模板 → 优先确认风险；若有 safe_load/参数化/白名单 → 降低级别；仅 import 没有调用 → 不报`,
+
+  ".js": `
+[JavaScript 审计规则]
+1. 输入源识别：req.query, req.body, req.params, req.headers, req.files, process.env, window.location, document.location, 上传文件对象, URL 参数
+2. 危险点识别：child_process.exec/spawn/execSync, eval(), new Function(), vm.runInNewContext, 字符串拼接 SQL (mysql.query/seqlize.query 拼接), fs.readFile/writeFile/createReadStream/createWriteStream (用户可控路径), fetch/axios URL 拼接, dynamic require/import, innerHTML/dangerouslySetInnerHTML/document.write
+3. 安全信号：path.normalize/join/resolve, prepared statement/参数化查询 (mysql2.execute, sequelize bind), DOMPurify, zod/joi/yup/express-validator, helmet
+4. 判定指引：看到 req.query/body/params 进入 SQL/命令/文件/URL → 优先确认风险；若有 path.resolve+约束/参数化/DOMPurify → 降低级别；前端渲染 undefined → 不算漏洞`,
+
+  ".ts": `
+[TypeScript 审计规则]
+1. 输入源识别：req.query, req.body, req.params, req.headers, process.env, 上传文件, URL/path 参数
+2. 危险点识别：child_process.exec/spawn/execSync, eval(), new Function(), SQL 字符串拼接, fs.readFile/writeFile (用户可控), fetch/axios URL 拼接, dynamic import
+3. 安全信号：path.normalize/join/resolve, prepared statement/参数化查询, zod/joi/class-validator/nestjs 校验, helmet, TypeScript 类型约束（不视为安全信号）
+4. 判定指引：TypeScript 类型注解不是安全防护，仍需检查运行时输入；其余同 JS`,
+
+  ".java": `
+[Java 审计规则]
+1. 输入源识别：request.getParameter(), @RequestParam, @PathVariable, @RequestBody, System.getenv, MultipartFile, 上传文件名, URL 参数, Cookie
+2. 危险点识别：Runtime.exec(), ProcessBuilder, JDBC Statement.execute/executeQuery/executeUpdate (字符串拼接), Hibernate HQL 拼接, JdbcTemplate 拼接, FileInputStream/FileOutputStream (用户可控路径), HttpURLConnection/RestTemplate/WebClient URL 拼接, ObjectInputStream (反序列化), XMLDecoder, XStream, ScriptEngine.eval, GroovyShell
+3. 安全信号：PreparedStatement (参数绑定), @PreAuthorize/@RolesAllowed/hasRole, Paths.get/toRealPath/normalize, @Valid + BindingResult, Spring Security 全局配置
+4. 判定指引：看到 request.getParameter/@RequestParam 进入 SQL/命令/文件/URL → 优先确认风险；有 PreparedStatement/参数绑定 → 降低级别；Spring Security 全局 CSRF → 不报 CSRF`,
+
+  ".go": `
+[Go 审计规则]
+1. 输入源识别：r.URL.Query(), r.FormValue(), r.PostFormValue(), c.Param()/c.Query()/c.PostForm() (gin), ShouldBindJSON/BindJSON, os.Getenv, 上传文件, URL/path 参数
+2. 危险点识别：exec.Command (配合 sh -c 或用户可控参数), database/sql db.Query/db.Exec (拼接 SQL), os.Open/os.Create (用户可控路径), http.Get/http.Post (用户可控 URL), template.HTML (text/template 无转义)
+3. 安全信号：html/template (自动转义), Query/Exec 占位符 (?/$1), PreparedStatement, filepath.Clean/Join, validator 绑定, ShouldBind 校验, r.Context()
+4. 判定指引：看到 Query/FormValue/BindJSON 进入 SQL/命令/文件/URL → 优先确认风险；html/template 自动转义, 参数化 → 降低级别`,
+
+  ".php": `
+[PHP 审计规则]
+1. 输入源识别：$_GET, $_POST, $_REQUEST, $_FILES, $_COOKIE, $_SERVER, $_ENV, file_get_contents('php://input'), URL 参数, 路径参数
+2. 危险点识别：system/exec/shell_exec/passthru/proc_open, mysqli_query/mysql_query (拼接 SQL), PDO::query (拼接 SQL), include/require/include_once/require_once (动态路径), file_get_contents/fopen/fwrite (用户可控路径), unserialize, eval, preg_replace /e, create_function
+3. 安全信号：PDO::prepare + bindValue/bindParam, filter_input/filter_var, htmlspecialchars, realpath/basename, password_hash/password_verify, CSRF token 校验
+4. 判定指引：看到 $_GET/$_POST 进入 SQL/include/system/文件 → 优先确认风险；PDO prepare + bind → 降低级别`,
+
+  ".c": `
+[C 审计规则]
+1. 输入源识别：argv, getenv, recv/read/fgets/scanf, socket 输入, 文件名/路径参数
+2. 危险点识别：system/popen/execl/execv, sprintf/strcpy/strcat/gets (无边界), fopen/open (用户可控路径), 动态加载 dlopen, 认证逻辑绕过
+3. 安全信号：snprintf/strncpy (有边界), realpath, strlen/sizeof 结合边界检查, strncmp/memcmp
+4. 判定指引：仅凭 malloc/free/strdup/xstrdup 不报漏洞；需要可控输入+危险操作+缺失边界才报`,
+
+  ".cpp": `
+[C++ 审计规则]
+1. 输入源识别：argv, getenv, recv/read/gets/scanf, std::cin, 文件名/路径参数
+2. 危险点识别：system/popen, sprintf/strcpy/strcat, std::ifstream/ofstream/fstream (用户可控路径), 命令执行, 认证绕过
+3. 安全信号：snprintf, std::filesystem::canonical, std::array, std::regex 校验, std::clamp, size()
+4. 判定指引：仅凭内存分配/释放/字符串复制不报漏洞；需要可控输入+危险操作+缺失防护`,
+
+  ".cs": `
+[C# 审计规则]
+1. 输入源识别：Request.Query, Request.Form, Request.Body, Request.Headers, IFormFile, Environment.GetEnvironmentVariable, URL/path 参数
+2. 危险点识别：Process.Start, SqlCommand.ExecuteReader/ExecuteNonQuery (拼接 SQL), File.ReadAllText/WriteAllText/OpenRead/OpenWrite (用户可控路径), HttpClient.GetAsync/PostAsync (用户可控 URL), BinaryFormatter/SoapFormatter (反序列化), XPathNavigator/XPathExpression
+3. 安全信号：SqlParameter/SqlCommand 参数化, Path.GetFullPath/Path.Combine, [Authorize]/[AllowAnonymous], ModelState.IsValid, DataAnnotations/FluentValidation, AntiForgeryToken (CSRF)
+4. 判定指引：看到 Request 输入进入 SQL/Process/文件/URL → 优先确认风险；参数化查询/SqlParameter → 降低级别；[Authorize] 全局启用 → 不报认证绕过`,
+};
+
+/**
+ * 借鉴 AiCodeAudit：双层判定体系 + 反误报负面示例
+ * 将原本单一的 severity 判定扩展为 "确认风险" / "可疑风险" 双层判定
+ * 使 LLM 能表达不确定性，同时用具体反例抑制常见误报模式
+ */
+export const DUAL_VERDICT_SYSTEM = `
+【漏洞判定双轨体系 - 确认风险 vs 可疑风险】
+
+你必须对每个发现的漏洞使用以下判定体系，而不是仅报告严重度：
+
+🔴 确认风险 — 同时满足以下条件：
+  - 明确看到用户可控输入进入危险操作
+  - 代码中缺少有效的校验/转义/鉴权防护
+  - 能清晰描述完整的攻击链路和后果
+  - 示例：request.args["id"] 直接进入 SQL 拼接且无 PreparedStatement
+
+🟡 可疑风险 — 满足以下情况之一：
+  - 看到明显的输入源和危险点，但缺少完整调用链证据
+  - 看到危险点和明显缺失防护，但输入可控性不确定
+  - 上下文不足以完全闭合利用链，但风险信号很强
+  - 必须在攻击向量中明确写出"当前缺少哪些证据"
+  - 等级上限为中危
+
+⚪ 审计通过 — 以下情况：
+  - 没有输入源 + 危险点的有效组合
+  - 代码本身是安全封装/校验/日志/资源释放逻辑
+  - 已有充分的参数化/白名单/鉴权/转义措施
+
+【具体反误报负面示例 - 以下绝对不能报为漏洞】
+
+错误示例 1：xstrdup(challenge) 可能导致缓冲区溢出
+  → 原因：仅凭字符串复制函数名不能证明溢出
+
+错误示例 2：sshbuf_free(b) 可能导致内存泄露
+  → 原因：释放资源本身不是漏洞证据
+
+错误示例 3：普通 malloc/free 配对
+  → 原因：内存操作不等于漏洞
+
+错误示例 4：仅 import dangerousLibrary 但没有实际调用
+  → 原因：导入语句不构成漏洞
+
+错误示例 5：catch (Exception e) { } 空异常处理"
+  → 原因：不是安全问题，是代码质量问题
+
+错误示例 6：字符串拼接后赋值给变量（未进入危险函数）
+  → 原因：缺少危险 sink
+
+错误示例 7：测试代码/演示代码/demo 目录中的"漏洞"
+  → 原因：非生产代码
+
+【自检要求】
+报告前必须对每个发现自问：
+- 如果有认证要求，攻击者需要什么权限？
+- 如果没有认证要求，这个接口对外暴露了吗？
+- 这个漏洞会导致的最精确用户事故是什么？
+- 如果答案模糊 → 降级或标记为可疑风险
+- 如果答案明确可复现 → 保持确认风险`;
+
+/**
+ * 借鉴 AiCodeAudit：依赖上下文解读规则
+ * 配合 buildDependencyContext 构建的上下游链路使用
+ * 指导 LLM 如何正确解读调用图中的输入→传播→危险路径
+ */
+export const DEPENDENCY_INTERPRETATION_RULES = `
+【依赖上下文分析规则 - 调用图辅助审计】
+
+当审计文件中附带"依赖上下文分析"时，你必须按以下规则解读：
+
+1. 优先关注"上游输入分支"中标记了 [外部输入] 的节点：它们可能是用户数据的入口
+2. 优先关注"下游危险分支"中标记了 [危险操作] 的节点：它们可能是漏洞落地点
+3. 当同时存在 [外部输入] 上游和 [危险操作] 下游时 — 这是最需要重点审查的组合风险路径
+4. 如果提示中出现了"⚠️ 组合风险路径"标识，说明静态分析已发现潜在的完整攻击链路，请优先沿此链路组织分析
+5. 不要仅因为调用链长就判定安全：需逐个节点确认是否存在防护措施
+6. 如果某个中间节点明确实施了校验/鉴权/转义 → 该路径风险降低
+7. 如果上游有输入但下游无危险点，或下游有危险但上游无输入源 → 不构成完整风险
+8. 如果上下文中有校验/鉴权/安全信号，且源码证实这些措施有效 → 标记为审计通过
+9. 不要在依赖上下文中"推测"漏洞：上下文的线索只是提示，真正的判定必须回到源码中寻找证据
+10. 如果依赖上下文显示没有外部输入源也没有危险sink → 正常审计，不要受空上下文影响`;
+
+/**
+ * 借鉴 AiCodeAudit：结构化输出格式增强
+ * 在原有 findings JSON 基础上，增强每个 finding 的攻击向量和潜在影响描述
+ */
+export const AUDIT_OUTPUT_ENHANCEMENT = `
+【审计输出增强要求】
+
+每个漏洞发现必须包含以下字段，不能空泛：
+
+1. attackVector — 攻击向量描述
+   - "确认风险"时必须写出："攻击者通过[输入源]控制[参数]，经[传播路径]，到达[危险点]"
+   - "可疑风险"时必须写出："分析发现[危险点]，但当前上下文缺乏[缺失的证据]"
+   - 禁止使用"可能被攻击""可能导致安全问题"等空泛描述
+
+2. impact — 潜在影响
+   - 必须是用户可感知的精确后果
+   - 正确："攻击者可读取任意用户数据包括密码哈希"
+   - 错误："可能导致数据泄露"
+   - 正确："攻击者可执行任意系统命令，获取服务器控制权"
+   - 错误："可能导致远程代码执行"
+
+3. remediation — 修复建议
+   - 必须给出具体代码级修复方案
+   - 例如："将 db.query(sqlStr) 改为 db.query('SELECT * FROM users WHERE id = ?', [userId])"
+   - 禁止使用"建议安全审查""请检查代码安全性"等空话`;
 
 export const EVIDENCE_REQUIRED_MAP = {
   SQL_INJECTION: ['EVID_SQL_EXEC_POINT', 'EVID_SQL_STRING_CONSTRUCTION', 'EVID_SQL_USER_PARAM_MAPPING'],
@@ -482,8 +716,11 @@ export async function buildSystemPrompt(selectedSkills, auditKnowledge = {}, lan
     DUAL_TRACK_AUDIT,
     "",
     CORE_SECURITY_PRINCIPLES,
+    RUNTIME_CONTEXT_AWARENESS,
+    "",
     SEVERITY_CLASSIFICATION_GUIDE,
-    FILE_VALIDATION_RULES
+    FILE_VALIDATION_RULES,
+    DE_DUPLICATION_RULES
   ];
 
   try {
@@ -507,17 +744,16 @@ export async function buildSystemPrompt(selectedSkills, auditKnowledge = {}, lan
 
   if (isGbtAudit) {
     prompt.push(
-      THREE_LAYER_AUDIT,
-      FALSE_POSITIVE_RULES,
-      LINE_NUMBER_VERIFICATION,
       EVIDENCE_CONTRACT_GUIDE,
+      DUAL_VERDICT_SYSTEM,
+      AUDIT_OUTPUT_ENHANCEMENT,
+      DEPENDENCY_INTERPRETATION_RULES,
       "",
-      "【GB/T 国标代码安全审计 - 核心原则】",
+      "【审计输出要求】",
       "",
-      "🔴 三条核心原则（必须遵守）：",
-      "1. 独立性：LLM 审计必须完全独立，不查看快速扫描结果",
-      "2. 全面性：必须覆盖所有源代码文件，不得遗漏",
-      "3. 准确性：行号必须用代码行号验证，禁止凭记忆填写"
+      "- 必须按证据契约要求为每个发现附带 EVID_* 证据点",
+      "- 必须按双轨判定体系标注每个发现为「确认风险」或「可疑风险」",
+      "- 修复建议必须给出具体代码级方案，禁止使用空话"
     );
 
     if (auditKnowledge.gbtMapping) {
@@ -538,6 +774,35 @@ export async function buildSystemPrompt(selectedSkills, auditKnowledge = {}, lan
         auditKnowledge.languageAudit,
         "---"
       );
+    }
+
+    if (languages && languages.length > 0) {
+      const langToExt = {
+        'python': '.py', 'javascript': '.js', 'js': '.js',
+        'typescript': '.ts', 'ts': '.ts', 'java': '.java',
+        'go': '.go', 'golang': '.go', 'php': '.php',
+        'c': '.c', 'cpp': '.cpp', 'c++': '.cpp',
+        'csharp': '.cs', 'c#': '.cs', 'cs': '.cs',
+        'ruby': '.rb', 'rust': '.rs', 'swift': '.swift',
+        'kotlin': '.kt', 'scala': '.scala',
+      };
+      const langRules = [];
+      for (const lang of languages) {
+        const normalized = lang.toLowerCase();
+        const extKey = langToExt[normalized] || (normalized.startsWith('.') ? normalized : `.${normalized}`);
+        if (LANGUAGE_AUDIT_RULES[extKey] && !langRules.includes(extKey)) {
+          langRules.push(extKey);
+        }
+      }
+      if (langRules.length > 0) {
+        prompt.push(
+          "",
+          "【语言特定输入源/危险点/安全信号识别规则】（必须遵循）：",
+          "---",
+          ...langRules.map(k => LANGUAGE_AUDIT_RULES[k]),
+          "---"
+        );
+      }
     }
 
     if (auditKnowledge.gbtReferences) {
@@ -770,7 +1035,10 @@ export function buildUserPrompt({ project, selectedSkills, heuristicFindings, ba
     ]);
   }
 
-  const snippets = batch.map((file) => `FILE: ${file.relativePath}\n\`\`\`${file.language}\n${file.content}\n\`\`\``).join("\n\n");
+  const snippets = batch.map((file) => {
+    const fileLabel = file.chunkLabel || file.relativePath;
+    return `FILE: ${fileLabel}\n\`\`\`${file.language}\n${file.content}\n\`\`\``;
+  }).join("\n\n");
   prompt.push("");
   prompt.push(snippets);
 

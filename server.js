@@ -20,6 +20,7 @@ import { recordRequest, getPerformanceMetrics, getCache, setCache, withCache, me
 
 import { warmupService } from "./src/services/warmupService.js";
 import { stripTrailingSlash } from "./src/utils/fileUtils.js";
+import { streamService, EventType } from "./src/services/streamService.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const publicDir = path.join(__dirname, "public");
@@ -551,6 +552,55 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    if (req.method === "GET" && url.pathname.startsWith("/api/stream/tasks/")) {
+      const taskId = url.pathname.split("/").pop();
+      if (!taskId) {
+        return sendJson(res, 400, { error: "Task ID is required" });
+      }
+
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no"
+      });
+
+      const heartbeatTimer = setInterval(() => {
+        res.write(`event: heartbeat\ndata: ${JSON.stringify({ timestamp: Date.now() })}\n\n`);
+      }, 15000);
+
+      const listenerRemovers = [];
+
+      const listenAndSSE = (eventType) => {
+        const remover = streamService.addListener(eventType, (event) => {
+          try {
+            const sse = event.toSSE();
+            res.write(sse);
+          } catch (err) { /* client disconnected */ }
+        });
+        listenerRemovers.push(remover);
+      };
+
+      listenAndSSE(EventType.LLM_START);
+      listenAndSSE(EventType.LLM_STREAM_TOKEN);
+      listenAndSSE(EventType.LLM_COMPLETE);
+      listenAndSSE(EventType.LLM_THINKING);
+      listenAndSSE(EventType.LLM_DECISION);
+      listenAndSSE(EventType.FINDING_NEW);
+      listenAndSSE(EventType.FINDING_VERIFIED);
+      listenAndSSE(EventType.PROGRESS);
+      listenAndSSE(EventType.INFO);
+      listenAndSSE(EventType.WARNING);
+      listenAndSSE(EventType.ERROR);
+      listenAndSSE(EventType.HEARTBEAT);
+
+      req.on("close", () => {
+        clearInterval(heartbeatTimer);
+        listenerRemovers.forEach(remove => remove());
+      });
+      return;
+    }
+
     if (req.method === "GET") {
       const target = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
       return serveFile(res, path.join(publicDir, target));
@@ -734,6 +784,7 @@ async function runAudit(taskId, selectedProjectIds) {
         selectedSkillIds: task.selectedSkillIds,
         llmConfig,
         useReAct: task.useReAct || false,
+        useStreaming: true,
         reactConfig: task.reactConfig || {},
         enableLlmAudit: task.enableLlmAudit !== false,
         tasks,

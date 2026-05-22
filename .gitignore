@@ -9,6 +9,11 @@ cache/
 debug*
 test/
 test*.*
+html-ppt/
+.reasonix/
+*.pptx
+*.xmind
+skills/
 *.log
 *.pid
 *.seed

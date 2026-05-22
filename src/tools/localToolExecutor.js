@@ -470,12 +470,30 @@ class LocalToolExecutor {
   _extractFunctionCalls(code, excludeName) {
     const calls = [];
     const callPattern = /(\w+)\s*\(/g;
-    let match;
+    const lineOffsets = [];
+    let pos = 0;
+    while (true) {
+      lineOffsets.push(pos);
+      const next = code.indexOf('\n', pos);
+      if (next === -1) break;
+      pos = next + 1;
+    }
 
+    function getLineNum(idx) {
+      let lo = 0, hi = lineOffsets.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (lineOffsets[mid] <= idx) lo = mid;
+        else hi = mid - 1;
+      }
+      return lo + 1;
+    }
+
+    let match;
     while ((match = callPattern.exec(code)) !== null) {
       const name = match[1];
       if (name !== excludeName && !name.match(/^(?:if|else|while|for|return|throw|new|console)$/)) {
-        const lineNum = code.substring(0, match.index).split('\n').length;
+        const lineNum = getLineNum(match.index);
         calls.push({ name, line: lineNum });
       }
     }

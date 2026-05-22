@@ -1,4 +1,4 @@
-import fs from 'fs';
+import { promises as fs } from 'fs';
 import path from 'path';
 import { UniversalASTNode, ClassRef, FieldInfo, MethodInfo, ASTIndex } from './astCommon.js';
 import { QueryEngine } from './queryEngine.js';
@@ -76,7 +76,7 @@ class ASTBuilderService {
     const extensions = options.extensions || ['.java', '.js', '.ts', '.jsx', '.tsx', '.py'];
     
     const scanDir = async (dir) => {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      const entries = await fs.readdir(dir, { withFileTypes: true });
       
       for (const entry of entries) {
         const fullPath = path.join(dir, entry.name);
@@ -100,7 +100,7 @@ class ASTBuilderService {
 
   async parseFile(filePath) {
     const ext = path.extname(filePath).toLowerCase();
-    const content = fs.readFileSync(filePath, 'utf8');
+    const content = await fs.readFile(filePath, 'utf8');
     
     switch (ext) {
       case '.java':

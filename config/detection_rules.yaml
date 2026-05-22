@@ -2725,3 +2725,21 @@ analysisOptions:
             description: "严格重复检测"
         severity: "CRITICAL"
         remediation: "禁用默认类型，使用安全配置"
+
+
+# ==========================================================
+# 审计引擎参数配置
+# 控制 LLM 审计阶段的批次大小、超时、覆盖率等行为
+# 修改这些值无需改代码，重启服务即可生效
+# ==========================================================
+audit:
+  maxBatches: 16
+  maxFilesPerBatch: 6
+  maxCharsPerBatch: 35000
+  maxParallelRequests: 5
+  maxParallelProjects: 4
+  embeddingMaxConcurrency: 5
+  fetchTimeoutMs: 150000
+  codeIndexMinFiles: 50
+  codeIndexMaxFiles: 100
+  checkpointInterval: 3

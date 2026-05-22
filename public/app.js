@@ -13,6 +13,9 @@ let availableProfiles = [];
 let fingerprintProjects = [];
 let selectedFingerprintProjectId = "";
 let refreshTimer = null;
+let sseSource = null;
+let streamBatches = new Map();
+let activeStreamBatchIndex = -1;
 let currentTaskFilter = "all";
 
 const STATUS_LABELS = { completed: "已完成", failed: "失败", running: "运行中", queued: "排队中", paused: "已暂停", cancelled: "已取消" };
@@ -54,6 +57,7 @@ async function bootstrap() {
 function startAuditPolling() {
   if (refreshTimer) return;
   refreshTimer = setInterval(refreshAuditPage, 5000);
+  connectSSE();
 }
 
 function stopAuditPolling() {
@@ -61,10 +65,85 @@ function stopAuditPolling() {
     clearInterval(refreshTimer);
     refreshTimer = null;
   }
+  disconnectSSE();
+}
+
+function connectSSE() {
+  if (!selectedTaskId) return;
+
+  disconnectSSE();
+
+  streamBatches.clear();
+  activeStreamBatchIndex = -1;
+
+  try {
+    sseSource = new EventSource("/api/stream/tasks/" + selectedTaskId);
+
+    sseSource.addEventListener("llm_start", (e) => {
+      const data = JSON.parse(e.data);
+      const bi = data.batchIndex || 0;
+      const total = data.totalBatches || 0;
+      if (!streamBatches.has(bi)) {
+        streamBatches.set(bi, { text: "", status: "streaming", total });
+      }
+      activeStreamBatchIndex = bi;
+      refreshStreamPanel();
+    });
+
+    sseSource.addEventListener("llm_stream_token", (e) => {
+      const data = JSON.parse(e.data);
+      const bi = data.batchIndex || 0;
+      if (!streamBatches.has(bi)) {
+        streamBatches.set(bi, { text: "", status: "streaming", total: data.totalBatches || 0 });
+      }
+      const batch = streamBatches.get(bi);
+      batch.text += data.token || "";
+      activeStreamBatchIndex = bi;
+      refreshStreamPanel();
+    });
+
+    sseSource.addEventListener("llm_complete", () => {
+      if (activeStreamBatchIndex >= 0) {
+        const batch = streamBatches.get(activeStreamBatchIndex);
+        if (batch) batch.status = "done";
+      }
+      refreshStreamPanel();
+    });
+
+    sseSource.addEventListener("error", () => {
+      disconnectSSE();
+    });
+
+    sseSource.addEventListener("heartbeat", () => {});
+
+    sseSource.onerror = () => {
+      disconnectSSE();
+    };
+  } catch {
+    sseSource = null;
+  }
+}
+
+function disconnectSSE() {
+  if (sseSource) {
+    sseSource.close();
+    sseSource = null;
+  }
+}
+
+function refreshStreamPanel() {
+  const target = document.querySelector("#llm-stream-panel");
+  if (!target) return;
+  target.innerHTML = buildStreamPanelHTML();
+  const scrollTarget = target.querySelector(".stream-content-inner");
+  if (scrollTarget) {
+    scrollTarget.scrollTop = scrollTarget.scrollHeight;
+  }
 }
 
 window.addEventListener("beforeunload", () => {
   stopAuditPolling();
+  disconnectSSE();
 });
 
 function markActiveNav() {
@@ -544,6 +623,12 @@ function renderTaskDetail(task) {
   }
 
   html += buildProgressCard(task.progress);
+
+  if (task.status === "running" || task.status === "queued") {
+    html += '<div id="llm-stream-panel">' + buildStreamPanelHTML() + '</div>';
+  } else if ((task.status === "completed" || task.status === "failed") && streamBatches.size > 0) {
+    html += '<div id="llm-stream-panel">' + buildStreamPanelHTML() + '</div>';
+  }
 
   html += '<div class="detail-block">';
   html += '<h3>任务说明</h3>';
@@ -1135,6 +1220,28 @@ function renderReActSteps(steps) {
       '</div>';
     }).join("") +
   '</div>';
+}
+
+function buildStreamPanelHTML() {
+  if (streamBatches.size === 0) {
+    return '<div class="stream-panel"><div class="stream-panel-header">🔍 LLM 实时输出</div><div class="stream-placeholder">等待 LLM 审计开始...</div></div>';
+  }
+
+  const sortedBatches = [...streamBatches.entries()].sort((a, b) => a[0] - b[0]);
+
+  let html = '<div class="stream-panel"><div class="stream-panel-header">🔍 LLM 实时输出</div><div class="stream-content-outer"><div class="stream-content-inner">';
+
+  for (const [bi, batch] of sortedBatches) {
+    const statusIcon = batch.status === "done" ? "✅" : "⏳";
+    const label = batch.total > 1 ? `批次 ${bi}/${batch.total}` : `批次 ${bi}`;
+    html += '<div class="stream-batch">';
+    html += '<div class="stream-batch-header"><span class="stream-batch-badge ' + (batch.status === "done" ? "done" : "active") + '">' + statusIcon + ' ' + label + '</span></div>';
+    html += '<pre class="stream-batch-content">' + escapeHtml(batch.text || "等待输出...") + '</pre>';
+    html += '</div>';
+  }
+
+  html += '</div></div></div>';
+  return html;
 }
 
 function buildProgressCard(progress) {

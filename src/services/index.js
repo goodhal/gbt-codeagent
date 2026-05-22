@@ -29,6 +29,13 @@ export { Splitter } from './splitter.js';
 export { Sandbox } from './sandbox.js';
 
 /**
+ * AiCodeAudit 增强模块
+ */
+export { getSecurityHintProfile, securityHintScore, securityHintScoreFromCode, LANGUAGE_SECURITY_HINT_PATTERNS } from './securityHintProfile.js';
+export { AuditCandidateFilter, getAuditCandidateFilter, resetAuditCandidateFilter } from './auditCandidateFilter.js';
+export { AuditFailureTracker, TokenPreChecker, AgentOutputValidator, buildDependencyContext, formatDependencyContextText } from './auditEnhancer.js';
+
+/**
  * AST工具模块统一入口
  */
 

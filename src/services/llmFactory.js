@@ -232,6 +232,64 @@ class AnthropicAdapter extends BaseLLMAdapter {
     const data = await response.json();
     return (data.content || []).map(item => item.text || "").join("\n");
   }
+
+  async *streamComplete(messages, options = {}) {
+    const { maxTokens = this.config.maxTokens, temperature = this.config.temperature } = options;
+
+    const systemPrompt = messages.find(m => m.role === "system")?.content || "";
+    const conversationMessages = messages.filter(m => m.role !== "system");
+
+    const response = await fetchWithTimeout(
+      `${this.config.baseUrl}/v1/messages`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": this.config.apiKey,
+          "anthropic-version": "2023-06-01"
+        },
+        body: JSON.stringify({
+          model: this.config.model,
+          max_tokens: maxTokens,
+          temperature,
+          stream: true,
+          system: systemPrompt,
+          messages: conversationMessages.map(m => ({
+            role: m.role,
+            content: typeof m.content === "string" ? m.content : m.content[0]?.text || ""
+          }))
+        })
+      },
+      this.config.timeoutMs
+    );
+
+    if (!response.ok) {
+      throw new Error(`Anthropic API error: ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() || '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data: ')) continue;
+        try {
+          const evt = JSON.parse(trimmed.slice(6));
+          if (evt.type === 'content_block_delta') {
+            const delta = evt.delta?.text || '';
+            if (delta) yield delta;
+          }
+        } catch (e) { /* skip malformed SSE chunk */ }
+      }
+    }
+  }
 }
 
 class GeminiAdapter extends BaseLLMAdapter {
@@ -268,6 +326,55 @@ class GeminiAdapter extends BaseLLMAdapter {
 
     const data = await response.json();
     return data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("\n") || "";
+  }
+
+  async *streamComplete(messages, options = {}) {
+    const { maxTokens = this.config.maxTokens, temperature = this.config.temperature } = options;
+
+    const systemPrompt = messages.find(m => m.role === "system")?.content || "";
+    const conversationMessages = messages.filter(m => m.role !== "system");
+
+    const response = await fetchWithTimeout(
+      `${this.config.baseUrl}/v1beta/models/${this.config.model}:streamGenerateContent?alt=sse&key=${this.config.apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: conversationMessages.map(m => ({
+            role: m.role === "assistant" ? "model" : "user",
+            parts: [{ text: typeof m.content === "string" ? m.content : m.content[0]?.text || "" }]
+          })),
+          generationConfig: { temperature, maxOutputTokens: maxTokens }
+        })
+      },
+      this.config.timeoutMs
+    );
+
+    if (!response.ok) {
+      throw new Error(`Gemini API error: ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() || '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data: ')) continue;
+        try {
+          const parsed = JSON.parse(trimmed.slice(6));
+          const text = parsed.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
+          if (text) yield text;
+        } catch (e) { /* skip malformed SSE chunk */ }
+      }
+    }
   }
 }
 

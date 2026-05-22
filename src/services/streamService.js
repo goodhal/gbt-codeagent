@@ -1,6 +1,7 @@
 const EventType = {
   LLM_START: 'llm_start',
   LLM_THINKING: 'llm_thinking',
+  LLM_STREAM_TOKEN: 'llm_stream_token',
   LLM_DECISION: 'llm_decision',
   LLM_COMPLETE: 'llm_complete',
   TOOL_CALL_START: 'tool_call_start',
@@ -95,6 +96,10 @@ class StreamService {
 
   emitLLMThinking(content) {
     return this.emit(EventType.LLM_THINKING, { content });
+  }
+
+  emitLLMStreamToken(token, batchIndex, totalBatches) {
+    return this.emit(EventType.LLM_STREAM_TOKEN, { token, batchIndex, totalBatches });
   }
 
   emitLLMDecision(decision, reasoning) {

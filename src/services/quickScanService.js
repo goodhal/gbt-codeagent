@@ -864,6 +864,26 @@ export class QuickScanService {
     const patterns = this.patterns[language];
     if (!patterns) return results;
 
+    const lines = content.split('\n');
+    const lineOffsets = [];
+    let pos = 0;
+    while (true) {
+      lineOffsets.push(pos);
+      const next = content.indexOf('\n', pos);
+      if (next === -1) break;
+      pos = next + 1;
+    }
+
+    function getLineNum(idx) {
+      let lo = 0, hi = lineOffsets.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (lineOffsets[mid] <= idx) lo = mid;
+        else hi = mid - 1;
+      }
+      return lo + 1;
+    }
+
     for (const { pattern, vulnType, cwe, severity } of patterns) {
       let match;
       const regex = new RegExp(pattern.source, 'gi');
@@ -872,7 +892,7 @@ export class QuickScanService {
           pattern: pattern.source,
           match: match[0],
           index: match.index,
-          line: content.substring(0, match.index).split('\n').length,
+          line: getLineNum(match.index),
           vulnType,
           cwe,
           severity,

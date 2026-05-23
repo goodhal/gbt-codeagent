@@ -93,6 +93,3 @@ export function getCheckpointInterval() {
   return getAuditParams().checkpointInterval;
 }
 
-export function resetAuditParams() {
-  _auditParams = null;
-}

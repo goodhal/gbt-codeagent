@@ -275,10 +275,3 @@ export function securityHintScore(profile) {
   return score;
 }
 
-export function securityHintScoreFromCode(code, extension) {
-  const profile = getSecurityHintProfile(code, extension);
-  return {
-    score: securityHintScore(profile),
-    profile,
-  };
-}

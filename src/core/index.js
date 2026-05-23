@@ -60,7 +60,6 @@ export {
   DEFAULT_GATE_CONFIG,
   scoreFindings,
   scoreBySource,
-  formatScoreReport,
   mapSeverity,
   calcScore,
   evaluateGate

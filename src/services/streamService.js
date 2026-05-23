@@ -43,6 +43,15 @@ class StreamService {
     this.listeners = new Map();
     this.sequence = 0;
     this.enabled = true;
+    this._taskId = null;
+  }
+
+  setTaskId(taskId) {
+    this._taskId = taskId;
+  }
+
+  clearTaskId() {
+    this._taskId = null;
   }
 
   addListener(eventType, callback) {
@@ -62,7 +71,8 @@ class StreamService {
   emit(eventType, data = {}) {
     if (!this.enabled) return;
 
-    const event = new StreamEvent(eventType, data);
+    const enriched = this._taskId ? { ...data, _taskId: this._taskId } : data;
+    const event = new StreamEvent(eventType, enriched);
     event.sequence = this.sequence++;
 
     const callbacks = this.listeners.get(eventType);

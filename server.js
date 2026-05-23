@@ -574,6 +574,7 @@ const server = http.createServer(async (req, res) => {
       const listenAndSSE = (eventType) => {
         const remover = streamService.addListener(eventType, (event) => {
           try {
+            if (event.data._taskId && event.data._taskId !== taskId) return;
             const sse = event.toSSE();
             res.write(sse);
           } catch (err) { /* client disconnected */ }
@@ -778,6 +779,7 @@ async function runAudit(taskId, selectedProjectIds) {
     let auditResult;
     if (remainingProjects.length > 0) {
       // 只对剩余项目进行审计
+      streamService.setTaskId(taskId);
       const newAuditResult = await auditAgent.run({
         taskId,
         projects: remainingProjects,
@@ -815,7 +817,8 @@ async function runAudit(taskId, selectedProjectIds) {
           return currentTask?.status === 'cancelled' || currentTask?.status === 'paused';
         }
       });
-      
+      streamService.clearTaskId();
+
       // 合并已有结果和新结果
       if (existingAuditResult) {
         auditResult = {

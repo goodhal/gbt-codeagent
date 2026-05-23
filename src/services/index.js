@@ -31,8 +31,8 @@ export { Sandbox } from './sandbox.js';
 /**
  * AiCodeAudit 增强模块
  */
-export { getSecurityHintProfile, securityHintScore, securityHintScoreFromCode, LANGUAGE_SECURITY_HINT_PATTERNS } from './securityHintProfile.js';
-export { AuditCandidateFilter, getAuditCandidateFilter, resetAuditCandidateFilter } from './auditCandidateFilter.js';
+export { getSecurityHintProfile, securityHintScore, LANGUAGE_SECURITY_HINT_PATTERNS } from './securityHintProfile.js';
+export { AuditCandidateFilter } from './auditCandidateFilter.js';
 export { AuditFailureTracker, TokenPreChecker, AgentOutputValidator, buildDependencyContext, formatDependencyContextText } from './auditEnhancer.js';
 
 /**

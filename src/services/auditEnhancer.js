@@ -8,7 +8,7 @@
  */
 
 import { estimateTokens, getModelMaxTokens } from "../utils/contextManager.js";
-import { getSecurityHintProfile, securityHintScore } from "./securityHintProfile.js";
+import { getSecurityHintProfile } from "./securityHintProfile.js";
 
 const DEFAULT_FAILURE_THRESHOLD = 0.3;
 
@@ -129,11 +129,8 @@ export class TokenPreChecker {
   }
 }
 
-export class AgentOutputValidator {
-  constructor() {
-    this._naturalLanguagePattern = /^[\u4e00-\u9fff\w\s，。；：！？""''（）【】《》、]+$/;
-  }
 
+export class AgentOutputValidator {
   /**
    * 验证单个 LLM finding 是否有效
    * 过滤：
@@ -166,7 +163,7 @@ export class AgentOutputValidator {
     }
 
     if (title.length > 200) {
-      issues.push(`title 过长 (${title.length} 字符)`);
+      issues.push("title 过长 (" + title.length + " 字符)");
     }
 
     return { isValid: issues.length === 0, issues };
@@ -190,35 +187,8 @@ export class AgentOutputValidator {
 
     return { valid, invalid, totalIn: findings.length, totalValid: valid.length, totalInvalid: invalid.length };
   }
-
-  /**
-   * 验证 LLM 原始输出是否是有效的 JSON 结构
-   */
-  validateStructuredOutput(parsed) {
-    if (!parsed) return { isValid: false, issues: ["解析结果为 null/undefined"] };
-
-    if (!Array.isArray(parsed.findings)) {
-      return { isValid: false, issues: ["findings 不是数组"] };
-    }
-
-    return this.validateFindings(parsed.findings);
-  }
-
-  _isNaturalLanguageTitle(title) {
-    if (!title || !title.trim()) return true;
-    if (title.length > 120) return true;
-    const chinesePunctuation = title.match(/[，。；：！？""''（）【】《》、]/g);
-    if (chinesePunctuation && chinesePunctuation.length >= 2) return true;
-    const words = title.trim().split(/\s+/);
-    if (words.length >= 12) return true;
-    return false;
-  }
 }
 
-/**
- * 构建统一依赖上下文
- * 从 AiCodeAudit 引入：为 LLM 审计提供上游输入 + 下游危险的完整链路上下文
- */
 export function buildDependencyContext(finding, codeGraph, options = {}) {
   const { maxDepth = 2, maxNodes = 12 } = options;
   const context = {

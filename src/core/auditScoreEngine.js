@@ -85,14 +85,4 @@ export function scoreBySource(findings, gateConfig = {}) {
   };
 }
 
-export function formatScoreReport(scoringResult) {
-  const { score, counts, gate, rating } = scoringResult;
-  const lines = [
-    `Quality Score: ${score}/100 (Rating: ${rating})`,
-    `🔴 Blocker: ${counts.blocker}  🟡 Major: ${counts.major}  🟢 Minor: ${counts.minor}  🔵 Info: ${counts.info}`,
-    `Gate: ${gate.passed ? '✅ PASSED' : '❌ BLOCKED'}${gate.reasons.length ? ` (${gate.reasons.join(', ')})` : ''}`
-  ];
-  return lines.join('\n');
-}
-
 export { SEVERITY_LEVEL, DEFAULT_GATE_CONFIG, mapSeverity, calcScore, evaluateGate };

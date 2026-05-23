@@ -148,7 +148,6 @@ export class AuditCandidateFilter {
       let shouldPass = false;
       if (priority === "high") shouldPass = true;
       else if (priority === "medium" && item.score >= threshold) shouldPass = true;
-      else if (item.score >= this.config.minHighRiskScore) shouldPass = true;
 
       if (shouldPass) {
         passed.push({ ...item.finding, _auditScore: item.score, _auditPriority: priority });
@@ -197,17 +196,4 @@ export class AuditCandidateFilter {
     const score = securityHintScore(profile);
     return { profile, score };
   }
-}
-
-let _globalFilter = null;
-
-export function getAuditCandidateFilter(config) {
-  if (!_globalFilter) {
-    _globalFilter = new AuditCandidateFilter(config);
-  }
-  return _globalFilter;
-}
-
-export function resetAuditCandidateFilter() {
-  _globalFilter = null;
 }

@@ -1,0 +1,382 @@
+# Java 安全控制适配器
+# 定义 Java 生态系统中各安全控制的检测模式
+# 支持: 原生Java, Spring Boot, Spring Security, Shiro, MyBatis, Struts2, Hibernate, JAX-RS
+# 版本: 2.0.0
+# 参考: java-audit-skills (route-mapper, auth-audit, sql-audit)
+
+language: java
+file_extensions:
+  - ".java"
+
+control_patterns:
+  authentication:
+    spring_security:
+      - '@PreAuthorize.*isAuthenticated'
+      - '@Secured'
+      - 'SecurityContextHolder\.getContext\(\)\.getAuthentication\(\)'
+      - 'Principal\s+principal'
+      - '@AuthenticationPrincipal'
+      - 'httpSecurity.*authenticated\(\)'
+      - '\.authenticated\(\)'
+      - 'AuthenticationManager'
+      - 'UserDetailsService'
+      - 'PasswordEncoder'
+    shiro:
+      - 'SecurityUtils\.getSubject\(\)'
+      - 'subject\.isAuthenticated\(\)'
+      - '@RequiresAuthentication'
+      - 'UsernamePasswordToken'
+      - 'AuthenticatingRealm'
+      - 'AuthenticationToken'
+    jwt:
+      - 'JwtAuthenticationFilter'
+      - 'parseToken|validateToken'
+      - 'JwtUtils|JwtProvider'
+      - 'Claims\s+claims'
+      - 'Jwts\.parser'
+      - 'JwtParser'
+    session:
+      - 'session\.getAttribute\("user"\)'
+      - 'session\.getAttribute\("admin"\)'
+      - 'request\.getSession\(\)'
+      - 'SecurityContextHolder'
+
+  authorization:
+    spring_security:
+      - '@PreAuthorize'
+      - '@PostAuthorize'
+      - '@Secured\([''"]]ROLE_'
+      - '@RolesAllowed'
+      - 'hasRole\(|hasAuthority\('
+      - 'hasPermission\('
+      - '@EnableGlobalMethodSecurity'
+      - 'AccessDecisionManager'
+      - 'FilterSecurityInterceptor'
+    shiro:
+      - '@RequiresRoles'
+      - '@RequiresPermissions'
+      - 'subject\.isPermitted\('
+      - 'subject\.hasRole\('
+      - 'AuthorizingRealm'
+    custom:
+      - 'checkPrivilege|hasPrivilege'
+      - 'checkPermission|hasPermission'
+      - 'isAdmin\(|isManager\('
+      - 'checkAuth\(|verifyAuth\('
+      - 'checkAccess\(|validateAccess\('
+
+  ownership_check:
+    patterns:
+      - 'getUserId\(\)\.equals\('
+      - 'getOwnerId\(\)\.equals\('
+      - 'userId\s*==\s*'
+      - '\.getCreatedBy\(\)\.equals\('
+      - 'belongsToUser\(|isOwner\('
+      - 'repository\.findByIdAndUserId\('
+      - 'WHERE.*user_id\s*=\s*:'
+      - '@Query.*WHERE.*userId\s*='
+      - 'findByUsernameAndId|findByUserId'
+
+  csrf_protection:
+    spring:
+      - 'csrf\(\)\.disable\(\)'  # 反向检测
+      - 'CsrfToken'
+      - '_csrf'
+      - 'X-CSRF-TOKEN'
+      - 'CsrfTokenRepository'
+    custom:
+      - 'CsrfFilter'
+      - 'verifyCsrf|validateCsrf'
+      - 'AntiForgeryToken'
+
+  input_validation:
+    java_validation:
+      - '@Valid'
+      - '@Validated'
+      - '@NotNull|@NotEmpty|@NotBlank'
+      - '@Size|@Min|@Max'
+      - '@Pattern'
+      - '@Email'
+      - 'BindingResult'
+      - 'Validator\.validate'
+      - '@Digits|@Range'
+    custom:
+      - 'StringUtils\.isBlank'
+      - 'validate\w*\('
+      - 'sanitize\('
+      - 'Pattern\.matches\('
+      - 'InputValidator|ValidationUtil'
+      - 'whiteList\.contains|allowedList\.contains'
+
+  parameterized_query:
+    patterns:
+      - 'PreparedStatement'
+      - '\?\s*,|:\w+'
+      - '@Param\('
+      - 'createQuery.*setParameter'
+      - 'JdbcTemplate.*\?'
+      - 'NamedParameterJdbcTemplate'
+      - 'CriteriaBuilder'
+      - 'RowMapper'
+      - 'ResultSetExtractor'
+
+  secure_storage:
+    patterns:
+      - 'BCryptPasswordEncoder'
+      - 'PasswordEncoder'
+      - 'Pbkdf2PasswordEncoder'
+      - 'SCryptPasswordEncoder'
+      - 'Cipher\.getInstance'
+      - 'encrypt\(|decrypt\('
+      - 'Argon2PasswordEncoder'
+
+  secure_random:
+    patterns:
+      - 'SecureRandom'
+      - 'new\s+SecureRandom\(\)'
+      - 'SecureRandom\.getInstanceStrong'
+
+  session_management:
+    patterns:
+      - 'sessionManagement\(\)'
+      - 'maximumSessions\('
+      - 'sessionFixation\(\)'
+      - 'invalidateSession'
+      - 'session\.invalidate\(\)'
+      - 'sessionCreationPolicy'
+      - 'request\.changeSessionId'
+      - 'SessionRegistry'
+      - 'ConcurrentSessionControl'
+
+  error_handling:
+    patterns:
+      - '@ExceptionHandler'
+      - '@ControllerAdvice'
+      - 'GlobalExceptionHandler'
+      - 'ResponseEntityExceptionHandler'
+      - '@RestControllerAdvice'
+
+  security_headers:
+    patterns:
+      - 'headers\(\)\.'
+      - 'contentSecurityPolicy\('
+      - 'frameOptions\(\)'
+      - 'xssProtection\(\)'
+      - 'X-Frame-Options'
+      - 'Strict-Transport-Security'
+      - 'X-Content-Type-Options'
+
+  rate_limit:
+    patterns:
+      - 'RateLimiter'
+      - '@RateLimit'
+      - 'Bucket4j|RateLimitJ'
+      - 'RequestLimit'
+
+dangerous_patterns:
+  command_exec:
+    - 'Runtime\.getRuntime\(\)\.exec'
+    - 'ProcessBuilder'
+    - 'ProcessImpl\.start'
+  sql_injection_risk:
+    - 'Statement\.executeQuery'
+    - 'Statement\.executeUpdate'
+    - 'createStatement\(\)'
+    - '\$\{.*\}'  # MyBatis ${} 不安全拼接
+    - '\.getOrderBy\s*\(\)'
+    - '\.getSortField\s*\(\)'
+    - '\.getGroupBy\s*\(\)'
+    - 'sql.*append.*order'
+    - 'sql.*append.*sort'
+    - 'createQuery\s*\(\s*.*\+'
+    - 'createSQLQuery\s*\(\s*.*\+'
+    - 'String\.format.*order'
+    - 'MessageFormat\.format.*sql'
+  deserialization:
+    - 'ObjectInputStream'
+    - 'readObject\(\)'
+    - 'XMLDecoder'
+    - 'XStream\.fromXML'
+    - 'Yaml\.load'
+    - 'ObjectMapper\.enableDefaultTyping'
+    - 'JSON\.parseObject'
+  xxe:
+    - 'DocumentBuilderFactory\.newInstance'
+    - 'SAXParserFactory\.newInstance'
+    - 'XMLInputFactory\.newInstance'
+    - 'SAXBuilder'
+    - 'SAXReader'
+    - 'XMLReaderFactory\.createXMLReader'
+    - 'TransformerFactory\.newInstance'
+    - 'SchemaFactory\.newInstance'
+  ssrf:
+    - 'HttpURLConnection'
+    - 'RestTemplate'
+    - 'WebClient'
+    - 'URLConnection'
+    - 'URL\s+.*=.*new\s+URL'
+    - 'openConnection\s*\('
+  file_operations:
+    - 'FileInputStream'
+    - 'FileOutputStream'
+    - 'Files\.write\('
+    - 'Files\.copy\('
+    - '\.transferTo\('
+    - 'MultipartFile.*getOriginalFilename'
+    - 'ServletFileUpload'
+    - 'BufferedReader.*File'
+    - 'Files\.readAllLines'
+    - 'Files\.readAllBytes'
+    - 'Scanner.*new\s+File'
+  code_exec:
+    - 'ScriptEngine\.eval'
+    - 'GroovyShell'
+    - 'javax\.script'
+    - 'parseExpression'
+    - 'StandardEvaluationContext'
+    - 'shell\.evaluate'
+
+# === URI解析绕过检测模式（来自java-auth-audit）===
+uri_parsing:
+  dangerous_uri_sources:
+    # getRequestURI() 原样返回，不处理分号/编码/路径穿越 → 危险
+    - 'getRequestURI\s*\(\s*\)'
+    - 'getRequestURL\s*\(\s*\)'
+  safe_uri_sources:
+    # getServletPath() 会删除分号后内容、URL解码、路径归一化 → 安全
+    - 'getServletPath\s*\(\s*\)'
+    - 'UrlPathHelper\.getPathWithinApplication'
+    - 'HandlerMapping\.BEST_MATCHING_PATTERN_ATTRIBUTE'
+  bypass_indicators:
+    # 分号后缀白名单绕过 /admin;.js
+    - 'endsWith.*\.(js|css|png|jpg|html|ico)'
+    # 路径穿越绕过 public/../admin
+    - 'startsWith.*/public|startsWith.*/static'
+    # contains路径包含绕过
+    - 'contains.*/api/|contains.*/admin/'
+    # 缺少分号/路径归一化
+    - '!(replaceAll.*;|normalize|URLDecoder)'
+
+# === 鉴权绕过技术栈检测模式 ===
+auth_bypass_tech_detection:
+  shiro_cve:
+    # Shiro已知CVE版本检测
+    - 'shiro.*(1\.[0-4]\.|1\.5\.[0-2]|1\.6\.0|1\.7\.0|1\.8\.0|1\.9\.0|1\.10\.0)'
+    - 'CVE-2020-1957|CVE-2020-11989|CVE-2020-13933'
+    - 'CVE-2020-17523|CVE-2021-41303|CVE-2022-32532'
+  spring_security_misconfig:
+    # antMatchers尾部斜杠不匹配 → /admin/ 可绕过
+    - 'antMatchers\s*\(\s*"'
+    # 正则绕过
+    - 'regexMatchers\s*\(.*\*'
+    # CSRF禁用
+    - 'csrf\(\s*\)\.disable\(\s*\)'
+    # Spring Security版本CVE
+    - 'CVE-2022-22978|CVE-2022-31692'
+  spring_mvc_suffix:
+    # 后缀匹配（Spring < 5.3）
+    - 'setUseSuffixPatternMatch\s*\(\s*true'
+    - '\.json|\.xml.*Controller|RequestMapping'
+  path_matching_issues:
+    # 大小写不敏感路由
+    - '(startsWith|equals|contains).*\b(toLowerCase\b)'
+    # 双斜杠未归一化
+    - '!(replaceAll.*/\+|normalize)'
+    # 空字节未处理
+    - '!(replaceAll.*%00|indexOf.*\\0)'
+
+# === 绕过Payload模式（参考BYPASS_PATTERNS.md）===
+bypass_payloads:
+  semicolon:
+    - ';.js'
+    - ';.css'
+    - ';.png'
+    - ';jsessionid='
+  path_traversal:
+    - '/../'
+    - '/./'
+    - '%2e%2e/'
+    - '%252e%252e/'
+  double_slash:
+    - '//admin'
+    - '//api'
+  encoding:
+    - '%61'  # a
+    - '%2f'  # /
+    - '%2561'  # 双重编码 a
+    - '%00'   # 空字节
+
+# === Java Web框架路由注解 ===
+route_annotations:
+  spring_mvc:
+    - '@Controller'
+    - '@RestController'
+    - '@RequestMapping'
+    - '@GetMapping'
+    - '@PostMapping'
+    - '@PutMapping'
+    - '@DeleteMapping'
+    - '@PatchMapping'
+    - '@PathVariable'
+    - '@RequestParam'
+    - '@RequestBody'
+    - '@RequestHeader'
+    - '@CookieValue'
+  jax_rs:
+    - '@Path'
+    - '@GET'
+    - '@POST'
+    - '@PUT'
+    - '@DELETE'
+    - '@PathParam'
+    - '@QueryParam'
+    - '@HeaderParam'
+    - '@FormParam'
+  servlet:
+    - '@WebServlet'
+    - 'HttpServlet'
+    - 'doGet'
+    - 'doPost'
+  struts2:
+    - 'ActionSupport'
+    - 'struts.xml'
+    - '@Action'
+    - '@Result'
+  webservice:
+    - '@WebService'
+    - '@WebMethod'
+    - '@SOAPBinding'
+    - 'jaxws:endpoint'
+
+framework_configs:
+  spring_boot:
+    config_files:
+      - 'application.yml'
+      - 'application.properties'
+      - 'SecurityConfig.java'
+    security_location: '**/security/**'
+    controller_location: '**/controller/**'
+  spring_security:
+    config_class_pattern: '@EnableWebSecurity|WebSecurityConfigurerAdapter|SecurityFilterChain'
+  shiro:
+    config_files:
+      - 'shiro.ini'
+      - 'ShiroConfig.java'
+      - 'shiro-spring.xml'
+  struts2:
+    config_files:
+      - 'struts.xml'
+      - 'struts-*.xml'
+      - 'struts.properties'
+    action_location: '**/action/**'
+  mybatis:
+    config_files:
+      - 'mybatis-config.xml'
+      - '*Mapper.xml'
+      - 'mybatis.xml'
+    mapper_location: '**/mapper/**'
+  hibernate:
+    config_files:
+      - 'hibernate.cfg.xml'
+      - 'persistence.xml'
+    entity_location: '**/entity/**'

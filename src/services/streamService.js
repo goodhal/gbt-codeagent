@@ -71,8 +71,7 @@ class StreamService {
   emit(eventType, data = {}) {
     if (!this.enabled) return;
 
-    const enriched = this._taskId ? { ...data, _taskId: this._taskId } : data;
-    const event = new StreamEvent(eventType, enriched);
+    const event = new StreamEvent(eventType, data);
     event.sequence = this.sequence++;
 
     const callbacks = this.listeners.get(eventType);
@@ -100,24 +99,24 @@ class StreamService {
     return event;
   }
 
-  emitLLMStart(model, task) {
-    return this.emit(EventType.LLM_START, { model, task });
+  emitLLMStart(model, task, taskId) {
+    return this.emit(EventType.LLM_START, { model, task, _taskId: taskId || this._taskId });
   }
 
-  emitLLMThinking(content) {
-    return this.emit(EventType.LLM_THINKING, { content });
+  emitLLMThinking(content, taskId) {
+    return this.emit(EventType.LLM_THINKING, { content, _taskId: taskId || this._taskId });
   }
 
-  emitLLMStreamToken(token, batchIndex, totalBatches) {
-    return this.emit(EventType.LLM_STREAM_TOKEN, { token, batchIndex, totalBatches });
+  emitLLMStreamToken(token, batchIndex, totalBatches, taskId) {
+    return this.emit(EventType.LLM_STREAM_TOKEN, { token, batchIndex, totalBatches, _taskId: taskId || this._taskId });
   }
 
-  emitLLMDecision(decision, reasoning) {
-    return this.emit(EventType.LLM_DECISION, { decision, reasoning });
+  emitLLMDecision(decision, reasoning, taskId) {
+    return this.emit(EventType.LLM_DECISION, { decision, reasoning, _taskId: taskId || this._taskId });
   }
 
-  emitLLMComplete(usage) {
-    return this.emit(EventType.LLM_COMPLETE, { usage });
+  emitLLMComplete(usage, taskId) {
+    return this.emit(EventType.LLM_COMPLETE, { usage, _taskId: taskId || this._taskId });
   }
 
   emitToolCallStart(toolName, params) {
@@ -144,16 +143,16 @@ class StreamService {
     return this.emit(EventType.PROGRESS, { current, total, label });
   }
 
-  emitInfo(message) {
-    return this.emit(EventType.INFO, { message });
+  emitInfo(message, taskId) {
+    return this.emit(EventType.INFO, { message, _taskId: taskId || this._taskId });
   }
 
-  emitWarning(message) {
-    return this.emit(EventType.WARNING, { message });
+  emitWarning(message, taskId) {
+    return this.emit(EventType.WARNING, { message, _taskId: taskId || this._taskId });
   }
 
-  emitError(message, error) {
-    return this.emit(EventType.ERROR, { message, error });
+  emitError(message, error, taskId) {
+    return this.emit(EventType.ERROR, { message, error, _taskId: taskId || this._taskId });
   }
 
   emitHeartbeat() {

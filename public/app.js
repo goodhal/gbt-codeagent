@@ -1125,12 +1125,41 @@ function renderFindingList(findings, emptyMessage) {
 
   const renderDetailSection = (finding) => {
     const details = [];
+    // 证据标签 (CONFIRMED/HIGH_CONFIDENCE/SUSPECTED/INFO)
+    if (finding.evidenceLabel) {
+      const elLabels = { CONFIRMED: '✓ 确认', HIGH_CONFIDENCE: '高置信', SUSPECTED: '可疑', INFO: '参考' };
+      const elClasses = { CONFIRMED: 'verdict-confirmed', HIGH_CONFIDENCE: 'verdict-reviewed', SUSPECTED: 'verdict-suspected', INFO: '' };
+      details.push(`<span class="evidence-label ${elClasses[finding.evidenceLabel] || ''}">${elLabels[finding.evidenceLabel] || finding.evidenceLabel}</span>`);
+    }
+    // 攻击路径优先级
+    if (finding.attackPathPriority) {
+      const pp = finding.attackPathPriority;
+      details.push(`<p class="finding-priority"><strong>攻击路径:</strong> <span class="priority-${(pp || '').toLowerCase()}">${escapeHtml(pp)}</span> (${escapeHtml(finding.attackPathScore || '')})</p>`);
+    }
+    if (finding.attackVector) {
+      details.push(`<p class="finding-attack-vector"><strong>攻击向量:</strong> ${escapeHtml(finding.attackVector.substring(0, 200))}</p>`);
+    }
+    if (finding.exploitPrerequisites) {
+      details.push(`<p class="finding-prerequisites"><strong>利用前提:</strong> ${escapeHtml(finding.exploitPrerequisites)}</p>`);
+    }
+    if (finding.impact) {
+      details.push(`<p class="finding-impact"><strong>影响:</strong> ${escapeHtml(finding.impact.substring(0, 200))}</p>`);
+    }
     if (finding.description) {
       const desc = finding.description.length > 150 ? finding.description.substring(0, 150) + '...' : finding.description;
       details.push(`<p class="finding-description">${escapeHtml(desc)}</p>`);
     }
+    if (finding.killSwitchInfo) {
+      details.push(`<p class="finding-killswitch"><strong>🛡️ Kill Switch:</strong> ${escapeHtml(finding.killSwitchInfo)}</p>`);
+    }
     if (finding.remediation) {
-      details.push(`<p class="finding-remediation"><strong>修复建议:</strong> ${escapeHtml(finding.remediation.substring(0, 100) + '...')}</p>`);
+      details.push(`<p class="finding-remediation"><strong>修复建议:</strong> ${escapeHtml(finding.remediation.substring(0, 150) + '...')}</p>`);
+    }
+    if (finding.retestChecklist) {
+      const checklist = Array.isArray(finding.retestChecklist)
+        ? finding.retestChecklist.map(s => '• ' + escapeHtml(s)).join('<br>')
+        : escapeHtml(finding.retestChecklist);
+      details.push(`<p class="finding-retest"><strong>复测清单:</strong><br>${checklist}</p>`);
     }
     return details.join('');
   };
@@ -1168,6 +1197,8 @@ function renderFindingList(findings, emptyMessage) {
         '</div>' +
         (f.verificationReason ? '<p class="note">验证说明：' + escapeHtml(f.verificationReason) + '</p>' : '') +
         '<span class="finding-location">📍 ' + escapeHtml(f.location || "n/a") + '</span>' +
+        (f.callChain ? '<p class="finding-callchain">🔗 调用链: ' + escapeHtml(f.callChain) + '</p>' : '') +
+        (f.routePath ? '<p class="finding-callchain">🌐 路由: ' + escapeHtml(f.httpMethod || f.routeMethod || 'ANY') + ' ' + escapeHtml(f.routePath) + '</p>' : '') +
         '<div class="confidence-bar">' +
           '<div class="confidence-info">' +
             '<span class="confidence-label">置信度</span>' +

@@ -27,6 +27,8 @@ const publicDir = path.join(__dirname, "public");
 const downloadsDir = path.join(__dirname, "workspace", "downloads");
 const reportsDir = path.join(__dirname, "workspace", "reports");
 const memoryFile = path.join(__dirname, "workspace", "memory", "project-memory.json");
+const MAX_SSE_CONNECTIONS = 10;
+let sseConnectionCount = 0;
 const settingsFile = path.join(__dirname, "workspace", "settings", "app-settings.json");
 
 const settingsStore = createSettingsStore({ filePath: settingsFile });
@@ -558,12 +560,18 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 400, { error: "Task ID is required" });
       }
 
+      if (sseConnectionCount >= MAX_SSE_CONNECTIONS) {
+        return sendJson(res, 503, { error: "SSE 连接数已满，请稍后重试" });
+      }
+
       res.writeHead(200, {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
         "Connection": "keep-alive",
         "X-Accel-Buffering": "no"
       });
+
+      sseConnectionCount++;
 
       const heartbeatTimer = setInterval(() => {
         res.write(`event: heartbeat\ndata: ${JSON.stringify({ timestamp: Date.now() })}\n\n`);
@@ -596,6 +604,7 @@ const server = http.createServer(async (req, res) => {
       listenAndSSE(EventType.HEARTBEAT);
 
       req.on("close", () => {
+        sseConnectionCount = Math.max(0, sseConnectionCount - 1);
         clearInterval(heartbeatTimer);
         listenerRemovers.forEach(remove => remove());
       });
@@ -779,7 +788,6 @@ async function runAudit(taskId, selectedProjectIds) {
     let auditResult;
     if (remainingProjects.length > 0) {
       // 只对剩余项目进行审计
-      streamService.setTaskId(taskId);
       const newAuditResult = await auditAgent.run({
         taskId,
         projects: remainingProjects,
@@ -817,7 +825,6 @@ async function runAudit(taskId, selectedProjectIds) {
           return currentTask?.status === 'cancelled' || currentTask?.status === 'paused';
         }
       });
-      streamService.clearTaskId();
 
       // 合并已有结果和新结果
       if (existingAuditResult) {

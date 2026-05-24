@@ -132,19 +132,35 @@ export function evaluateGuardContext(lines, lineIndex, vulnType) {
 export async function enhanceFindingsWithContext(findings, sourceRoot) {
   const fileCache = new Map();
 
-  async function getFileLines(filePath) {
-    if (fileCache.has(filePath)) return fileCache.get(filePath);
+  async function readFileLines(filePath) {
     try {
       const fullPath = path.resolve(sourceRoot, filePath);
       const content = await fs.readFile(fullPath, 'utf8');
-      const lines = content.split('\n');
-      fileCache.set(filePath, lines);
-      return lines;
+      return content.split('\n');
     } catch {
-      fileCache.set(filePath, []);
       return [];
     }
   }
+
+  // 收集唯一文件路径，并发批量读取
+  const uniquePaths = [...new Set(
+    findings
+      .map(f => f.location || f.file || '')
+      .filter(p => p && !isTestOrMockFile(p))
+  )];
+
+  const readResults = await Promise.all(
+    uniquePaths.map(async (filePath) => {
+      const lines = await readFileLines(filePath);
+      return { filePath, lines };
+    })
+  );
+
+  for (const { filePath, lines } of readResults) {
+    fileCache.set(filePath, lines);
+  }
+
+  const getFileLines = (filePath) => fileCache.get(filePath) || [];
 
   const enhanced = [];
   for (const finding of findings) {

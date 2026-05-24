@@ -2726,6 +2726,419 @@ analysisOptions:
         severity: "CRITICAL"
         remediation: "禁用默认类型，使用安全配置"
 
+# ==========================================================
+# 业务逻辑漏洞检测规则
+# 参考: code-security-audit 系统化反思
+# ==========================================================
+
+  business_logic:
+    description: "业务逻辑漏洞"
+    cwe: "CWE-840"
+    languages:
+      python:
+        riskPatterns:
+          - pattern: "price|amount|total|balance.*=.*request\\."
+            description: "金额/价格由客户端输入控制"
+          - pattern: "status\\s*=\\s*request\\."
+            description: "状态由客户端输入直接控制"
+          - pattern: "def\\s+(cancel|refund|approve|reject).*\\(.*request"
+            description: "敏感操作无状态校验"
+        safePatterns:
+          - pattern: "server.*price|recalculate|verify_amount"
+            description: "服务端重新计算价格"
+          - pattern: "transition.*status|can_transition|valid_status"
+            description: "状态机转换验证"
+        severity: "HIGH"
+        remediation: "价格/金额必须在服务端验证，状态转换使用状态机"
+
+      javascript:
+        riskPatterns:
+          - pattern: "price\\s*[:=].*req\\.(body|query)"
+            description: "价格由客户端请求直接决定"
+          - pattern: "status\\s*[:=].*req\\.(body|query)"
+            description: "状态由客户端输入控制"
+          - pattern: "quantity\\s*[:=].*req\\.(body|query)"
+            description: "数量由客户端输入控制"
+        safePatterns:
+          - pattern: "product\\.price|serverPrice|dbPrice"
+            description: "从数据库取价格"
+          - pattern: "statusMachine|validTransitions"
+            description: "状态机验证"
+        severity: "HIGH"
+        remediation: "价格从数据库获取，状态转换在服务端验证"
+
+      java:
+        riskPatterns:
+          - pattern: "price\\.set|setPrice\\(.*request"
+            description: "价格由客户端控制"
+          - pattern: "order\\.setStatus\\(.*request"
+            description: "订单状态由客户端控制"
+          - pattern: "amount\\.set|setAmount\\(.*request"
+            description: "金额由客户端控制"
+        safePatterns:
+          - pattern: "@Transactional.*verify|checkBalance|validateOrder"
+            description: "事务中验证"
+          - pattern: "StateMachine|OrderStatus.*transition"
+            description: "状态机转换"
+        severity: "HIGH"
+        remediation: "金额和状态必须在服务端验证，使用状态机"
+
+  race_condition:
+    description: "竞态条件"
+    cwe: "CWE-362"
+    gbt: "GB/T34944-6.2.5.1"
+    languages:
+      python:
+        riskPatterns:
+          - pattern: "if\\s+.*balance|if\\s+.*stock|if\\s+.*count"
+            description: "检查-然后-操作模式"
+          - pattern: "[.]save\\(.*\\).*balance|update.*balance.*where"
+            description: "余额更新可能竞态"
+        safePatterns:
+          - pattern: "select_for_update|with_for_update"
+            description: "悲观锁"
+          - pattern: "version|revision|update.*where.*version"
+            description: "乐观锁"
+        severity: "HIGH"
+        remediation: "使用乐观锁(version字段)或悲观锁(SELECT FOR UPDATE)"
+
+      java:
+        riskPatterns:
+          - pattern: "@Transactional.*findById.*save"
+            description: "事务中查-改-存模式"
+          - pattern: "if.*balance.*compareTo.*>=.*subtract"
+            description: "余额检查后扣减"
+        safePatterns:
+          - pattern: "@Version|@Lock.*PESSIMISTIC"
+            description: "乐观锁或悲观锁"
+          - pattern: "UPDATE.*WHERE.*version"
+            description: "版本号更新"
+        severity: "HIGH"
+        remediation: "使用 @Version 乐观锁或悲观写锁"
+
+      go:
+        riskPatterns:
+          - pattern: "if.*balance|if.*stock.*>"
+            description: "检查-然后-操作模式"
+        safePatterns:
+          - pattern: "sync\\.Mutex|sync\\.RWMutex"
+            description: "互斥锁"
+          - pattern: "UPDATE.*WHERE.*version"
+            description: "乐观锁"
+        severity: "HIGH"
+        remediation: "使用互斥锁或乐观锁"
+
+  rate_limiting:
+    description: "缺少速率限制"
+    cwe: "CWE-770"
+    languages:
+      python:
+        riskPatterns:
+          - pattern: "@app\\.route.*POST|@router\\.post"
+            description: "写操作可能无限调用"
+          - pattern: "send_sms|send_email|send_verify"
+            description: "短信/邮件可能被刷"
+        safePatterns:
+          - pattern: "rate_limit|throttle|limiter"
+            description: "速率限制"
+          - pattern: "redis.*incr.*expire"
+            description: "计数器限流"
+        severity: "MEDIUM"
+        remediation: "为敏感操作添加速率限制"
+
+      javascript:
+        riskPatterns:
+          - pattern: "app\\.post|router\\.post"
+            description: "POST路由无速率限制"
+          - pattern: "sendVerification|sendOTP|sendSms"
+            description: "验证码接口无限制"
+        safePatterns:
+          - pattern: "rateLimit|express-rate-limit"
+            description: "速率限制中间件"
+          - pattern: "throttle|limiter"
+            description: "限流器"
+        severity: "MEDIUM"
+        remediation: "添加 express-rate-limit 等限流中间件"
+
+      java:
+        riskPatterns:
+          - pattern: "@PostMapping.*login|@PostMapping.*sms|@PostMapping.*verify"
+            description: "登录/验证接口无限制"
+        safePatterns:
+          - pattern: "@RateLimit|Bucket4j"
+            description: "速率限制注解"
+          - pattern: "RateLimiter"
+            description: "Guava限流器"
+        severity: "MEDIUM"
+        remediation: "使用 Bucket4j 或 Guava RateLimiter"
+
+  mass_assignment:
+    description: "批量赋值漏洞"
+    cwe: "CWE-915"
+    languages:
+      python:
+        riskPatterns:
+          - pattern: "\\*\\*request\\.(form|json|data)"
+            description: "解包请求数据"
+          - pattern: "\\.update\\(request\\.(form|json)\\)"
+            description: "批量更新对象"
+          - pattern: "Model\\(\\*\\*request\\.data\\)"
+            description: "解包创建模型"
+        safePatterns:
+          - pattern: "only\\(|exclude\\(|whitelist|allowed_fields"
+            description: "字段白名单"
+          - pattern: "serializer\\.fields|fields\\s*="
+            description: "序列化器字段限制"
+        severity: "HIGH"
+        remediation: "使用白名单限制可修改字段"
+
+      java:
+        riskPatterns:
+          - pattern: "@RequestBody.*DTO|@RequestBody.*Entity"
+            description: "DTO可能继承Entity"
+          - pattern: "BeanUtils\\.copyProperties"
+            description: "属性拷贝可能越权"
+        safePatterns:
+          - pattern: "@JsonProperty.*access.*READ_ONLY"
+            description: "只读字段"
+          - pattern: "@JsonIgnore"
+            description: "忽略字段"
+        severity: "HIGH"
+        remediation: "使用独立DTO，限制可修改字段"
+
+      javascript:
+        riskPatterns:
+          - pattern: "\\.\\.\\.req\\.body|Object\\.assign.*req\\.body"
+            description: "展开请求体"
+          - pattern: "model\\.set\\(req\\.body\\)|model\\.update\\(req\\.body\\)"
+            description: "批量赋值"
+        safePatterns:
+          - pattern: "pick\\(|omit\\(|allowedFields|whitelist"
+            description: "字段过滤"
+          - pattern: "zod|joi|yup.*validate"
+            description: "Schema验证"
+        severity: "HIGH"
+        remediation: "使用 pick/omit 限制可修改字段"
+
+  idempotency:
+    description: "缺少幂等性保护"
+    cwe: "CWE-841"
+    languages:
+      python:
+        riskPatterns:
+          - pattern: "@app\\.route.*POST.*(pay|order|transfer|withdraw)"
+            description: "支付/下单接口无幂等"
+        safePatterns:
+          - pattern: "idempotency_key|idempotent|request_id|nonce"
+            description: "幂等键"
+          - pattern: "redis.*setnx|unique_together"
+            description: "防重复提交"
+        severity: "MEDIUM"
+        remediation: "添加幂等键(Idempotency-Key)防重复提交"
+
+      java:
+        riskPatterns:
+          - pattern: "@PostMapping.*(pay|order|transfer)"
+            description: "支付接口无幂等"
+        safePatterns:
+          - pattern: "@Idempotent|IdempotencyKey|requestId"
+            description: "幂等注解"
+          - pattern: "redis.*setIfAbsent|unique.*constraint"
+            description: "防重复"
+        severity: "MEDIUM"
+        remediation: "使用幂等键+数据库唯一约束"
+
+# ==========================================================
+# Java 特定检测规则 (来自 java-audit-skills)
+# 覆盖: URI解析绕过、SQL注入(ORDER BY/框架)、文件上传、
+#       XXE、Shiro绕过、Struts2通配符
+# ==========================================================
+
+  java_uri_auth_bypass:
+    description: "URI解析差异导致鉴权绕过 — getRequestURI() vs getServletPath()"
+    cwe: "CWE-287"
+    languages:
+      java:
+        riskPatterns:
+          - pattern: "getRequestURI\\(\\)"
+            description: "使用getRequestURI获取路径，不处理分号/编码/路径穿越"
+            severity: "CRITICAL"
+          - pattern: "getRequestURL\\(\\)"
+            description: "使用getRequestURL获取路径，不处理特殊字符"
+            severity: "HIGH"
+          - pattern: "endsWith.*\"\\.(js|css|png|jpg|html|ico)\""
+            description: "后缀白名单 + getRequestURI → 可被 /admin;.js 绕过"
+            severity: "CRITICAL"
+          - pattern: "startsWith.*\"/(public|static)\""
+            description: "前缀白名单 + 无normalize → 可被 /public/../admin 绕过"
+            severity: "HIGH"
+          - pattern: "contains.*/(api|admin)/"
+            description: "contains路径匹配 + 无URL解码 → 可被编码绕过"
+            severity: "MEDIUM"
+        safePatterns:
+          - pattern: "getServletPath\\(\\)"
+            description: "使用getServletPath，自动处理分号+编码+归一化"
+          - pattern: "UrlPathHelper\\.getPathWithinApplication"
+            description: "Spring推荐的安全URI获取方式"
+          - pattern: "BEST_MATCHING_PATTERN_ATTRIBUTE"
+            description: "Spring MVC最安全的路径匹配方式"
+        remediation: |
+          使用getServletPath()或UrlPathHelper替代getRequestURI()：
+          String path = request.getServletPath();
+          或: String path = new UrlPathHelper().getPathWithinApplication(request);
+          或在匹配前做归一化: uri.replaceAll(";.*", ""); URI.create(uri).normalize().getPath();
+
+  java_orderby_injection:
+    description: "ORDER BY / GROUP BY SQL注入 — 动态排序字段拼接"
+    cwe: "CWE-89"
+    languages:
+      java:
+        riskPatterns:
+          - pattern: "\\.getOrderBy\\(\\)|\\.getSortField\\(\\)|\\.getGroupBy\\(\\)"
+            description: "获取排序/分组字段，若为String类型且直接拼接→高危"
+          - pattern: "sql.*append.*ORDER BY"
+            description: "StringBuilder拼接ORDER BY"
+          - pattern: "\" ORDER BY \"\\s*\\+"
+            description: "ORDER BY字符串拼接"
+          - pattern: "String\\.format.*ORDER BY"
+            description: "String.format拼接ORDER BY"
+          - pattern: "sql.*append.*orderBy|sql.*\\+.*orderBy"
+            description: "ORDER BY字段动态拼接"
+        safePatterns:
+          - pattern: "allowedColumns\\.contains|whitelist.*orderBy"
+            description: "白名单校验排序字段"
+          - pattern: "orderBy\\.matches\\(\"\\[a-zA-Z_\\]+\"\\)"
+            description: "正则校验排序字段"
+          - pattern: "\\.equals\\(\"id\"\\).*\\.equals\\(\"name\"\\)"
+            description: "硬编码白名单"
+        severity: "HIGH"
+        remediation: |
+          排序字段使用白名单校验:
+          Set<String> ALLOWED = Set.of("id", "name", "createTime");
+          if (!ALLOWED.contains(orderBy)) throw new IllegalArgumentException("Invalid column");
+          或使用枚举: SortField.fromString(orderBy);
+
+  java_file_upload:
+    description: "文件上传漏洞 — 类型校验缺失、路径穿越、Web目录写入"
+    cwe: "CWE-434"
+    languages:
+      java:
+        riskPatterns:
+          - pattern: "MultipartFile|ServletFileUpload|DiskFileItemFactory"
+            description: "文件上传入口，需检查保存逻辑"
+          - pattern: "getOriginalFilename\\(\\).*File\\(|transferTo\\(.*getOriginalFilename"
+            description: "文件名直接来自用户输入 → 路径穿越风险"
+          - pattern: "\\.transferTo\\(new File\\(|new File\\(.*fileName"
+            description: "文件保存路径可控"
+        safePatterns:
+          - pattern: "Paths\\.get.*\\.normalize\\(\\)"
+            description: "路径规范化处理"
+          - pattern: "UUID\\.randomUUID|FilenameUtils\\.getName"
+            description: "生成安全文件名"
+          - pattern: "@PostMapping.*consumes.*MULTIPART"
+            description: "明确标注文件上传"
+        severity: "HIGH"
+        remediation: |
+          1. 使用随机文件名: UUID.randomUUID().toString()
+          2. 路径规范化: Paths.get(basePath, filename).normalize()
+          3. 白名单校验文件类型: allowedTypes.contains(contentType)
+          4. 保存到Web根目录外
+
+  java_xxe_parser:
+    description: "XXE漏洞 — XML解析器外部实体未禁用"
+    cwe: "CWE-611"
+    languages:
+      java:
+        riskPatterns:
+          - pattern: "DocumentBuilderFactory\\.newInstance\\(\\)"
+            description: "DOM解析器，需检查是否禁用外部实体"
+          - pattern: "SAXParserFactory\\.newInstance\\(\\)"
+            description: "SAX解析器入口"
+          - pattern: "SAXBuilder\\(|SAXReader\\(|XMLReaderFactory\\.createXMLReader"
+            description: "dom4j/JDOM解析器入口"
+          - pattern: "XMLInputFactory\\.newInstance\\(\\)"
+            description: "StAX解析器入口"
+          - pattern: "TransformerFactory\\.newInstance\\(\\)"
+            description: "XSLT转换器入口"
+        safePatterns:
+          - pattern: "setFeature.*DISALLOW_DOCTYPE_DECL|setFeature.*EXTERNAL_GENERAL_ENTITIES.*false"
+            description: "已禁用外部实体"
+          - pattern: "setFeature.*EXTERNAL_PARAMETER_ENTITIES.*false"
+            description: "已禁用外部参数实体"
+          - pattern: "setExpandEntityReferences\\(false\\)"
+            description: "已禁用实体扩展"
+        severity: "HIGH"
+        remediation: |
+          DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+          dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+          dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+
+  java_shiro_bypass:
+    description: "Shiro鉴权绕过 — 已知CVE版本和路径绕过模式"
+    cwe: "CWE-287"
+    languages:
+      java:
+        riskPatterns:
+          - pattern: "shiro-(core|web|spring).*1\\.[0-4]\\."
+            description: "Shiro < 1.5.x — CVE-2020-1957/CVE-2020-11989"
+            severity: "CRITICAL"
+          - pattern: "shiro-(core|web|spring).*1\\.5\\.[0-2]"
+            description: "Shiro < 1.5.3 — CVE-2020-11989仍存在"
+            severity: "CRITICAL"
+          - pattern: "shiro-(core|web|spring).*1\\.(6\\.0|7\\.0|7\\.1|8\\.0|9\\.0|10\\.0)"
+            description: "Shiro其他含CVE版本"
+            severity: "HIGH"
+        safePatterns:
+          - pattern: "shiro-(core|web|spring).*1\\.1[1-9]\\.|shiro.*2\\."
+            description: "Shiro >= 1.11.0 或 2.x"
+        remediation: "升级Shiro到≥1.11.0。如无法升级：1) 前置反代过滤器拒绝分号 2) 鉴权层改用getServletPath()"
+
+  java_struts2_wildcard:
+    description: "Struts2通配符路由 — 安全风险评估"
+    cwe: "CWE-937"
+    languages:
+      java:
+        riskPatterns:
+          - pattern: "name=\"\\*_\\*\""
+            description: "Struts2双通配符 — 扩大攻击面"
+            severity: "MEDIUM"
+          - pattern: "struts2-core.*2\\.[0-5]\\."
+            description: "Struts2 < 2.5.26 — 存在已知RCE(CVE-2020-17530 S2-061)"
+            severity: "CRITICAL"
+        safePatterns:
+          - pattern: "struts2-core.*2\\.[5-9]\\.[2-9]|struts.*6\\."
+            description: "Struts2 >= 2.5.26 或 6.x"
+        remediation: "升级Struts2到≥2.5.26或6.x。限制通配符使用范围，避免使用*_*双通配符。"
+
+  java_component_vuln:
+    description: "Java高危组件版本检测 — Fastjson/Log4j/Jackson/XStream"
+    cwe: "CWE-1104"
+    languages:
+      java:
+        riskPatterns:
+          - pattern: "fastjson.*1\\.2\\.([0-6][0-9]|7[0-9]|80)"
+            description: "Fastjson ≤1.2.80 — 反序列化RCE (CVE-2022-25845)"
+            severity: "CRITICAL"
+          - pattern: "log4j-core.*2\\.(0|1[0-6])\\."
+            description: "Log4j2 ≤2.16.x — Log4Shell RCE (CVE-2021-44228/CVE-2021-45046)"
+            severity: "CRITICAL"
+          - pattern: "jackson-databind.*2\\.([0-9]|1[0-2])\\."
+            description: "Jackson-databind ≤2.12.x — 多CVE反序列化"
+            severity: "HIGH"
+          - pattern: "xstream.*1\\.4\\.[0-9]"
+            description: "XStream < 1.4.18 — 多CVE反序列化"
+            severity: "HIGH"
+        safePatterns:
+          - pattern: "fastjson2|com\\.alibaba\\.fastjson2"
+            description: "推荐使用Fastjson2"
+          - pattern: "log4j-core.*2\\.(1[7-9]|2[0-9])\\."
+            description: "Log4j2 ≥2.17.0 — 安全版本"
+        remediation: |
+          升级到安全版本:
+          - Fastjson → 2.x 或 ≥1.2.83
+          - Log4j2 → ≥2.17.1
+          - Jackson-databind → ≥2.13.x
+          - XStream → ≥1.4.18
 
 # ==========================================================
 # 审计引擎参数配置

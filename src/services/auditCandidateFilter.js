@@ -48,6 +48,7 @@ export class AuditCandidateFilter {
    *  - evidence / location 中的安全关键路径
    */
   scoreCandidate(finding, codeGraphContext) {
+    if (!finding || typeof finding !== 'object') return 0;
     let score = 0;
     const severity = severityScore(finding.severity || finding.level);
     score += severity * 5;

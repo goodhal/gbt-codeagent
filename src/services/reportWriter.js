@@ -390,15 +390,24 @@ function renderFindings(findings, emptyMessage, verdictMap) {
                   <span class="badge ${escapeHtml(severityClass(finding.severity))}">${escapeHtml(severityLabel(finding.severity))}</span>
                   <span class="badge ${escapeHtml(finding.source || "rule")}">${escapeHtml(finding.source || "rule")}</span>
                   ${verdictBadge}
+                  ${finding.evidenceLabel ? `<span class="badge" style="background:${finding.evidenceLabel === 'CONFIRMED' ? '#d1fae5;color:#065f46' : finding.evidenceLabel === 'SUSPECTED' ? '#fef3c7;color:#92400e' : '#e0e7ff;color:#3730a3'}">${escapeHtml(finding.evidenceLabel)}</span>` : ''}
+                  ${finding.attackPathPriority ? `<span class="badge priority-${(finding.attackPathPriority || '').toLowerCase()}">${escapeHtml(finding.attackPathPriority)} 路径</span>` : ''}
                 </div>
               </div>
               ${verdictInfo?.verificationReason ? `<p class="muted">验证说明：${escapeHtml(verdictInfo.verificationReason)}</p>` : ''}
               ${extraInfo}
               ${confidenceInfo}
               <p><strong>位置：</strong>${escapeHtml(finding.location || "n/a")}</p>
+              ${finding.attackVector ? `<p><strong>攻击向量：</strong>${escapeHtml(finding.attackVector)}</p>` : ''}
+              ${finding.exploitPrerequisites ? `<p><strong>利用前提：</strong>${escapeHtml(finding.exploitPrerequisites)}</p>` : ''}
               <p><strong>影响：</strong>${escapeHtml(finding.impact || "")}</p>
               <p><strong>证据：</strong>${escapeHtml(finding.evidence || "")}</p>
               <p><strong>修复建议：</strong>${escapeHtml(finding.remediation || "")}</p>
+              ${finding.retestChecklist ? (() => {
+                const items = Array.isArray(finding.retestChecklist) ? finding.retestChecklist : [finding.retestChecklist];
+                return `<p><strong>复测清单：</strong><br>${items.map(s => '• ' + escapeHtml(s)).join('<br>')}</p>`;
+              })() : ''}
+              ${finding.killSwitchInfo ? `<p class="muted"><strong>🛡️ Kill Switch：</strong>${escapeHtml(finding.killSwitchInfo)}</p>` : ''}
               <p><strong>安全验证建议：</strong>${escapeHtml(finding.safeValidation || "")}</p>
               ${astContextInfo}
             </div>

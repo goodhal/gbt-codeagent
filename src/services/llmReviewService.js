@@ -63,7 +63,7 @@ async function initializeRAG() {
 initializeRAG();
 
 export class DefensiveLlmReviewer {
-  async reviewProject({ project, selectedSkills, heuristicFindings, llmConfig, onProgress, useStreaming = false }) {
+  async reviewProject({ project, selectedSkills, heuristicFindings, llmConfig, onProgress, useStreaming = false, taskId }) {
     if (!llmConfig?.apiKey) {
       return {
         status: "skipped",
@@ -217,13 +217,14 @@ export class DefensiveLlmReviewer {
 
         let responseText;
         if (useStreaming) {
-          streamService.emitLLMStart(llmConfig.model, { batchIndex: batchIndex + 1, totalBatches: validBatches.length });
+          streamService.emitLLMStart(llmConfig.model, { batchIndex: batchIndex + 1, totalBatches: validBatches.length }, taskId);
           responseText = await requestStructuredReviewStream({
             llmConfig,
             systemPrompt: fullSystemPrompt,
             userPrompt,
             batchIndex: batchIndex + 1,
-            totalBatches: validBatches.length
+            totalBatches: validBatches.length,
+            taskId
           });
         } else {
           responseText = await withReviewRetry(() => llmCircuitBreaker.callWithFallback(() =>
@@ -266,7 +267,7 @@ export class DefensiveLlmReviewer {
         return { success: true, findings: normalized, batchSize: batch.length };
       } catch (error) {
         console.error(`[LLM审计] 批次 ${batchIndex + 1} 出现错误:`, error.message);
-        streamService.emitError(`LLM审计批次${batchIndex + 1}`, error.message);
+        streamService.emitError(`LLM审计批次${batchIndex + 1}`, error.message, taskId);
         auditFailureTracker.recordFailure(error.message);
 
         onProgress?.({
@@ -353,7 +354,7 @@ export class DefensiveLlmReviewer {
     };
   }
 
-  async auditProject({ project, selectedSkills, llmConfig, codeGraphContext, codeGraph, onProgress, useStreaming = false }) {
+  async auditProject({ project, selectedSkills, llmConfig, codeGraphContext, codeGraph, onProgress, useStreaming = false, taskId }) {
     console.log(`[LLM审计] auditProject 开始 - 项目: ${project.name}, 提供商: ${llmConfig.providerId}, 模型: ${llmConfig.model}`);
     console.log(`[LLM审计] 代码知识图谱上下文: ${codeGraphContext ? '已提供' : '未提供'}`);
     if (!llmConfig?.apiKey) {
@@ -508,13 +509,14 @@ export class DefensiveLlmReviewer {
       try {
         let responseText;
         if (useStreaming) {
-          streamService.emitLLMStart(llmConfig.model, { batchIndex: batchIndex + 1, totalBatches: validBatches.length });
+          streamService.emitLLMStart(llmConfig.model, { batchIndex: batchIndex + 1, totalBatches: validBatches.length }, taskId);
           responseText = await requestStructuredReviewStream({
             llmConfig,
             systemPrompt,
             userPrompt,
             batchIndex: batchIndex + 1,
-            totalBatches: validBatches.length
+            totalBatches: validBatches.length,
+            taskId
           });
         } else {
           responseText = await withReviewRetry(() => llmCircuitBreaker.callWithFallback(() =>
@@ -542,7 +544,7 @@ export class DefensiveLlmReviewer {
         return { success: true, findings: normalized, batchSize: batch.length };
       } catch (error) {
         console.error(`[LLM审计] 批次 ${batchIndex + 1} 出现错误:`, error.message);
-        streamService.emitError(`LLM审计批次${batchIndex + 1}`, error.message);
+        streamService.emitError(`LLM审计批次${batchIndex + 1}`, error.message, taskId);
         auditFailureTracker.recordFailure(error.message);
         return { success: false, error: error.message, batchSize: batch.length };
       }
@@ -791,7 +793,7 @@ async function requestStructuredReview({ llmConfig, systemPrompt, userPrompt }) 
         body: JSON.stringify({
           model: llmConfig.model,
           max_tokens: 4096,
-          temperature: 0.1,
+          temperature: 0,
           system: optimizedSystem,
           messages: [{ role: "user", content: optimizedUser }]
         })
@@ -826,7 +828,7 @@ async function requestStructuredReview({ llmConfig, systemPrompt, userPrompt }) 
             systemInstruction: { parts: [{ text: optimizedSystem }] },
             contents: [{ role: "user", parts: [{ text: optimizedUser }] }],
             generationConfig: {
-              temperature: 0.1,
+              temperature: 0,
               maxOutputTokens: 4096
             }
           })
@@ -861,7 +863,7 @@ async function requestStructuredReview({ llmConfig, systemPrompt, userPrompt }) 
       },
       body: JSON.stringify({
         model: llmConfig.model,
-        temperature: 0.1,
+        temperature: 0,
         max_tokens: 4096,
         messages: [
           { role: "system", content: optimizedSystem },
@@ -926,7 +928,7 @@ async function requestStructuredReview({ llmConfig, systemPrompt, userPrompt }) 
   return content;
 }
 
-async function requestStructuredReviewStream({ llmConfig, systemPrompt, userPrompt, onToken, batchIndex, totalBatches }) {
+async function requestStructuredReviewStream({ llmConfig, systemPrompt, userPrompt, onToken, batchIndex, totalBatches, taskId }) {
   const compatibility = llmConfig.compatibility || llmConfig.defaults?.compatibility || "openai";
   const model = llmConfig.model || 'gpt-3.5-turbo';
   const maxTokens = getModelMaxTokens(model);
@@ -949,7 +951,7 @@ async function requestStructuredReviewStream({ llmConfig, systemPrompt, userProm
   const emitToken = (token) => {
     if (token) {
       fullText += token;
-      streamService.emitLLMStreamToken(token, batchIndex, totalBatches);
+      streamService.emitLLMStreamToken(token, batchIndex, totalBatches, taskId);
       if (onToken) onToken(token);
     }
   };
@@ -965,7 +967,7 @@ async function requestStructuredReviewStream({ llmConfig, systemPrompt, userProm
       body: JSON.stringify({
         model: llmConfig.model,
         max_tokens: 4096,
-        temperature: 0.1,
+        temperature: 0,
         stream: true,
         system: optimizedSystem,
         messages: [{ role: "user", content: optimizedUser }]
@@ -997,7 +999,7 @@ async function requestStructuredReviewStream({ llmConfig, systemPrompt, userProm
       }
     }
 
-    streamService.emitLLMComplete({ model, provider: llmConfig.providerId });
+    streamService.emitLLMComplete({ model, provider: llmConfig.providerId }, taskId);
     return fullText;
   }
 
@@ -1010,7 +1012,7 @@ async function requestStructuredReviewStream({ llmConfig, systemPrompt, userProm
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: optimizedSystem }] },
           contents: [{ role: "user", parts: [{ text: optimizedUser }] }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 4096 }
+          generationConfig: { temperature: 0, maxOutputTokens: 4096 }
         })
       }
     );
@@ -1039,7 +1041,7 @@ async function requestStructuredReviewStream({ llmConfig, systemPrompt, userProm
       }
     }
 
-    streamService.emitLLMComplete({ model, provider: llmConfig.providerId });
+    streamService.emitLLMComplete({ model, provider: llmConfig.providerId }, taskId);
     return fullText;
   }
 
@@ -1051,7 +1053,7 @@ async function requestStructuredReviewStream({ llmConfig, systemPrompt, userProm
     },
     body: JSON.stringify({
       model: llmConfig.model,
-      temperature: 0.1,
+      temperature: 0,
       max_tokens: 4096,
       stream: true,
       messages: [
@@ -1086,7 +1088,7 @@ async function requestStructuredReviewStream({ llmConfig, systemPrompt, userProm
     }
   }
 
-  streamService.emitLLMComplete({ model, provider: llmConfig.providerId });
+  streamService.emitLLMComplete({ model, provider: llmConfig.providerId }, taskId);
   return fullText;
 }
 
@@ -1347,7 +1349,17 @@ function normalizeFindings(findings, selectedSkills) {
         evidence: safeString(finding.evidence, "模型复核认为这里存在值得继续人工确认的实现迹象。"),
         impact: safeString(finding.impact, "该实现如果在真实部署中成立，可能扩大管理面、数据面或配置暴露面。"),
         remediation: safeString(finding.remediation, "建议结合服务端收口、权限校验和配置默认值治理进行修复。"),
-        safeValidation: safeString(finding.safeValidation, "建议在本地或测试环境里补充代码走读与单元测试来确认边界。")
+        safeValidation: safeString(finding.safeValidation, "建议在本地或测试环境里补充代码走读与单元测试来确认边界。"),
+        // 新增字段（可选，LLM 不保证一定输出）
+        evidenceLabel: finding.evidenceLabel || null,
+        attackVector: safeString(finding.attackVector || finding.attack_vector, ""),
+        exploitPrerequisites: safeString(finding.exploitPrerequisites || finding.exploit_prerequisites, ""),
+        retestChecklist: finding.retestChecklist || finding.retest_checklist || null,
+        attackPathPriority: finding.attackPathPriority || finding.attack_path_priority || null,
+        attackPathScore: finding.attackPathScore || finding.attack_path_score || null,
+        killSwitchInfo: safeString(finding.killSwitchInfo || finding.kill_switch_info, ""),
+        description: safeString(finding.description || finding.desc, ""),
+        type: safeString(finding.type || finding.root_cause, ""),
       };
 
       if (isGbtAudit && finding.skillId === "gbt-code-audit") {

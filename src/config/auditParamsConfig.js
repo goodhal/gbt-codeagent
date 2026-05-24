@@ -4,7 +4,7 @@
  * 代替代码中硬编码的常量，实现零代码热配置
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, watchFile } from "node:fs";
 import path from "path";
 import yaml from "js-yaml";
 
@@ -91,5 +91,18 @@ export function getCodeIndexMinFiles() {
 
 export function getCheckpointInterval() {
   return getAuditParams().checkpointInterval;
+}
+
+// 监听配置文件变更，热更新缓存
+const CONFIG_PATH = path.join(process.cwd(), "config", "detection_rules.yaml");
+try {
+  watchFile(CONFIG_PATH, (curr, prev) => {
+    if (curr.mtimeMs !== prev.mtimeMs) {
+      _auditParams = null;
+      console.log("[审计参数] 检测到配置文件变更，已热更新缓存");
+    }
+  });
+} catch (err) {
+  console.debug("[审计参数] 无法监听配置文件:", err.message);
 }
 

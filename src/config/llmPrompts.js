@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "path";
 import { withRetryWithFallback } from "../core/index.js";
 import { ragService } from "../services/ragService.js";
+import { buildSecurityControlContext } from "./languageAdapterLoader.js";
 
 export const THREE_LAYER_AUDIT = `
 【三层审计分工 - 各自职责明确】
@@ -182,15 +183,27 @@ export const FILE_VALIDATION_RULES = `
 ⚠️ 严禁行为：
 - 禁止报告不存在的文件路径
 - 禁止凭记忆或推测编造代码片段
-- 禁止假设特定文件存在（如 config/database.py）
+- 禁止假设特定文件存在（如 config/database.py、"Python项目通常有config.py"）
 - 禁止报告注释行代码作为漏洞
 - 禁止报告导入语句但无实际调用的代码
+- 禁止基于"典型项目结构"猜测文件路径
+- 禁止使用知识库示例代码作为项目实际代码
 
 ✅ 正确做法：
+- 先 Glob 发现文件 → 再 Read 读取内容 → 再分析 → 再报告
 - 只报告提供代码片段中确实存在的漏洞
-- 引用实际代码时使用提供的 snippet
-- 行号必须在文件实际行数范围内
-- 必须在源文件中验证行号对应实际代码行
+- 引用实际代码时使用提供的 snippet（直接复制，保持格式和缩进）
+- 行号必须在文件实际行数范围内，不确定时重新确认
+- 漏洞类型必须与项目技术栈一致（不在 Rust 项目中报 Python 漏洞）
+
+🔴 验证清单（每个发现前自检）：
+□ 文件路径确认存在
+□ 代码片段来自实际读取
+□ 行号在文件行数范围内
+□ 漏洞类型与技术栈一致
+□ 不是从知识库示例推测的
+
+⚠️ 知识库隔离原则：知识库示例用于理解漏洞概念和检测方法，≠ 项目代码。必须在实际代码中找到对应模式。
 
 🔥 宁可漏报，不可误报。质量优于数量。`;
 
@@ -323,10 +336,20 @@ export const DE_DUPLICATION_RULES = `
 
 LLM 最常见的问题是同一个模式在多个文件中被重复报告为独立漏洞。以下规则强制避免：
 
-- 同一类问题在多行命中 → 只报一次，在 desc 中列出最多 5 个受影响行号
-- 同一安全模式在全项目中反复出现（如全部 Controller 都缺 CSRF、全部路由都没有权限校验）→ 合并为一条，desc 中列出典型文件
-- 如果某个模式要报 10 个文件以上，说明这是系统性的代码风格、框架约定或项目惯例，不应逐条报告
-- 同一文件中相同类型的问题合并为一条`;
+✅ 应该合并的情况（同一根因）：
+- 同一文件、同一函数、同一行号、同一漏洞类型 → 合并为一条
+- 如果某个模式要报 10 个文件以上，说明这是系统性的代码风格，合为一条典型说明
+
+❌ 不应该合并的情况（不同攻击面）：
+- 不同 Controller/端点/参数的同类漏洞 → 分别报告
+  - 例如 ProcessBuilder 命令注入 ≠ Runtime.exec 命令注入 ≠ ProcessImplVul 命令注入
+  - 三个不同端点的 "命令注入" 是三个独立的攻击面，必须分别报告
+- 不同文件、不同 sink 函数的同类漏洞 → 分别报告
+- 不同利用前提（如一个需认证、一个无需认证）→ 分别报告
+
+判定标准：如果合并后 attackVector 无法精确描述每个端点的攻击方式，则不应合并。
+
+- 同一文件中相同类型且相同函数调用的问题合并为一条`;
 
 export const LANGUAGE_GBT_MAP = {
   'java': 'GBT_34944-2017.md',
@@ -483,6 +506,45 @@ export const DUAL_VERDICT_SYSTEM = `
 - 如果答案明确可复现 → 保持确认风险`;
 
 /**
+ * False Positive Kill Switch — 安全控制自动降级规则
+ * 参考: code-security-audit 误报过滤机制
+ * 指导 LLM 在发现危险模式时，先检查是否已有安全控制措施
+ */
+export const FALSE_POSITIVE_KILL_SWITCH = `
+【误报 Kill Switch — 发现漏洞前先检查安全控制】
+
+当你发现一个危险模式时，必须先检查是否存在以下安全控制。若控制有效，应降级而非直接丢弃：
+
+⚠️ 重要：快速扫描标记为可疑的清单项，LLM 必须亲自审查代码后才能应用 Kill Switch。不得仅凭猜测或框架约定假设安全。
+
+1. 强类型/枚举限制
+   - 参数类型为 enum → SQL注入不可能 → 降级为 Low（不可直接删除）
+   - Integer/Long/Boolean 强类型参数 → 注入降级为 Low
+   - Controller 方法首行有白名单验证 → 降级为 Low
+
+2. Bean Validation + @Valid
+   - DTO + @Valid + @Pattern/@Email/@Size → 降级为 Low
+   - 仅 @NotNull 不足以阻止注入 → 保持原级别
+
+3. 全局 SecurityFilter
+   - 存在 OncePerRequestFilter XssFilter + 完整实现 → XSS 降级为 Low
+   - CSRF Filter + token 验证 → CSRF 降级为 Low
+   - 注意：Filter 有 excludeUrlPatterns 时 → 不降级，保持原级别
+
+4. ORM 参数绑定（非拼接）
+   - MyBatis #{} 且无 \${} 拼接 → SQL注入降级为 Low（仍须报告！因为可能存在隐蔽的注入点）
+   - JPA @Query with :param (非 nativeQuery) → 降级为 Low
+   - Criteria API type-safe 查询 → 降级为 Low
+   - MyBatis \${} 或 JPA nativeQuery + 拼接 → 保持 Critical
+
+5. 真实权限校验（非注解摆设）
+   - @PreAuthorize + @EnableGlobalMethodSecurity(prePostEnabled=true) → 降级为 Low
+   - 方法内首行权限检查 (if (!hasRole()) throw) → 降级为 Low
+   - 仅有注解，无 SecurityConfig 配置启用 → 保持原级别
+
+🔴 关键规则：降级 ≠ 不报告。即使触发了 Kill Switch，仍应在 findings 中报告该发现，severity 下调一级，同时在 killSwitchInfo 中填写降级原因。`;
+
+/**
  * 借鉴 AiCodeAudit：依赖上下文解读规则
  * 配合 buildDependencyContext 构建的上下游链路使用
  * 指导 LLM 如何正确解读调用图中的输入→传播→危险路径
@@ -504,30 +566,84 @@ export const DEPENDENCY_INTERPRETATION_RULES = `
 10. 如果依赖上下文显示没有外部输入源也没有危险sink → 正常审计，不要受空上下文影响`;
 
 /**
+ * 攻击路径优先级 — 根据攻击者视角的实际可利用性对漏洞排序
+ * 参考: code-security-audit attack_path_priority.md
+ * 核心理念: 攻击者总是选择阻力最小的路径
+ */
+export const ATTACK_PATH_PRIORITY = `
+【攻击路径优先级 — P0/P1/P2/P3 分级规则】
+
+根据攻击者视角的可利用性，为每个漏洞计算优先级分数（最高12分）：
+
+维度1: 认证要求
+- 无需登录: +3分 → P0候选
+- 普通用户: +2分
+- 需特权用户: +1分
+- 仅管理员: +0分
+
+维度2: 请求复杂度
+- 单请求完成: +3分
+- 2-3步骤: +2分
+- 需竞态条件: +1分
+- 需时序攻击: +0分
+
+维度3: 社工依赖
+- 无需交互: +3分
+- 需用户点击链接: +2分
+- 需用户输入: +1分
+- 需管理员操作: +0分
+
+维度4: 利用门槛
+- 浏览器/curl即可: +3分
+- 需常见工具（sqlmap等）: +2分
+- 需自定义exploit: +1分
+- 需0day: +0分
+
+优先级分级:
+- P0 (Critical Path): 10-12分 → 立即修复
+- P1 (High Path): 7-9分 → 优先修复
+- P2 (Medium Path): 4-6分 → 计划修复
+- P3 (Low Path): 0-3分 → 知晓即可
+
+特殊情况降级:
+- 内网隔离环境 → 优先级-1
+- WAF/IPS已部署 → 优先级-1
+- 利用窗口极短(<1ms竞态) → 优先级-1
+
+案例:
+- 公开接口SQL注入(无需认证, 单请求, 浏览器即可): 3+3+3+3=12分 → P0
+- 管理员接口RCE(需管理员, 单请求): 0+3+3+3=9分 → P1
+- IDOR(需登录, 单请求): 2+3+3+3=11分 → P0 ← 虽严重度可能只是High，但攻击路径极短`;
+
+/**
  * 借鉴 AiCodeAudit：结构化输出格式增强
  * 在原有 findings JSON 基础上，增强每个 finding 的攻击向量和潜在影响描述
  */
 export const AUDIT_OUTPUT_ENHANCEMENT = `
-【审计输出增强要求】
+【审计输出增强要求 — 每个发现必须包含以下 8 个字段】
 
-每个漏洞发现必须包含以下字段，不能空泛：
+1. location — 文件路径、类/方法/API端点、行号（必须精确）
+2. type — 漏洞类型 + 根因
+3. attackVector — 攻击向量（Source → Transfer → Sink 完整证据链）
+   - "确认风险"："攻击者通过[输入源]控制[参数]，经[传播路径]，到达[危险点]"
+   - "可疑风险"："分析发现[危险点]，但当前上下文缺乏[缺失的证据]"
+   - 禁止用"可能被攻击""可能导致安全问题"等空泛描述
+4. exploitPrerequisites — 利用前提（是否需要认证、特殊权限、网络可达性）
+5. impact — 潜在影响（必须是用户可感知的精确后果）
+   - 正确："攻击者可读取任意用户数据包括密码哈希"；错误："可能导致数据泄露"
+6. severity — 严重级别 + evidenceLabel（CONFIRMED/HIGH_CONFIDENCE/SUSPECTED/INFO）
+7. remediation — 最小化修复方案（必须给出具体代码级修复，禁止"建议安全审查"等空话）
+8. retestChecklist — 复测清单（列出验证修复有效的具体步骤）
+   - 例如："验证 POST /api/user?id=1 OR '1'='1' 不再返回全量数据"
+   - 例如："确认 PreparedStatement 已替换 Statement，占位符 ? 已绑定所有动态参数"
 
-1. attackVector — 攻击向量描述
-   - "确认风险"时必须写出："攻击者通过[输入源]控制[参数]，经[传播路径]，到达[危险点]"
-   - "可疑风险"时必须写出："分析发现[危险点]，但当前上下文缺乏[缺失的证据]"
-   - 禁止使用"可能被攻击""可能导致安全问题"等空泛描述
+【Evidence Label 判定标准】
+- CONFIRMED: 完整 Source→Transfer→Sink 链 + 可达输入源 + 缺失有效防护 + 可重现
+- HIGH_CONFIDENCE: 完整链路但运行细节未完全验证
+- SUSPECTED: 部分链路、不确定可达性或前置条件不完整
+- INFO: 加固建议、设计关切、低置信度线索
 
-2. impact — 潜在影响
-   - 必须是用户可感知的精确后果
-   - 正确："攻击者可读取任意用户数据包括密码哈希"
-   - 错误："可能导致数据泄露"
-   - 正确："攻击者可执行任意系统命令，获取服务器控制权"
-   - 错误："可能导致远程代码执行"
-
-3. remediation — 修复建议
-   - 必须给出具体代码级修复方案
-   - 例如："将 db.query(sqlStr) 改为 db.query('SELECT * FROM users WHERE id = ?', [userId])"
-   - 禁止使用"建议安全审查""请检查代码安全性"等空话`;
+注意：evidenceLabel 与 severity 独立评定。一个 High 严重的漏洞可能仅 SUSPECTED 置信度。`;
 
 export const EVIDENCE_REQUIRED_MAP = {
   SQL_INJECTION: ['EVID_SQL_EXEC_POINT', 'EVID_SQL_STRING_CONSTRUCTION', 'EVID_SQL_USER_PARAM_MAPPING'],
@@ -540,6 +656,128 @@ export const EVIDENCE_REQUIRED_MAP = {
   XXE: ['EVID_XXE_PARSER_CALL', 'EVID_XXE_INPUT_SOURCE', 'EVID_XXE_ENTITY_DOCTYPE_SAFETY_AND_ECHO'],
   FILE_OPERATION: ['EVID_FILE_READ_SINK', 'EVID_FILE_PATH_CONSTRUCTION', 'EVID_FILE_USER_PARAM_MAPPING']
 };
+
+export const JAVA_AUTH_AUDIT_FRAMEWORK = `
+【Java认证鉴权审计框架 — 来自 java-auth-audit】
+
+审计 Java Web 应用的认证鉴权必须按以下层次进行：
+
+1. URI 解析差异检测（最常见绕过根因）：
+   - 检查鉴权代码使用的 URI 获取 API：getRequestURI() → ❌ 危险 / getServletPath() → ✅ 安全
+   - 如果鉴权层和路由层使用不同的 URI API，存在绕过可能
+   - 关键检查：Filter/Interceptor 中是否使用 getRequestURI() 的返回值做鉴权判断
+
+2. 分号路径参数绕过：
+   - Tomcat 中 getRequestURI() 返回 /admin;.js，getServletPath() 返回 /admin
+   - 静态资源后缀白名单 + getRequestURI() → 可被 /admin;.js 绕过
+   - Payload: /admin;.js, /admin;.css, /admin;jsessionid=xxx, /;/admin
+
+3. 路径穿越绕过：
+   - startsWith("/admin") 可被 /public/../admin 绕过
+   - contains("/api/") 可被 %61 编码绕过
+   - 必须检查路径是否经过 normalize() 处理
+
+4. 框架特定检查：
+   - Shiro < 1.5.2: /xxx/..;/admin (CVE-2020-1957)
+   - Shiro < 1.6.0: /admin/;page (CVE-2020-13933)
+   - Spring Security antMatchers: /admin/ 尾部斜杠绕过（改用 mvcMatchers）
+   - Spring < 5.3: 后缀匹配 /admin.json 可绕过
+
+5. 数据流分析（避免误报）：
+   - 发现 contains()/startsWith() 模式后，必须追踪变量在匹配后如何使用
+   - 检查是否有二次校验（Interceptor/Action层）
+   - 区分"绕过登录检查"和"绕过权限检查"`;
+
+export const JAVA_SQL_AUDIT_FRAMEWORK = `
+【Java SQL注入审计框架 — 来自 java-sql-audit】
+
+审计 Java SQL 注入必须以行为驱动而非命名模式：
+
+1. 核心原则：不是问"方法叫什么名字"，而是问"方法做了什么"
+   - 错误做法：仅搜索 addOrderBy/Pagination 等方法名
+   - 正确做法：搜索 "ORDER BY" + 变量拼接行为
+
+2. 框架感知检测：
+   - JDBC: Statement.execute/executeQuery/executeUpdate + 字符串拼接
+   - MyBatis: \${} 不安全拼接 vs #{} 安全参数绑定
+   - Hibernate: createQuery/createNativeQuery + 字符串拼接 vs setParameter 参数绑定
+   - JdbcTemplate: 字符串拼接 vs ? 占位符
+
+3. ORDER BY 注入（最常被遗漏）：
+   - 搜索 .getOrderBy()/.getSortField()/.getGroupBy() 调用
+   - 检查 "ORDER BY" + 变量拼接（StringBuilder.append/String.format/字符串+）
+   - 白名单校验：allowedColumns.contains(orderBy) 才算安全
+
+4. 数据库分支分析（避免误报）：
+   - 检查 isOracle()/isMySQL() 条件分支
+   - 在某些数据库类型下代码路径不执行 → 降低风险级别
+   - 标注为"Oracle-only"/"MySQL-only"而非通用
+
+5. 参数类型与注入风险：
+   - String 类型参数 → 高危，可注入任意SQL片段
+   - Integer/Long/Boolean → 低风险，但 ORDER BY 字段仍可注入列名
+
+6. 参数实际使用检查（参数可控性）：
+   - 追踪参数从HTTP入口到SQL执行点的完整路径
+   - 检查参数是否被硬编码覆盖 → 排除误报
+   - 区分"参数传递到DAO层"和"参数实际拼接到SQL"`;
+
+export const JAVA_PARAM_CONTROLLABILITY = `
+【Java参数可控性分析框架 — 来自 java-route-tracer】
+
+对每个漏洞进行参数实际使用检查，避免将"参数传递但未使用"误判为漏洞：
+
+1. 覆盖类型判定：
+   - 无覆盖：参数直接到达Sink → ✅ 完全可控
+   - 无条件覆盖：x = "hardcoded" 不在if内 → ❌ 不可控
+   - 空值保护覆盖：if (isEmpty(x)) x = default → ⚠️ 非空时可控
+   - 白名单覆盖：if (!allowed.contains(x)) x = default → ⚠️ 白名单内可控
+   - 安全检查覆盖：if (!isSafe(x)) x = safe → ⚠️ 绕过检查时可控
+
+2. 硬编码覆盖检测（排除误报的关键）：
+   - SQL中已硬编码 "ORDER BY id DESC" → page.orderBy参数未使用 → ❌ 非漏洞
+   - 命令中已硬编码 "ls -la" → cmd参数未使用 → ❌ 非漏洞
+   - 路径中已硬编码 "/tmp/fixed.txt" → path参数未使用 → ❌ 非漏洞
+
+3. 分支条件追踪：
+   - 识别环境/平台分支（isOracle/isMySQL）
+   - 识别安全检查分支（isAllowed/isSafe）
+   - 识别空值/异常分支（提前return）
+   - 标注敏感操作在哪些分支中执行
+
+4. 输出格式（可控性判定表）：
+   | 参数 | Sink类型 | 覆盖类型 | 覆盖条件 | 可控性结论 | 可控场景 |
+   - 可控性结论：✅完全可控 / ⚠️条件可控 / ❌不可控`;
+
+export const JAVA_FRAMEWORK_DETECTION = `
+【Java Web框架自动识别 — 来自 java-route-mapper】
+
+审计 Java 项目时先识别框架，再针对性分析：
+
+1. 框架识别特征：
+   - Spring MVC: @Controller, @RequestMapping, @RestController
+   - Spring Boot: @SpringBootApplication, application.properties/yml
+   - Struts2: struts.xml, ActionSupport, .action 后缀
+   - Servlet: web.xml, @WebServlet, HttpServlet
+   - JAX-RS: @Path, @GET, @POST, @PathParam
+   - CXF WebService: jaxws:endpoint, @WebService, cxf-servlet.xml
+
+2. 配置文件定位：
+   - Spring: application.yml, application.properties, SecurityConfig.java
+   - Struts2: struts.xml, struts-*.xml, struts.properties
+   - Servlet: web.xml, context.xml
+   - MyBatis: mybatis-config.xml, *Mapper.xml
+   - Hibernate: hibernate.cfg.xml, persistence.xml
+
+3. 通配符路由识别：
+   - Struts2: name="*_*" 双通配 → 必须展开为实际URL
+   - Spring: @RequestMapping 路径变量 /api/{id}/**
+   - Servlet: /api/* 通配 → 内部分发方法需识别
+
+4. WebService完整方法输出：
+   - 从applicationContext.xml读取 address 属性（唯一真实路径来源）
+   - 不根据类名推断：UserServiceImpl → /UserService（错误！）
+   - 反编译实现类提取所有public方法签名`;
 
 export async function loadAuditKnowledge({ languages = [], vulnerabilityTypes = [] } = {}) {
   const docsDir = path.join(process.cwd(), "docs");
@@ -693,7 +931,77 @@ export async function loadAuditKnowledge({ languages = [], vulnerabilityTypes = 
     knowledge.qualityStandards = { prohibited: '', examples: '' };
   }
 
+  // 加载框架特定安全知识 (docs/security/)
+  knowledge.frameworkGuides = await loadFrameworkGuides(languages);
+  knowledge.securityDomainGuides = await loadSecurityDomainGuides();
+
   return knowledge;
+}
+
+const LANGUAGE_TO_FRAMEWORKS = {
+  python: ['django.md', 'flask.md', 'fastapi.md'],
+  java: ['spring.md', 'java_web_framework.md', 'mybatis_security.md'],
+  javascript: ['express.md', 'koa.md', 'nest_fastify.md'],
+  typescript: ['express.md', 'koa.md', 'nest_fastify.md'],
+  go: ['gin.md'],
+  php: ['laravel.md'],
+  csharp: ['dotnet.md'],
+  'c#': ['dotnet.md'],
+  ruby: ['rails.md'],
+  rust: ['rust_web.md'],
+};
+
+const ALWAYS_LOAD_SECURITY = [
+  'business_logic.md',
+  'authentication_authorization.md',
+  'api_security.md',
+  'file_operations.md',
+];
+
+async function loadFrameworkGuides(languages) {
+  const securityDir = path.join(process.cwd(), 'docs', 'security', 'frameworks');
+  const guides = {};
+  const loadedFiles = new Set();
+
+  for (const lang of languages || []) {
+    const normalized = lang.toLowerCase();
+    const frameworkFiles = LANGUAGE_TO_FRAMEWORKS[normalized] || [];
+
+    for (const file of frameworkFiles) {
+      if (loadedFiles.has(file)) continue;
+      loadedFiles.add(file);
+      try {
+        const content = await fs.readFile(path.join(securityDir, file), 'utf8');
+        guides[file.replace('.md', '')] = content;
+      } catch (error) {
+        // file not found, skip
+      }
+    }
+  }
+
+  if (Object.keys(guides).length === 0) return '';
+
+  const sections = [];
+  for (const [name, content] of Object.entries(guides)) {
+    sections.push(`\n\n=== ${name} (框架安全指南) ===\n\n${content.substring(0, 3000)}`);
+  }
+  return sections.join('\n');
+}
+
+async function loadSecurityDomainGuides() {
+  const securityDir = path.join(process.cwd(), 'docs', 'security', 'domains');
+  const sections = [];
+
+  for (const file of ALWAYS_LOAD_SECURITY) {
+    try {
+      const content = await fs.readFile(path.join(securityDir, file), 'utf8');
+      sections.push(`\n\n=== ${file.replace('.md', '')} (安全域指南) ===\n\n${content.substring(0, 2500)}`);
+    } catch (error) {
+      // file not found, skip
+    }
+  }
+
+  return sections.join('\n');
 }
 
 export async function buildSystemPrompt(selectedSkills, auditKnowledge = {}, languages = []) {
@@ -719,6 +1027,8 @@ export async function buildSystemPrompt(selectedSkills, auditKnowledge = {}, lan
     RUNTIME_CONTEXT_AWARENESS,
     "",
     SEVERITY_CLASSIFICATION_GUIDE,
+    FALSE_POSITIVE_KILL_SWITCH,
+    ATTACK_PATH_PRIORITY,
     FILE_VALIDATION_RULES,
     DE_DUPLICATION_RULES
   ];
@@ -805,6 +1115,25 @@ export async function buildSystemPrompt(selectedSkills, auditKnowledge = {}, lan
       }
     }
 
+    // 添加语言安全控制模式识别（来自 YAML 适配器）
+    if (languages && languages.length > 0) {
+      const controlContexts = [];
+      for (const lang of languages) {
+        const ctx = buildSecurityControlContext(lang);
+        if (ctx && !controlContexts.includes(ctx)) {
+          controlContexts.push(ctx);
+        }
+      }
+      if (controlContexts.length > 0) {
+        prompt.push(
+          "",
+          "【安全控制模式识别】（辅助判定，非漏洞证据）：",
+          "注意：以下安全控制模式仅用于辅助判断代码是否存在防护措施，不是漏洞的直接证据。",
+          ...controlContexts
+        );
+      }
+    }
+
     if (auditKnowledge.gbtReferences) {
       prompt.push(
         "",
@@ -841,6 +1170,52 @@ export async function buildSystemPrompt(selectedSkills, auditKnowledge = {}, lan
         "【修复方案示例】（合格/不合格对比）：",
         "---",
         auditKnowledge.qualityStandards.examples,
+        "---"
+      );
+    }
+
+    if (auditKnowledge.frameworkGuides) {
+      prompt.push(
+        "",
+        "【框架特定安全指南】（根据项目技术栈加载，仅参考）：",
+        "---",
+        auditKnowledge.frameworkGuides,
+        "---"
+      );
+    }
+
+    if (auditKnowledge.securityDomainGuides) {
+      prompt.push(
+        "",
+        "【安全域通用指南】（业务逻辑/认证鉴权/API安全等）：",
+        "---",
+        auditKnowledge.securityDomainGuides,
+        "---"
+      );
+    }
+
+    // 添加 Java 特定审计框架（来自 java-audit-skills）
+    if (languages && languages.some(l => l.toLowerCase() === 'java')) {
+      prompt.push(
+        "",
+        "【Java认证鉴权审计框架】（来自 java-auth-audit — 必须遵循）：",
+        "---",
+        JAVA_AUTH_AUDIT_FRAMEWORK,
+        "---",
+        "",
+        "【Java SQL注入审计框架】（来自 java-sql-audit — 必须遵循）：",
+        "---",
+        JAVA_SQL_AUDIT_FRAMEWORK,
+        "---",
+        "",
+        "【Java参数可控性分析框架】（来自 java-route-tracer — 用于避免误报）：",
+        "---",
+        JAVA_PARAM_CONTROLLABILITY,
+        "---",
+        "",
+        "【Java Web框架自动识别】（来自 java-route-mapper）：",
+        "---",
+        JAVA_FRAMEWORK_DETECTION,
         "---"
       );
     }
@@ -987,6 +1362,15 @@ export function buildUserPrompt({ project, selectedSkills, heuristicFindings, ba
       '      "impact": "攻击者可绕过身份认证访问管理功能，导致系统被完全控制，用户数据泄露。",',
       '      "remediation": "使用 Spring Security 的 BCryptPasswordEncoder 加密密码：BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(); boolean matches = encoder.matches(rawPassword, encodedPassword);",',
       '      "safeValidation": "验证登录接口是否正确调用 passwordEncoder.matches() 方法，检查数据库中密码是否为 BCrypt 格式（60 字符）",',
+      '      "evidenceLabel": "CONFIRMED",',
+      '      "type": "认证绕过",',
+      '      "attackVector": "攻击者通过 /login 端点，在 username 参数中输入 admin，绕过密码校验直接获取管理员权限",',
+      '      "exploitPrerequisites": "无需认证，端点对外暴露",',
+      '      "attackPathPriority": "P0",',
+      '      "attackPathScore": 12,',
+      '      "killSwitchInfo": "未触发 Kill Switch — 无 enum 限制、无 @Valid、无全局 Filter、无参数化查询",',
+      '      "retestChecklist": ["验证 POST /login 使用 BCrypt 校验密码", "确认 username=admin&password=wrong 返回 401"],',
+      '      "description": "adminCheck 方法仅比较用户名，未验证密码，导致任意用户可构造用户名 admin 绕过认证",',
       '      "source": "username",',
       '      "sink": "adminCheck()",',
       '      "callChain": [{"method": "login", "file": "AuthController.java", "line": 45, "code": "if(username.equals(\\\"admin\\\")) {"}]',
@@ -1013,22 +1397,44 @@ export function buildUserPrompt({ project, selectedSkills, heuristicFindings, ba
     const skills = selectedSkills.map((skill) => `${skill.id}: ${skill.description}`).join("\n");
 
     const hasHeuristicContext = heuristicFindings && heuristicFindings.length > 0;
-    const heuristicSummary = hasHeuristicContext
-      ? heuristicFindings.slice(0, 10).map((finding) => `- ${finding.title} @ ${finding.location} (${finding.vulnType || 'unknown'})`).join("\n")
-      : "";
 
     prompt = prompt.concat([
       "",
       `已启用 Skill：\n${skills}`,
-      hasHeuristicContext ? `规则层发现（仅供参考，LLM应独立验证）：\n${heuristicSummary}` : "规则层未提供额外提示，LLM应独立进行全面审计。",
+      "",
+      hasHeuristicContext
+        ? `【审计必审清单 — 以下快速扫描结果必须逐一审查并给出判定】
+
+以下 ${heuristicFindings.length} 个可疑模式由快速扫描预处理发现。你必须逐条审查并给出明确判定：
+
+${heuristicFindings.slice(0, 15).map((f, i) => `${i + 1}. ${f.title} @ ${f.location || 'n/a'} [${f.vulnType || 'unknown'}, ${f.severity || '?'}] → 判定: [ ]确认 [ ]降级 [ ]误报`).join('\n')}
+
+${heuristicFindings.length > 15 ? `...(共 ${heuristicFindings.length} 条，以上显示前 15 条核心项)` : ''}
+
+对每条清单项的判定要求：
+- 确认：找到完整的 Source→Transfer→Sink 证据链，在 findings 中报告
+- 降级：存在但不严重（如有防护、需认证等）→ 仍须在 findings 中报告！severity 下调一级 + 填写 killSwitchInfo
+- 误报：不存在、不可达或不构成漏洞 → 不在 findings 中报告，但必须在 summary 中逐一列出每条误报判定及其原因
+
+🔴 强制覆盖率：清单中的所有类型（COMMAND_INJECTION, SQL_INJECTION, SQL_INJECTION_MYBATIS, DESERIALIZATION, SSRF, XXE, PATH_TRAVERSAL, SPEL_INJECTION, LOG_INJECTION, OPEN_REDIRECT）必须全部出现在 findings 或 summary 中。不得跳过任何类型。
+
+🔴 SQL 注入特殊要求：清单中标记了 SQL_INJECTION 和 SQL_INJECTION_MYBATIS 的项是最高风险，你必须逐条审查代码中是否真的使用了 PreparedStatement/#{} 参数化还是 \${} 拼接。如果确实是安全的参数化查询，在 findings 中以 Low 级别报告并注明 Kill Switch 原因，不得直接丢弃。
+
+⚠️ 报告粒度要求：
+- 不同端点的同类漏洞必须分别报告（如 /RCE/ProcessBuilder 和 /RCE/Runtime 的命令注入是两个独立发现）
+- 不同文件的不同 sink 函数 → 分别报告
+- 同一文件内多个同类模式 → 可合并，但必须在 findings 中包含所有受影响位置
+
+重要：清单是审计起点而非终点。在此基础上还需独立发现清单以外的任何安全问题。`
+        : "快速扫描未发现可疑模式，请独立进行全面审计，发现所有安全问题。",
       "",
       "【重要】LLM 自主审计要求：",
-      "- 不要受规则层发现的限制，独立发现所有安全问题",
+      "- 必须先逐一审查上述清单，再独立探索其他安全问题",
       "- 可以发现任何类型的安全漏洞，不限于上述Skill列表",
       "- 包括但不限于：注入漏洞、XSS、CSRF、SSRF、路径遍历、敏感信息泄露、",
       "  认证绕过、访问控制、加密问题、反序列化、API安全、配置错误等",
-      "- 输出所有发现的高置信度问题，不要限制数量",
       "- 每个漏洞都必须独立验证行号",
+      "- 对清单中误判为漏洞的项，在 summary 中说明误判原因",
       "",
       "严格返回如下 JSON（包含 findings、score、summary）：",
       '{ "findings": [ { "title": "", "severity": "low|medium|high|critical", "confidence": 0.0, "location": "", "skillId": "", "vulnType": "VULN_TYPE", "cwe": "CWE-XXX", "evidence": "", "impact": "", "remediation": "", "safeValidation": "" } ], "score": 0-100, "summary": "整体评价" }'

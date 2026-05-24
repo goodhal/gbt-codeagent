@@ -18,6 +18,10 @@ import { smartFileFilter } from "../services/smartFileFilter.js";
 import { ArchitectureAnalyzer } from "../services/architectureAnalyzer.js";
 import { getGlobalIncrementalAnalyzer } from "../services/incrementalAnalyzer.js";
 import { CodeGraph } from "../services/codeGraph.js";
+import { javaRouteMapper } from "../analyzers/javaRouteMapper.js";
+import { javaRouteTracer } from "../analyzers/javaRouteTracer.js";
+import { componentVulnService } from "../services/componentVulnService.js";
+import { vulnIdGenerator, scoreVulnerability, getVulnTypeDefaults } from "../config/vulnScoring.js";
 
 import { getMaxParallelProjects, getCheckpointInterval } from "../config/auditParamsConfig.js";
 
@@ -244,6 +248,7 @@ export class AuditAnalystAgent {
             llmConfig,
             reactConfig,
             codeGraphContext,
+            taskId,
             onProgress: (detail) =>
               onProgress?.({
                 stage: "react-audit",
@@ -262,6 +267,7 @@ export class AuditAnalystAgent {
             codeGraphContext,
             codeGraph,
             useStreaming,
+            taskId,
             onProgress: (detail) =>
               onProgress?.({
                 stage: "llm-audit",
@@ -626,9 +632,85 @@ async function buildHeuristicFindings(project, reviewProfile) {
   console.log(`[审计分析] 外部工具扫描完成，发现 ${externalFindings.length} 个问题`);
   findings.push(...externalFindings);
 
+  // 4. 组件漏洞扫描（Java/Node.js/Python依赖检测）
+  console.log(`[审计分析] 开始组件漏洞扫描`);
+  try {
+    const componentScanResult = await componentVulnService.scanProjectDependencies(sourceRoot);
+    if (componentScanResult.findings.length > 0) {
+      console.log(`[审计分析] 组件漏洞扫描完成，发现 ${componentScanResult.findings.length} 个已知CVE漏洞（扫描 ${componentScanResult.stats.filesScanned} 个依赖文件，${componentScanResult.stats.totalDependencies} 个依赖）`);
+      findings.push(...componentScanResult.findings);
+    } else {
+      console.log(`[审计分析] 组件漏洞扫描完成，未发现已知CVE漏洞`);
+    }
+  } catch (error) {
+    console.warn(`[审计分析] 组件漏洞扫描失败: ${error.message}`);
+  }
+
   // 收集文件用于规则检测
   const files = await collectFiles(sourceRoot);
   console.log(`[审计分析] 收集到 ${files.length} 个文件用于规则检测`);
+
+  // 5. Java 路由映射分析（自动识别Java Web框架并提取所有HTTP路由）
+  const isJavaProject = files.some(f => f.endsWith(".java") || f.endsWith(".xml"));
+  let javaRoutes = [];
+  if (isJavaProject) {
+    console.log(`[审计分析] 检测到Java项目，开始路由映射分析`);
+    try {
+      const routeScanResult = await javaRouteMapper.scanProject(sourceRoot, files);
+      javaRoutes = routeScanResult.routes || [];
+      console.log(`[审计分析] 路由映射完成，提取 ${javaRoutes.length} 条HTTP路由（框架: ${Object.keys(routeScanResult.stats.byFramework).join(", ") || "none"}）`);
+    } catch (error) {
+      console.warn(`[审计分析] 路由映射分析失败: ${error.message}`);
+    }
+
+    // 6. Java 调用链追踪（对高危路由追踪 Controller→Service→DAO 完整调用链）
+    if (javaRoutes.length > 0) {
+      // 筛选需要追踪的高危路由（快速扫描有发现的文件对应的路由）
+      const quickScanFiles = new Set(quickScanFindings.map(f => f.file));
+      const riskyRoutes = javaRoutes.filter(r =>
+        quickScanFiles.has(r.file) || r.urlPath.includes("admin") || r.urlPath.includes("api")
+      );
+      const traceTargets = riskyRoutes.slice(0, 30); // 限制最多追踪30条路由
+
+      if (traceTargets.length > 0) {
+        console.log(`[审计分析] 开始调用链追踪（${traceTargets.length}/${riskyRoutes.length} 条高危路由）`);
+        try {
+          const traces = await javaRouteTracer.traceProjectRoutes(sourceRoot, traceTargets, files);
+          console.log(`[审计分析] 调用链追踪完成，成功追踪 ${traces.filter(t => !t.error).length} 条路由`);
+
+          // 从调用链中提取额外发现（如: 无鉴权的敏感路由、参数可控的SQL拼接等）
+          for (const trace of traces) {
+            if (trace.error) continue;
+
+            // 路由无鉴权且包含敏感操作
+            if (trace.sinks && trace.sinks.length > 0 && trace.params?.some(p => p.controllable)) {
+              const controllableParams = trace.params.filter(p => p.controllable);
+              const sinkTypes = [...new Set(trace.sinks)];
+
+              findings.push(createFinding({
+                skillId: "route-tracer",
+                title: `高危路由调用链: ${trace.route}`,
+                severity: sinkTypes.includes("SQL") || sinkTypes.includes("COMMAND") ? "critical" : "high",
+                confidence: 0.78,
+                location: `${trace.entryFile}#${trace.entryMethod}`,
+                vulnType: sinkTypes.includes("SQL") ? "SQL_INJECTION" : sinkTypes[0] || "SENSITIVE_OPERATION",
+                cwe: "CWE-89",
+                evidence: `路由 ${trace.route} (${trace.httpMethod}) → ${trace.entryMethod}() 存在 ${sinkTypes.join(", ")} 风险点。可控参数: ${controllableParams.map(p => p.param).join(", ")}。调用链: ${trace.summary?.chain || "N/A"}`,
+                impact: `攻击者可能通过 ${trace.route} 接口利用 ${sinkTypes.join("/")} 漏洞，影响范围: ${controllableParams.length} 个参数可控`,
+                remediation: `对路由 ${trace.route} 的所有可控参数进行白名单校验或参数化处理。审查 ${trace.summary?.chain || "调用链"} 中每个节点的输入验证。`,
+                safeValidation: `验证 ${trace.route} 的输入参数是否经过充分校验，确认 ${sinkTypes.join("/")} 操作点是否使用了参数化查询或安全API。`,
+                callChain: trace.summary?.chain || "",
+                routePath: trace.route,
+                routeMethod: trace.httpMethod
+              }));
+            }
+          }
+        } catch (error) {
+          console.warn(`[审计分析] 调用链追踪失败: ${error.message}`);
+        }
+      }
+    }
+  }
 
   for (const file of files) {
     const content = await fs.readFile(file, "utf8");

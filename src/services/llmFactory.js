@@ -1,3 +1,5 @@
+import { jsonrepair } from "jsonrepair";
+
 const LLMProvider = {
   OPENAI: "openai",
   ANTHROPIC: "anthropic",
@@ -432,6 +434,93 @@ function fetchWithTimeout(url, options, timeoutMs = 120000) {
     .finally(() => clearTimeout(timeout));
 }
 
+/**
+ * 共享 LLM 调用函数 (避免各服务重复实现)
+ * @param {object} llmConfig - { baseUrl, apiKey, model }
+ * @param {string} systemPrompt
+ * @param {string} userPrompt
+ * @param {number} [temperature=0]
+ * @param {number} [maxTokens=2048]
+ */
+async function callLLM(llmConfig, systemPrompt, userPrompt, temperature = 0, maxTokens = 2048) {
+  const baseUrl = String(llmConfig.baseUrl || "").replace(/\/+$/, "");
+  const model = llmConfig.model || "gpt-3.5-turbo";
+  const compatibility = llmConfig.compatibility || llmConfig.defaults?.compatibility || "openai";
+
+  // Anthropic 格式
+  if (compatibility === "anthropic") {
+    const response = await fetchWithTimeout(`${baseUrl}/v1/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": llmConfig.apiKey, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({ model, max_tokens: maxTokens, temperature, system: systemPrompt, messages: [{ role: "user", content: userPrompt }] }),
+    });
+    if (!response.ok) throw new Error(`LLM 返回 ${response.status}`);
+    const data = await response.json();
+    return (data.content || []).map(item => item.text || "").join("\n") || "";
+  }
+
+  // Gemini 格式
+  if (compatibility === "gemini") {
+    const response = await fetchWithTimeout(`${baseUrl}/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(llmConfig.apiKey)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ systemInstruction: { parts: [{ text: systemPrompt }] }, contents: [{ role: "user", parts: [{ text: userPrompt }] }], generationConfig: { temperature, maxOutputTokens: maxTokens } }),
+    });
+    if (!response.ok) throw new Error(`LLM 返回 ${response.status}`);
+    const data = await response.json();
+    return data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("\n") || "";
+  }
+
+  // OpenAI 兼容格式（默认）
+  const response = await fetchWithTimeout(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${llmConfig.apiKey}` },
+    body: JSON.stringify({ model, temperature, max_tokens: maxTokens, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }] }),
+  });
+  if (!response.ok) throw new Error(`LLM 返回 ${response.status}`);
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || "";
+}
+
+/**
+ * 共享 JSON 响应解析 (避免各服务重复实现)
+ * @param {string} text - LLM 返回的原始文本
+ * @returns {object} 解析后的 JSON 对象
+ */
+function parseJsonResponse(text) {
+  const trimmed = String(text || "").trim();
+  if (!trimmed) return {};
+  // 尝试从 markdown 代码块提取
+  const m = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = m ? m[1].trim() : trimmed;
+  try { return JSON.parse(candidate); } catch {}
+  try { return JSON.parse(jsonrepair(candidate)); } catch {}
+  // 提取平衡的 JSON 对象
+  const start = candidate.indexOf("{");
+  if (start === -1) return {};
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < candidate.length; i++) {
+    const ch = candidate[i];
+    if (esc) { esc = false; continue; }
+    if (ch === "\\" && inStr) { esc = true; continue; }
+    if (ch === '"' && !esc) { inStr = !inStr; continue; }
+    if (!inStr) {
+      if (ch === "{") depth++;
+      else if (ch === "}") { depth--; if (depth === 0) { try { return JSON.parse(jsonrepair(candidate.substring(start, i + 1))); } catch { return {}; } } }
+    }
+  }
+  return {};
+}
+
+/**
+ * 共享数值裁剪函数
+ */
+function clampNumber(v, min, max) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return min;
+  return Math.max(min, Math.min(max, n));
+}
+
 const globalLLMFactory = new LLMFactory();
 
 export {
@@ -445,5 +534,8 @@ export {
   GeminiAdapter,
   LLMFactory,
   globalLLMFactory,
-  fetchWithTimeout
+  fetchWithTimeout,
+  callLLM,
+  parseJsonResponse,
+  clampNumber
 };

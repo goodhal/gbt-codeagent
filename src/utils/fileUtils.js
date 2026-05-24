@@ -111,3 +111,14 @@ export async function collectFiles(root) {
     return [];
   }
 }
+
+/**
+ * 从文件路径提取子系统名称
+ * 统一实现，避免 gapfillService/coverageService 重复定义
+ */
+export function extractSubsystem(filePath) {
+  const parts = String(filePath || "").replaceAll("\\", "/").split("/");
+  const skip = new Set(["src", "main", "java", "com", "python", "lib", "app", "api", "controller", "controllers", "routes", "services", "service"]);
+  const meaningful = parts.filter(p => p && !skip.has(p.toLowerCase()) && !p.includes("."));
+  return meaningful.slice(0, 2).join("/") || parts[0] || "unknown";
+}

@@ -31,12 +31,14 @@ function buildHtml({ task, selectedProjects, auditResult, architectureAnalysis }
       const llmResult = projectResult.llmAudit;
       const llmState = describeLlmAudit(llmResult);
       const verdictMap = buildVerdictMap(projectResult.findings || []);
-      const heuristicSource = (projectResult.heuristicFindings || []).length > 0
+      const heuristicSource = ((projectResult.heuristicFindings || []).length > 0
         ? (projectResult.heuristicFindings || [])
-        : (projectResult.findings || []).filter(f => ['quick_scan', 'taint', 'rule', 'pattern'].includes(f.source) || !f.source);
-      const llmSource = (llmResult?.findings || []).length > 0
+        : (projectResult.findings || []).filter(f => ['quick_scan', 'taint', 'rule', 'pattern'].includes(f.source) || !f.source))
+        .filter(f => f.verdict !== 'false_positive');
+      const llmSource = ((llmResult?.findings || []).length > 0
         ? (llmResult?.findings || [])
-        : (projectResult.findings || []).filter(f => f.source === 'llm');
+        : (projectResult.findings || []).filter(f => f.source === 'llm'))
+        .filter(f => f.verdict !== 'false_positive');
       const heuristicFindings = renderFindings(heuristicSource, "规则层本次没有保留到高置信度结果。", verdictMap);
       const llmFindings = renderFindings(llmSource, llmState.emptyMessage, verdictMap);
       const llmWarnings = (llmResult?.warnings || [])
@@ -118,6 +120,8 @@ function buildHtml({ task, selectedProjects, auditResult, architectureAnalysis }
     .sub-card{margin-top:16px;padding:16px;border-radius:18px;background:#f0f5ff;border:1px solid #bfdbfe}
     .finding{border-top:1px solid #dbeafe;padding-top:14px;margin-top:14px}
     .finding-fp{opacity:0.6;border-left:3px solid #fca5a5;padding-left:10px}
+    .callchain-node{display:inline-block;background:#e0f2fe;color:#0369a1;padding:1px 6px;border-radius:3px;font-size:11px;margin:0 2px}
+    .blocker-node{display:inline-block;background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:3px;font-size:11px;margin:2px 0}
     .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:#dbeafe}
     .badge.critical{background:#fecaca}
     .badge.low{background:#dbeafe}
@@ -392,6 +396,9 @@ function renderFindings(findings, emptyMessage, verdictMap) {
                   ${verdictBadge}
                   ${finding.evidenceLabel ? `<span class="badge" style="background:${finding.evidenceLabel === 'CONFIRMED' ? '#d1fae5;color:#065f46' : finding.evidenceLabel === 'SUSPECTED' ? '#fef3c7;color:#92400e' : '#e0e7ff;color:#3730a3'}">${escapeHtml(finding.evidenceLabel)}</span>` : ''}
                   ${finding.attackPathPriority ? `<span class="badge priority-${(finding.attackPathPriority || '').toLowerCase()}">${escapeHtml(finding.attackPathPriority)} 路径</span>` : ''}
+                  ${finding._traceReachable === true ? '<span class="badge" style="background:#22c55e;color:#fff">🔗 可达</span>' : ''}
+                  ${finding._traceReachable === false ? '<span class="badge" style="background:#9ca3af;color:#fff">🔒 不可达</span>' : ''}
+                  ${finding.hedgedLanguage === true ? '<span class="badge" style="background:#fef3c7;color:#92400e">⚠️ 措辞模糊</span>' : ''}
                 </div>
               </div>
               ${verdictInfo?.verificationReason ? `<p class="muted">验证说明：${escapeHtml(verdictInfo.verificationReason)}</p>` : ''}
@@ -408,6 +415,10 @@ function renderFindings(findings, emptyMessage, verdictMap) {
                 return `<p><strong>复测清单：</strong><br>${items.map(s => '• ' + escapeHtml(s)).join('<br>')}</p>`;
               })() : ''}
               ${finding.killSwitchInfo ? `<p class="muted"><strong>🛡️ Kill Switch：</strong>${escapeHtml(finding.killSwitchInfo)}</p>` : ''}
+              ${finding._traceCallChain && finding._traceCallChain.length > 0 ? `<p class="muted"><strong>🔗 调用链：</strong>${escapeHtml(finding._traceCallChain.map(c => `${c.function || '?'}@${c.file}:${c.line}`).join(' → '))}</p>` : ''}
+              ${finding._traceBlockers && finding._traceBlockers.length > 0 ? `<p class="muted"><strong>🚫 阻断因素：</strong>${escapeHtml(finding._traceBlockers.map(b => `${b.kind}: ${b.description}`).join('; '))}</p>` : ''}
+              ${finding._advValidation?.verdict === 'rejected' ? `<p class="muted" style="color:#ef4444"><strong>🛡️ 对抗性验证驳回：</strong>${escapeHtml(finding._advValidation.rationale || '')}</p>` : ''}
+              ${finding._advValidation?.verdict === 'confirmed' ? `<p class="muted" style="color:#22c55e"><strong>✅ 对抗性验证确认：</strong>${escapeHtml(finding._advValidation.alternativeExplanation || finding._advValidation.rationale || '')}</p>` : ''}
               <p><strong>安全验证建议：</strong>${escapeHtml(finding.safeValidation || "")}</p>
               ${astContextInfo}
             </div>

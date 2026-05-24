@@ -195,7 +195,7 @@ export class ExternalToolService {
           remediation: "立即删除硬编码的敏感信息，使用环境变量或密钥管理服务",
           safeValidation: "建议立即删除并使用安全的密钥管理方案",
           codeSnippet: item.Secret || item.Match,
-          status: "误报", // 默认状态，等待验证
+          status: "待验证", // 默认状态，等待验证
           externalToolData: {
             ruleId: item.RuleID,
             commit: item.Commit,
@@ -277,7 +277,7 @@ export class ExternalToolService {
           remediation: `参考 Bandit 建议：${item.more_info || "请查阅相关安全编码规范"}`,
           safeValidation: "建议人工复核代码上下文，确认是否存在实际安全风险",
           codeSnippet: item.code?.raw || "",
-          status: "误报", // 默认状态，等待验证
+          status: "待验证", // 默认状态，等待验证
           externalToolData: {
             testId: item.test_id,
             testName: item.test_name,
@@ -353,7 +353,7 @@ export class ExternalToolService {
           remediation: item.fix || "请查阅相关安全编码规范",
           safeValidation: "建议人工复核代码上下文，确认是否存在实际安全风险",
           codeSnippet: item.extra?.lines || "",
-          status: "误报", // 默认状态，等待验证
+          status: "待验证", // 默认状态，等待验证
           externalToolData: {
             checkId: item.check_id,
             message: item.message,

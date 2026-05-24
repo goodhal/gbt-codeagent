@@ -3,6 +3,8 @@
  * 集中管理语言映射、漏洞类型、证据点等配置
  */
 
+import path from "node:path";
+
 /**
  * 文件扩展名到语言的映射
  */
@@ -378,7 +380,6 @@ export const COMMENT_PATTERNS = {
  * 根据文件路径检测语言
  */
 export function detectLanguage(filePath) {
-  const path = require('path');
   const ext = path.extname(filePath).toLowerCase();
   return FILE_EXTENSION_MAP[ext] || null;
 }

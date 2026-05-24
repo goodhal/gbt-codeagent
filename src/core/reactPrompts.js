@@ -62,9 +62,12 @@ async function buildReActSystemPrompt() {
 }
 
 function buildReActInitialPrompt(codeDiff, projectInfo = {}) {
-  const template = `请分析以下代码变更，进行深度安全审计：
-
-## 项目信息
+  // 优先使用文档模板（支持{preAnalysis}），回退到内嵌模板
+  let template;
+  try {
+    template = getPromptSync('initialPromptTemplate');
+  } catch {
+    template = `## 项目信息
 - 项目名称：{projectName}
 - 项目路径：{projectPath}
 - 编程语言：{language}
@@ -76,18 +79,22 @@ function buildReActInitialPrompt(codeDiff, projectInfo = {}) {
 \`\`\`
 
 ## 分析要求
-1. 首先使用工具收集变更文件的完整信息
-2. 理解代码的业务逻辑和上下文
-3. 识别潜在的安全漏洞和风险
-4. 提供具体的问题位置和修复建议
-
 请开始使用工具进行分析。`;
+  }
 
   return template
     .replace('{projectName}', projectInfo.name || 'Unknown Project')
     .replace('{projectPath}', projectInfo.path || 'Unknown Path')
     .replace('{language}', projectInfo.language || 'Multiple')
-    .replace('{codeDiff}', codeDiff || 'No code diff provided');
+    .replace('{preAnalysis}', codeDiff || '无预分析信息')
+    .replace('{codeDiff}', codeDiff || '');
+}
+
+function getPromptSync(key) {
+  if (!cachedPrompts || !cachedPrompts[key]) {
+    throw new Error(`Prompt "${key}" not loaded`);
+  }
+  return cachedPrompts[key];
 }
 
 async function getAnalysisStrategy() {

@@ -6,12 +6,10 @@ import { jsonrepair } from "jsonrepair";
 import { withRetry, withRetryWithFallback, CircuitBreaker, CircuitBreakerConfig, createReActAuditor, PromptCacheManager } from "../core/index.js";
 import { createLocalToolExecutor } from "../tools/localToolExecutor.js";
 import { buildReActSystemPrompt, buildReActInitialPrompt } from "../core/reactPrompts.js";
-import { ragService } from "./ragService.js";
 import { streamService } from "./streamService.js";
-import { estimateTokens, countTokensTiktoken, getModelMaxTokens, PromptCompressor, IncrementalSummary, ContextConfig } from "../utils/contextManager.js";
+import { estimateTokens, getModelMaxTokens, PromptCompressor, IncrementalSummary, ContextConfig } from "../utils/contextManager.js";
 import { fetchWithTimeout, globalLLMFactory } from "./llmFactory.js";
-import { CodeRetriever } from "./retriever.js";
-import { deduplicateAndSort, severityScore } from "../utils/findingsUtils.js";
+import { deduplicateAndSort } from "../utils/findingsUtils.js";
 import { LLMOptimizer } from "./llmOptimizer.js";
 import {
   loadAuditKnowledge,
@@ -24,10 +22,11 @@ import {
 } from "../config/llmPrompts.js";
 import OWASP_MAPPING from "../config/owaspMapping.js";
 
+import { callLLM } from "./llmFactory.js";
 import { AuditCandidateFilter } from "./auditCandidateFilter.js";
-import { AuditFailureTracker, TokenPreChecker, AgentOutputValidator, buildDependencyContext, formatDependencyContextText } from "./auditEnhancer.js";
+import { AuditFailureTracker, TokenPreChecker, AgentOutputValidator } from "./auditEnhancer.js";
 
-import { loadAuditParams, getMaxBatches, getMaxFilesPerBatch, getMaxCharsPerBatch, getMaxParallelRequests, getFetchTimeoutMs, getCodeIndexMinFiles } from "../config/auditParamsConfig.js";
+import { loadAuditParams, getMaxBatches, getMaxFilesPerBatch, getMaxCharsPerBatch, getMaxParallelRequests, getFetchTimeoutMs } from "../config/auditParamsConfig.js";
 
 const llmCircuitBreaker = new CircuitBreaker("llm-service", {
   failureThreshold: 3,
@@ -46,21 +45,6 @@ const auditCandidateFilter = new AuditCandidateFilter({ candidateScoreThreshold:
 const auditFailureTracker = new AuditFailureTracker(0.3);
 const tokenPreChecker = new TokenPreChecker({ overheadTokens: 512, safetyMargin: 0.85 });
 const agentOutputValidator = new AgentOutputValidator();
-
-// 初始化 RAG 服务
-async function initializeRAG() {
-  try {
-    await ragService.initialize({
-      vectorPersistPath: path.join(process.cwd(), 'data', 'rag_vectors.json')
-    });
-    console.log('[LLM审计] RAG 服务初始化完成');
-  } catch (error) {
-    console.warn('[LLM审计] RAG 服务初始化失败，将使用关键词搜索:', error);
-  }
-}
-
-// 在模块加载时初始化 RAG
-initializeRAG();
 
 export class DefensiveLlmReviewer {
   async reviewProject({ project, selectedSkills, heuristicFindings, llmConfig, onProgress, useStreaming = false, taskId }) {
@@ -190,7 +174,7 @@ export class DefensiveLlmReviewer {
       label: `正在准备 LLM 复核：${project.name}`
     });
 
-    const maxParallel = useStreaming ? 1 : getMaxParallelRequests();
+    const maxParallel = getMaxParallelRequests();
 
     async function processBatch(batch, batchIndex) {
       const labelPrefix = useStreaming ? '流式' : '并行';
@@ -285,7 +269,7 @@ export class DefensiveLlmReviewer {
       }
     }
 
-    const effectiveMaxParallel = useStreaming ? 1 : getMaxParallelRequests();
+    const effectiveMaxParallel = getMaxParallelRequests();
     for (let i = 0; i < validBatches.length; i += effectiveMaxParallel) {
       const batchGroup = validBatches.slice(i, i + effectiveMaxParallel);
       const results = await Promise.all(
@@ -318,7 +302,11 @@ export class DefensiveLlmReviewer {
     });
 
     const confidenceFiltered = llmOptimizer.filterByConfidence(validFindings, 0.5);
-    const dedupedFindings = llmOptimizer.deduplicateFindings(confidenceFiltered);
+    // 自洽审查：将LLM发现发回LLM做二次确认（解决非确定性问题）
+    const consensusFiltered = confidenceFiltered.length > 20 && llmConfig?.apiKey
+      ? (await selfConsensusFilter(confidenceFiltered, llmConfig, sourceRoot)).confirmed
+      : confidenceFiltered;
+    const dedupedFindings = llmOptimizer.deduplicateFindings(consensusFiltered);
     const rankedFindings = llmOptimizer.rankFindings(dedupedFindings);
     const truncated = prioritizedFiles.length > validBatches.flat().length;
 
@@ -354,7 +342,7 @@ export class DefensiveLlmReviewer {
     };
   }
 
-  async auditProject({ project, selectedSkills, llmConfig, codeGraphContext, codeGraph, onProgress, useStreaming = false, taskId }) {
+  async auditProject({ project, selectedSkills, llmConfig, codeGraphContext, codeGraph, routeTable = null, onProgress, useStreaming = false, taskId }) {
     console.log(`[LLM审计] auditProject 开始 - 项目: ${project.name}, 提供商: ${llmConfig.providerId}, 模型: ${llmConfig.model}`);
     console.log(`[LLM审计] 代码知识图谱上下文: ${codeGraphContext ? '已提供' : '未提供'}`);
     if (!llmConfig?.apiKey) {
@@ -382,49 +370,6 @@ export class DefensiveLlmReviewer {
       };
     }
 
-    // 初始化代码检索器，建立项目代码索引
-    // 自动判断：小项目（≤50文件）跳过索引，收益小而开销大
-    const embeddingConcurrency = getMaxParallelRequests();
-    const codeIndexThreshold = getCodeIndexMinFiles();
-    let codeRetriever = null;
-
-    if (files.length >= codeIndexThreshold) {
-      try {
-        codeRetriever = new CodeRetriever({ maxChunkSize: 800, overlap: 50 });
-        await codeRetriever.initialize();
-        console.log(`[LLM审计] 开始并行索引项目代码: ${files.length} 个文件 (并发 ${embeddingConcurrency})`);
-        const filesToIndex = files.slice(0, 100);
-        const indexLimit = pLimit(embeddingConcurrency);
-        let indexedCount = 0;
-
-        const tasks = filesToIndex.map((file) =>
-          indexLimit(async () => {
-            try {
-              await codeRetriever.indexFile(file.fullPath, file.content, file.language);
-            } catch (e) {
-            }
-            indexedCount++;
-            if (indexedCount % 10 === 0 || indexedCount === filesToIndex.length) {
-              onProgress?.({
-                type: "llm-indexing",
-                totalFiles: files.length,
-                indexedFiles: indexedCount,
-                label: `正在索引项目代码：${indexedCount} / ${filesToIndex.length} 个文件`
-              });
-            }
-          })
-        );
-
-        await Promise.all(tasks);
-        console.log(`[LLM审计] 代码索引完成，已索引 ${codeRetriever.chunks.size} 个代码块`);
-      } catch (error) {
-        console.warn(`[LLM审计] 代码索引失败: ${error.message}`);
-        codeRetriever = null;
-      }
-    } else {
-      console.log(`[LLM审计] 跳过代码索引：项目文件数 ${files.length} < 阈值 ${codeIndexThreshold}`);
-    }
-
     // 对于独立审计，我们处理所有文件，而不仅仅是排名靠前的文件
     const batches = buildBatches(files);
     const findings = [];
@@ -447,27 +392,6 @@ export class DefensiveLlmReviewer {
       label: `正在准备 LLM 审计：${project.name}`
     });
 
-    async function getCodeContextForBatch(batch, skillContext = "") {
-      if (!codeRetriever || codeRetriever.chunks.size === 0) {
-        return "";
-      }
-
-      try {
-        const query = skillContext || "安全漏洞 注入 认证 授权 敏感数据";
-        const results = await codeRetriever.hybridRetrieve(query, { k: 3, semanticWeight: 0.6, keywordWeight: 0.4 });
-
-        if (results.length === 0) return "";
-
-        const contextParts = ["\n\n【相关代码上下文】"];
-        for (const result of results.slice(0, 2)) {
-          contextParts.push(result.toContextString());
-        }
-        return contextParts.join("\n");
-      } catch (error) {
-        return "";
-      }
-    }
-
     async function processAuditBatch(batch, batchIndex) {
       const labelPrefix = useStreaming ? '流式' : '并行';
       onProgress?.({
@@ -481,24 +405,16 @@ export class DefensiveLlmReviewer {
         label: `正在${labelPrefix} LLM 审计：第 ${batchIndex + 1} / ${validBatches.length} 批`
       });
 
-      const skillContext = selectedSkills.map(s => s.name).join(" ");
-      let codeContext = await getCodeContextForBatch(batch, skillContext);
-
-      if (codeGraphContext && codeGraph) {
-        try {
-          const depContext = buildDependencyContext({ qualifiedName: batch[0]?.relativePath }, codeGraph, { maxDepth: 2, maxNodes: 12 });
-          const depContextText = formatDependencyContextText(depContext);
-          if (depContextText) {
-            codeContext = (codeContext ? codeContext + "\n\n" : "") + "【依赖上下文分析】\n" + depContextText;
-            if (depContext.combinedRisk) {
-              console.log(`[LLM审计] 批次 ${batchIndex + 1} 检测到组合风险依赖上下文`);
-            }
-          }
-        } catch (e) {
-        }
+      // 构建路由清单（让LLM知道全项目有哪些入口点，解决视野受限问题）
+      let routeChecklist = "";
+      if (routeTable?.routes?.length > 0) {
+        const routeSummary = routeTable.routes.slice(0, 50).map(r =>
+          `  ${r.httpMethod || 'ANY'} ${r.urlPath || r.route} → ${r.entryFile || r.file}:${r.entryMethod || ''}`
+        ).join('\n');
+        routeChecklist = `\n\n【项目路由清单 — 全部入口点（共${routeTable.count}个）】\n${routeSummary}\n\n**审计要求：必须确保上述每个路由的以下方面都被检查过：**\n1. 认证鉴权（是否 @PreAuthorize / 拦截器覆盖 / 匿名可访问）\n2. 输入参数是否进入危险sink（SQL/命令/文件/反序列化/模板）\n3. 是否存在越权风险（查询其他用户数据而不校验所有者）`;
       }
 
-      const userPrompt = buildUserPrompt({ project, selectedSkills, heuristicFindings: [], batch, codeContext, codeGraphContext });
+      const userPrompt = buildUserPrompt({ project, selectedSkills, heuristicFindings: [], batch, codeContext: "", codeGraphContext: null }) + routeChecklist;
       const tokenCheck = tokenPreChecker.checkPrompts(systemPrompt, userPrompt, llmConfig.model);
       if (!tokenCheck.ok) {
         console.warn(`[LLM审计] Token预检失败: ${tokenCheck.error}`);
@@ -550,7 +466,7 @@ export class DefensiveLlmReviewer {
       }
     }
 
-    const effectiveMaxParallel = useStreaming ? 1 : getMaxParallelRequests();
+    const effectiveMaxParallel = getMaxParallelRequests();
     for (let i = 0; i < validBatches.length; i += effectiveMaxParallel) {
       const batchGroup = validBatches.slice(i, i + effectiveMaxParallel);
       const results = await Promise.all(
@@ -578,9 +494,13 @@ export class DefensiveLlmReviewer {
       }
     }
 
-    const dedupedFindings = deduplicateAndSort(findings);
+    // 自洽审查：LLM独立审计发现需经二次确认
+    const consensusResult = findings.length > 20 && llmConfig?.apiKey
+      ? await selfConsensusFilter(findings, llmConfig, sourceRoot)
+      : { confirmed: findings, rejected: [] };
+    const dedupedFindings = deduplicateAndSort(consensusResult.confirmed);
     const truncated = files.length > validBatches.flat().length;
-    console.log(`[LLM审计] auditProject 完成 - 审计文件数: ${auditedFiles}, 审计批次: ${auditedBatches}, 发现问题数: ${dedupedFindings.length}, 警告数: ${warnings.length}`);
+    console.log(`[LLM审计] auditProject 完成 - 审计文件数: ${auditedFiles}, 审计批次: ${auditedBatches}, 发现问题数: ${dedupedFindings.length} (自洽驳回${consensusResult.rejected?.length || 0}), 警告数: ${warnings.length}`);
 
     const incompleteReport = auditFailureTracker.isAboveThreshold() ? auditFailureTracker.buildIncompleteReport() : null;
 
@@ -625,7 +545,7 @@ export class DefensiveLlmReviewer {
     const toolExecutor = createLocalToolExecutor(sourceRoot);
 
     const auditorConfig = {
-      maxSteps: reactConfig.maxSteps || 15,
+      maxSteps: reactConfig.maxSteps || 30,
       temperature: reactConfig.temperature || 0.1,
       maxRetries: reactConfig.maxRetries || 3,
       verbose: reactConfig.verbose || false
@@ -1186,7 +1106,10 @@ function rankFiles(files, heuristicFindings, selectedSkills) {
       if (locationHints.has(file.relativePath)) {
         score += 120;
       }
-      if (/(auth|permission|policy|access|role|admin|upload|secret|query|config|service|controller)/.test(loweredPath)) {
+      // controller/config/util/Security 文件强制优先审查（即使无快扫命中），解决覆盖率不足问题
+      if (/(\/controller\/|\/config\/|\/util\/|security|auth|login|admin)/i.test(file.relativePath)) {
+        score += 200; // 确保排名最前，必定进入批次
+      } else if (/(auth|permission|policy|access|role|upload|secret|query|service)/.test(loweredPath)) {
         score += 60;
       }
       for (const keyword of keywordHints) {
@@ -1360,6 +1283,7 @@ function normalizeFindings(findings, selectedSkills) {
         killSwitchInfo: safeString(finding.killSwitchInfo || finding.kill_switch_info, ""),
         description: safeString(finding.description || finding.desc, ""),
         type: safeString(finding.type || finding.root_cause, ""),
+        hedgedLanguage: finding.hedged_language !== undefined ? !!finding.hedged_language : (finding.hedgedLanguage !== undefined ? !!finding.hedgedLanguage : null),
       };
 
       if (isGbtAudit && finding.skillId === "gbt-code-audit") {
@@ -1454,4 +1378,80 @@ function clampCvssScore(value) {
     return 10.0;
   }
   return Math.round(numeric * 10) / 10;
+}
+
+/**
+ * 自洽审查：将LLM发现发回LLM做二次确认/驳回
+ * 解决LLM非确定性问题——只保留模型自身也再次确认的发现
+ * @param {Array} findings - 待审查的发现列表
+ * @param {object} llmConfig - LLM配置
+ * @param {string} sourceRoot - 项目根目录
+ * @returns {Promise<{confirmed: Array, rejected: Array}>}
+ */
+export async function selfConsensusFilter(findings, llmConfig, sourceRoot) {
+  if (!findings?.length || !llmConfig?.apiKey) {
+    return { confirmed: findings, rejected: [] };
+  }
+
+  const SYSTEM_PROMPT = `你是代码安全审计的二次审查员。你的任务是逐一审查一批发现，重新阅读相关代码，然后对每条发现给出确认或驳回的判定。
+
+# 审查规则
+- 对于每条发现，你必须说：这条发现确实存在且可利用 → confirm；或者这条发现不存在/不可达/已被防护 → reject
+- 不要因为"可能是"而确认——必须确信代码确实有问题
+- 如果你不确定，就标记为 reject
+- 对每条发现的判定必须有简短理由
+
+# 输出格式
+返回JSON:
+{
+  "decisions": [
+    {"finding_id": "...", "verdict": "confirm|reject", "reason": "简短理由"}
+  ]
+}`;
+
+  const findingsList = findings.map((f, i) => {
+    const id = f.finding_id || f.vulnId || `finding_${i}`;
+    return {
+      finding_id: id,
+      title: f.title,
+      location: f.location,
+      severity: f.severity,
+      vuln_type: f.vulnType,
+      evidence: (f.evidence || "").substring(0, 500),
+      description: (f.description || "").substring(0, 300),
+      code_snippet: (f.codeSnippet || "").substring(0, 800),
+    };
+  });
+
+  const userPrompt = `请审查以下 ${findingsList.length} 条发现，逐一给出 confirm 或 reject 判定：
+
+${JSON.stringify(findingsList, null, 2)}
+
+请返回JSON格式的审查结果。`;
+
+  try {
+    const responseText = await callLLM(llmConfig, SYSTEM_PROMPT, userPrompt, 0, 4096);
+    const parsed = parseJsonResponse(responseText);
+    const decisions = parsed.decisions || [];
+
+    const decisionMap = new Map(decisions.map(d => [d.finding_id, d]));
+    const confirmed = [];
+    const rejected = [];
+
+    for (const f of findings) {
+      const id = f.finding_id || f.vulnId || `finding_${findings.indexOf(f)}`;
+      const decision = decisionMap.get(id);
+      if (decision?.verdict === "confirm") {
+        confirmed.push({ ...f, _selfConsensus: "confirmed", _consensusReason: decision.reason });
+      } else {
+        rejected.push({ ...f, _selfConsensus: "rejected", _consensusReason: decision?.reason || "无判定" });
+      }
+    }
+
+    console.log(`[自洽审查] ${findings.length}条 → 确认${confirmed.length} / 驳回${rejected.length}`);
+    return { confirmed, rejected };
+  } catch (error) {
+    console.warn(`[自洽审查] 失败: ${error.message}，保留原始发现`);
+    return { confirmed: findings, rejected: [] };
+  }
 }

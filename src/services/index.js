@@ -21,7 +21,7 @@ export { FingerprintService } from './fingerprintService.js';
 export { ValidationService } from './validationService.js';
 export { EnvironmentReport } from './environmentReport.js';
 export { ExternalToolService } from './externalToolService.js';
-export { ReportWriter } from './reportWriter.js';
+export { writeAuditHtmlReport, writeSarifReport } from './reportWriter.js';
 export { StreamService } from './streamService.js';
 export { MemoryStore } from './memoryStore.js';
 export { SettingsStore } from './settingsStore.js';

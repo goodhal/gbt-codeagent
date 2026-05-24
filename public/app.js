@@ -273,7 +273,7 @@ function initDiscoverPage() {
     if (useReAct) {
       payload.useReAct = true;
       payload.reactConfig = {
-        maxSteps: Number(form.elements.reactMaxSteps?.value || 15),
+        maxSteps: Number(form.elements.reactMaxSteps?.value || 30),
         temperature: Number(form.elements.reactTemperature?.value || 0.1),
         maxRetries: Number(form.elements.reactMaxRetries?.value || 3),
         verbose: form.elements.reactVerbose?.checked === true
@@ -1001,6 +1001,15 @@ function renderProjectReview(project) {
         <div class="summary-card"><strong>调用</strong><span>${project.llmAudit?.called ? '是' : '否'}</span></div>
       </div>
       ${project.llmAudit?.summary ? `<p class="note" style="margin-top: 8px;">${escapeHtml(project.llmAudit.summary)}</p>` : ''}
+      ${project._adversarialValidation || project.validationStats ? `
+      <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); margin-top: 12px;">
+        ${project._adversarialValidation?.rejected !== undefined ? `<div class="summary-card" style="border-left: 3px solid #ef4444"><strong>🛡️ 对抗驳回</strong><span>${project._adversarialValidation.rejected}</span></div>` : ''}
+        ${project._adversarialValidation?.confirmed !== undefined ? `<div class="summary-card" style="border-left: 3px solid #22c55e"><strong>对抗确认</strong><span>${project._adversarialValidation.confirmed}</span></div>` : ''}
+        ${project.validationStats?.confirmed !== undefined ? `<div class="summary-card" style="border-left: 3px solid #22c55e"><strong>✓ 确认</strong><span>${project.validationStats.confirmed}</span></div>` : ''}
+        ${project.validationStats?.falsePositive !== undefined ? `<div class="summary-card" style="border-left: 3px solid #ef4444"><strong>✗ 误报</strong><span>${project.validationStats.falsePositive}</span></div>` : ''}
+        ${project.validationStats?.downgraded !== undefined ? `<div class="summary-card" style="border-left: 3px solid #f59e0b"><strong>↓ 降级</strong><span>${project.validationStats.downgraded}</span></div>` : ''}
+        ${project.validationStats?.needsReview !== undefined ? `<div class="summary-card" style="border-left: 3px solid #3b82f6"><strong>? 待复核</strong><span>${project.validationStats.needsReview}</span></div>` : ''}
+      </div>` : ''}
     </article>
   `;
 }
@@ -1161,6 +1170,33 @@ function renderFindingList(findings, emptyMessage) {
         : escapeHtml(finding.retestChecklist);
       details.push(`<p class="finding-retest"><strong>复测清单:</strong><br>${checklist}</p>`);
     }
+    // Trace 可达性详情
+    if (finding._traceReachable === true && finding._traceCallChain && finding._traceCallChain.length > 0) {
+      const chainHtml = finding._traceCallChain.map(c =>
+        `<span class="callchain-node">${escapeHtml(c.function || '?')}@${escapeHtml(c.file || '')}:${c.line || '?'}</span>`
+      ).join(' → ');
+      details.push(`<p class="finding-trace"><strong>🔗 调用链 (可达):</strong> ${chainHtml}</p>`);
+    }
+    if (finding._traceReachable === false && finding._traceBlockers && finding._traceBlockers.length > 0) {
+      const blockersHtml = finding._traceBlockers.map(b =>
+        `<span class="blocker-node">${escapeHtml(b.kind || 'blocker')}: ${escapeHtml(b.description || '')}</span>`
+      ).join('<br>');
+      details.push(`<p class="finding-trace-blocked"><strong>🚫 阻断因素:</strong><br>${blockersHtml}</p>`);
+    }
+    // 对抗性验证详情
+    if (finding._advValidation?.verdict === 'rejected') {
+      details.push(`<p class="finding-adv-rejected"><strong>🛡️ 对抗性验证驳回:</strong> ${escapeHtml(finding._advValidation.rationale || '')}</p>`);
+    }
+    if (finding._advValidation?.verdict === 'confirmed') {
+      details.push(`<p class="finding-adv-confirmed"><strong>✅ 对抗性验证确认:</strong> ${escapeHtml(finding._advValidation.alternativeExplanation || finding._advValidation.rationale || '')}</p>`);
+    }
+    // 自洽审查结果
+    if (finding._selfConsensus === 'confirmed') {
+      details.push(`<p class="finding-trace"><strong>🔄 自洽审查通过:</strong> ${escapeHtml(finding._consensusReason || '')}</p>`);
+    }
+    if (finding._selfConsensus === 'rejected') {
+      details.push(`<p class="finding-trace-blocked"><strong>🔄 自洽审查驳回:</strong> ${escapeHtml(finding._consensusReason || '')}</p>`);
+    }
     return details.join('');
   };
 
@@ -1181,6 +1217,22 @@ function renderFindingList(findings, emptyMessage) {
         if (f.verdict === 'needs_review') return '<span class="badge badge-info">? 待复核</span>';
         return '';
       })() : '';
+      // Trace 可达性标签
+      const traceBadge = f._traceReachable !== undefined ? (() => {
+        if (f._traceReachable === true) return '<span class="badge" style="background:#22c55e;color:#fff" title="已确认可从外部入口点到达此漏洞">🔗 可达</span>';
+        if (f._traceReachable === false) return '<span class="badge" style="background:#9ca3af;color:#fff" title="未找到从外部入口点到此漏洞的路径">🔒 不可达</span>';
+        return '';
+      })() : '';
+      // 模糊语言警告
+      const hedgedBadge = f.hedgedLanguage === true ? '<span class="badge badge-warning" title="此发现的描述使用了模糊词汇（可能/或许/也许），严重性已降级">⚠️ 措辞模糊</span>' : '';
+      const statusBadge = f.status ? (() => {
+        if (f.status === '已确认') return '<span class="badge badge-success" title="验证确认">✓</span>';
+        if (f.status === '误报') return '<span class="badge badge-danger" title="验证判定为误报">✗</span>';
+        if (f.status === '已降级') return '<span class="badge badge-warning" title="严重性已降级">↓</span>';
+        if (f.status === '待复核') return '<span class="badge badge-info" title="需要人工复核">?</span>';
+        if (f.status === '待验证') return '<span class="badge" style="background:#e5e7eb;color:#6b7280" title="尚未经过验证">待验证</span>';
+        return '';
+      })() : '';
       const knowledgeCard = renderKnowledgeCard(f);
       const detailSection = renderDetailSection(f);
 
@@ -1192,6 +1244,9 @@ function renderFindingList(findings, emptyMessage) {
             '<span class="badge badge-confidence badge-confidence-' + confidenceClass + '">置信度 ' + confidenceLabel + '</span>' +
             standardBadge +
             verdictBadge +
+            traceBadge +
+            hedgedBadge +
+            statusBadge +
             clusterInfo +
           '</span>' +
         '</div>' +
@@ -1266,8 +1321,8 @@ function buildStreamPanelHTML() {
     const statusIcon = batch.status === "done" ? "✅" : "⏳";
     const label = batch.total > 1 ? `批次 ${bi}/${batch.total}` : `批次 ${bi}`;
     html += '<div class="stream-batch">';
-    html += '<div class="stream-batch-header"><span class="stream-batch-badge ' + (batch.status === "done" ? "done" : "active") + '">' + statusIcon + ' ' + label + '</span></div>';
-    html += '<pre class="stream-batch-content">' + escapeHtml(batch.text || "等待输出...") + '</pre>';
+    html += '<div class="stream-batch-header"><span class="stream-batch-badge ' + (batch.status === "done" ? "done" : "active") + '" data-batch="' + bi + '">' + statusIcon + ' ' + label + '</span></div>';
+    html += '<pre class="stream-batch-content" data-batch="' + bi + '">' + escapeHtml(batch.text || "等待输出...") + '</pre>';
     html += '</div>';
   }
 
@@ -1705,7 +1760,7 @@ async function handleZipUpload(form, selectedSkillIds) {
     if (useReAct) {
       formData.append("useReAct", "true");
       const reactConfig = {
-        maxSteps: Number(form.elements.reactMaxSteps?.value || 15),
+        maxSteps: Number(form.elements.reactMaxSteps?.value || 30),
         temperature: Number(form.elements.reactTemperature?.value || 0.1),
         maxRetries: Number(form.elements.reactMaxRetries?.value || 3),
         verbose: form.elements.reactVerbose?.checked === true

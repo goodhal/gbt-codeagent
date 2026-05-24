@@ -8,20 +8,16 @@ import { getGlobalASTEnhancer } from "../services/astEnhancer.js";
 import { CodeAnalysisTool } from "../services/codeAnalysis.js";
 import { ASTBuilderService } from "../utils/astBuilder.js";
 import { QueryEngine } from "../utils/queryEngine.js";
-import { deduplicateFindings, deduplicateAndSort, severityScore } from "../utils/findingsUtils.js";
+import { deduplicateFindings, deduplicateAndSort } from "../utils/findingsUtils.js";
 import { scoreFindings, scoreBySource } from "../core/auditScoreEngine.js";
 import { enhanceFindingsWithContext } from "../services/contextAwareFilter.js";
 import { collectFiles } from "../utils/fileUtils.js";
 import { globalCheckpointManager, AuditState, AgentStatus } from "../core/stateManager.js";
 import { generateExploitChainReport } from "../services/exploitChainAnalyzer.js";
-import { smartFileFilter } from "../services/smartFileFilter.js";
-import { ArchitectureAnalyzer } from "../services/architectureAnalyzer.js";
-import { getGlobalIncrementalAnalyzer } from "../services/incrementalAnalyzer.js";
-import { CodeGraph } from "../services/codeGraph.js";
 import { javaRouteMapper } from "../analyzers/javaRouteMapper.js";
 import { javaRouteTracer } from "../analyzers/javaRouteTracer.js";
 import { componentVulnService } from "../services/componentVulnService.js";
-import { vulnIdGenerator, scoreVulnerability, getVulnTypeDefaults } from "../config/vulnScoring.js";
+import { createCoverageTracker } from "../services/coverageService.js";
 
 import { getMaxParallelProjects, getCheckpointInterval } from "../config/auditParamsConfig.js";
 
@@ -36,7 +32,6 @@ export class AuditAnalystAgent {
     const reviewProfile = resolveAuditSkills(selectedSkillIds);
     const results = [];
     const isGbtAudit = reviewProfile.some(skill => skill.id === "gbt-code-audit");
-    let firstProjectCodeGraph = null; // 保存第一个项目的知识图谱
 
     const auditState = new AuditState();
     auditState.agentId = `audit_${taskId}_${Date.now().toString(36)}`;
@@ -96,7 +91,7 @@ export class AuditAnalystAgent {
         label: `正在分析规则层：${project.name}`
       });
 
-      const rawHeuristicFindings = await buildHeuristicFindings(project, reviewProfile);
+      const { findings: rawHeuristicFindings, javaRoutes = [] } = await buildHeuristicFindings(project, reviewProfile);
 
       const sourceRoot = path.join(process.cwd(), "workspace", "downloads", project.id);
       let heuristicFindings = rawHeuristicFindings.length > 0
@@ -130,7 +125,8 @@ export class AuditAnalystAgent {
         };
       }
 
-      const doAstEnhance = heuristicFindings.length > 0;
+      // AST 增强：发现 < 20 条时增益小，跳过节省 5-10s
+      const doAstEnhance = heuristicFindings.length >= 20;
       const doLlmAudit = !!(this.llmReviewer) && (enableLlmAudit !== false);
 
       if (doAstEnhance) {
@@ -183,63 +179,9 @@ export class AuditAnalystAgent {
       });
 
       if (doLlmAudit) {
-        let codeGraphContext = null;
-        let codeGraph = null;
-        try {
-          console.log(`[审计分析] 开始获取代码知识图谱`);
-          
-          // 先尝试从增量分析器获取图谱
-          const incrementalAnalyzer = await getGlobalIncrementalAnalyzer();
-          codeGraph = incrementalAnalyzer.getGraph(project.id);
-          
-          // 如果增量分析器没有图谱，尝试构建或加载
-          if (!codeGraph) {
-            // 尝试从缓存加载
-            try {
-              const graphPath = path.join(process.cwd(), 'cache', 'graphs', `${project.id}_graph.json`);
-              codeGraph = new CodeGraph();
-              const savedAt = await codeGraph.loadFromFile(graphPath);
-              console.log(`[审计分析] 从缓存加载图谱，保存时间: ${savedAt}`);
-            } catch (loadError) {
-              // 缓存不存在，构建新图谱
-              console.log(`[审计分析] 图谱缓存不存在，构建新图谱`);
-              codeGraph = new CodeGraph();
-              await codeGraph.build(sourceRoot);
-              
-              // 保存图谱到缓存
-              try {
-                await codeGraph.saveToFile(path.join(process.cwd(), 'cache', 'graphs', `${project.id}_graph.json`));
-              } catch (saveError) {
-                console.warn(`[审计分析] 图谱保存失败: ${saveError.message}`);
-              }
-            }
-          }
-          
-          // 保存第一个项目的 codeGraph 供架构分析使用
-          if (index === 0 && codeGraph) {
-            firstProjectCodeGraph = codeGraph;
-          }
-          
-          const entryPoints = codeGraph.getEntryPoints?.() || [];
-          const hubNodes = codeGraph.findHubNodes?.(5) || [];
-          const criticalPaths = codeGraph.traceExecutionFlow?.() || [];
-          const architectureOverview = codeGraph.getArchitectureOverview?.() || {};
-          
-          codeGraphContext = {
-            entryPoints: entryPoints.slice(0, 10).map(e => ({ name: e.name, file: e.file })),
-            hubNodes: hubNodes.slice(0, 5).map(h => ({ name: h.name, file: h.file, degree: h.degree })),
-          criticalPaths: Array.isArray(criticalPaths) ? criticalPaths.slice(0, 3).map(p => typeof p === 'string' ? p : (Array.isArray(p) ? p.join(' → ') : String(p))) : [],
-            architectureOverview: {
-              totalNodes: architectureOverview.totalNodes,
-              totalEdges: architectureOverview.totalEdges,
-              communities: architectureOverview.communities?.length || 0,
-              warnings: architectureOverview.warnings?.slice(0, 3) || []
-            }
-          };
-          console.log(`[审计分析] 代码知识图谱获取完成，入口点: ${entryPoints.length}, 热点节点: ${hubNodes.length}`);
-        } catch (error) {
-          console.warn(`[审计分析] 代码知识图谱获取失败: ${error.message}`);
-        }
+        // 代码图谱对审计结果帮助有限，默认跳过节省 5-10s
+        const codeGraphContext = null;
+        const codeGraph = null;
 
         if (useReAct && typeof this.llmReviewer.auditWithReAct === 'function') {
           llmAuditPromise = this.llmReviewer.auditWithReAct({
@@ -266,6 +208,7 @@ export class AuditAnalystAgent {
             llmConfig,
             codeGraphContext,
             codeGraph,
+            routeTable: javaRoutes.length > 0 ? { routes: javaRoutes, count: javaRoutes.length } : null,
             useStreaming,
             taskId,
             onProgress: (detail) =>
@@ -463,6 +406,19 @@ export class AuditAnalystAgent {
         };
       }));
 
+      // 同步 verdict → status（修复：之前 status 默认"误报"从未被更新）
+      const VERDICT_TO_STATUS = {
+        confirmed: "已确认",
+        false_positive: "误报",
+        downgraded: "已降级",
+        needs_review: "待复核",
+      };
+      for (const f of deepValidated) {
+        if (f.verdict && VERDICT_TO_STATUS[f.verdict]) {
+          f.status = VERDICT_TO_STATUS[f.verdict];
+        }
+      }
+
       // 统计验证结果
       const verdictStats = {
         confirmed: deepValidated.filter(f => f.verdict === 'confirmed').length,
@@ -500,64 +456,42 @@ export class AuditAnalystAgent {
     const totalHallucinations = validatedResults.reduce((sum, r) => sum + (r.hallucinations?.length || 0), 0);
     const totalCorrected = validatedResults.reduce((sum, r) => sum + (r.validationStats?.corrected || 0), 0);
 
-    // 架构分析阶段
-    let architectureAnalysis = null;
-    if (projects.length > 0) {
-      onProgress?.({
-        stage: "architecture-analysis",
-        label: "正在进行架构分析"
-      });
-
-      try {
-        // 优先使用已经构建好的 codeGraph
-        if (firstProjectCodeGraph) {
-          console.log(`[审计分析] 使用已构建的代码知识图谱进行架构分析`);
-          
-          const overview = firstProjectCodeGraph.getArchitectureOverview?.() || {};
-          const entryPoints = firstProjectCodeGraph.getEntryPoints?.() || [];
-          const hubNodes = firstProjectCodeGraph.findHubNodes?.(10) || [];
-          const criticalPaths = firstProjectCodeGraph.traceExecutionFlow?.() || [];
-          
-          architectureAnalysis = {
-            overview: overview,
-            criticalPaths: criticalPaths.map(path => ({
-              entryPoint: path[0],
-              nodeCount: path.length,
-              edgeCount: Math.max(0, path.length - 1),
-              depth: path.length,
-              criticality: 80
-            })),
-            hotspots: hubNodes.map(h => ({
-              name: h.name,
-              degree: h.degree,
-              community: 'module'
-            })),
-            knowledgeGaps: {
-              isolatedNodes: [],
-              untestedHotspots: [],
-              orphanFiles: []
-            },
-            recommendations: []
-          };
-          
-          console.log(`[审计分析] 架构分析完成 - 风险评分: ${architectureAnalysis.overview?.riskScore || 0}`);
-        } else {
-          console.log(`[审计分析] 无可用的代码知识图谱，使用架构分析器`);
-          
-          const firstProject = projects[0];
-          const projectRoot = path.join(process.cwd(), "workspace", "downloads", firstProject.id);
-          
-          // 执行架构分析
-          const archAnalyzer = new ArchitectureAnalyzer();
-          await archAnalyzer.initialize(projectRoot);
-          architectureAnalysis = archAnalyzer.analyze();
-          
-          console.log(`[审计分析] 架构分析完成 - 风险评分: ${architectureAnalysis.overview?.riskScore || 0}`);
-        }
-      } catch (error) {
-        console.warn(`[审计分析] 架构分析失败: ${error.message}`);
+    // ============ 覆盖率追踪（轻量，无API调用） ============
+    let coverageReport = null;
+    try {
+      const allProjectFiles = [];
+      const firstSourceRoot = path.join(process.cwd(), "workspace", "downloads", validatedResults[0]?.projectId || "");
+      for (const result of validatedResults) {
+        const sourceRoot = path.join(process.cwd(), "workspace", "downloads", result.projectId);
+        try {
+          const files = await collectFiles(sourceRoot);
+          for (const f of files) {
+            allProjectFiles.push(path.relative(firstSourceRoot, f).replaceAll("\\", "/"));
+          }
+        } catch { /* skip */ }
       }
+      if (allProjectFiles.length > 0) {
+        const tracker = createCoverageTracker(firstSourceRoot, allProjectFiles);
+        for (const result of validatedResults) {
+          tracker.markFromFindings(result.findings);
+        }
+        coverageReport = tracker.generateReport();
+        console.log(`[审计分析] 覆盖率: ${coverageReport.summary.coveragePercent}% (${coverageReport.summary.reviewedFiles}/${coverageReport.summary.totalFiles})`);
+      }
+    } catch (error) {
+      console.warn(`[审计分析] 覆盖率追踪失败: ${error.message}`);
     }
+
+    // ============ 可选增强阶段（默认关闭，通过审计参数控制） ============
+    // 对抗性验证、Trace可达性、Gapfill、Feedback 均为可选增强
+    // 当前默认跳过，保留代码以备后续按需启用
+    const adversarialStats = null;
+    const traceStats = null;
+    const gapfillResult = null;
+    const feedbackResult = null;
+
+    // 架构分析 — 代码图谱对审计结果帮助有限，默认跳过
+    const architectureAnalysis = null;
 
     // 最终检查点
     auditState.status = AgentStatus.COMPLETED;
@@ -589,6 +523,17 @@ export class AuditAnalystAgent {
         corrected: totalCorrected
       },
       architectureAnalysis,
+      adversarialValidation: adversarialStats,
+      traceReachability: traceStats,
+      coverageReport: coverageReport ? coverageReport.summary : null,
+      gapfillAnalysis: gapfillResult ? {
+        newTasks: gapfillResult.newTasks?.length || 0,
+        gapsIdentified: gapfillResult.gapsIdentified?.length || 0,
+      } : null,
+      feedbackAnalysis: feedbackResult ? {
+        newTasks: feedbackResult.newTasks?.length || 0,
+        patternsExtracted: feedbackResult.patternsExtracted?.length || 0,
+      } : null,
       projects: validatedResults
     };
   }
@@ -625,12 +570,17 @@ async function buildHeuristicFindings(project, reviewProfile) {
     console.warn(`[审计分析] 污点追踪分析失败: ${error.message}`);
   }
 
-  // 3. 外部工具扫描（Gitleaks/Bandit/Semgrep）（所有审计模式都执行）
-  console.log(`[审计分析] 开始外部工具扫描`);
-  const externalToolService = new ExternalToolService();
-  const externalFindings = await externalToolService.scanAll(sourceRoot);
-  console.log(`[审计分析] 外部工具扫描完成，发现 ${externalFindings.length} 个问题`);
-  findings.push(...externalFindings);
+  // 3. 外部工具扫描（Gitleaks/Bandit/Semgrep）— 仅已安装工具生效
+  try {
+    const externalToolService = new ExternalToolService();
+    const externalFindings = await externalToolService.scanAll(sourceRoot);
+    if (externalFindings.length > 0) {
+      console.log(`[审计分析] 外部工具扫描发现 ${externalFindings.length} 个问题`);
+      findings.push(...externalFindings);
+    }
+  } catch (error) {
+    console.warn(`[审计分析] 外部工具扫描跳过: ${error.message}`);
+  }
 
   // 4. 组件漏洞扫描（Java/Node.js/Python依赖检测）
   console.log(`[审计分析] 开始组件漏洞扫描`);
@@ -859,7 +809,7 @@ async function buildHeuristicFindings(project, reviewProfile) {
   }
 
   // 返回所有快速扫描和规则检测发现的问题，按严重程度排序
-  return prioritizeFindings(findings);
+  return { findings: prioritizeFindings(findings), javaRoutes };
 }
 
 async function analyzeWithTaint(codeAnalysis, sourceRoot, existingFindings) {

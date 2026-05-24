@@ -460,7 +460,7 @@ const server = http.createServer(async (req, res) => {
       const allFindings = collectExportFindings(auditResult);
       const jsonFileName = `audit-report-${taskId}.json`;
       const jsonFilePath = path.join(reportsDir, jsonFileName);
-      await fs.writeFile(jsonFilePath, JSON.stringify({ taskId, query: task.query, findingsCount: allFindings.length, findings: allFindings }, null, 2), "utf8");
+      await fs.writeFile(jsonFilePath, JSON.stringify({ taskId, query: task.query, findingsCount: auditResult.findingsCount || allFindings.length, findings: allFindings }, null, 2), "utf8");
       return sendJson(res, 200, { success: true, fileName: jsonFileName, downloadPath: `/reports/${jsonFileName}`, findingsCount: allFindings.length });
     }
 
@@ -541,7 +541,7 @@ const server = http.createServer(async (req, res) => {
       const allFindings = collectExportFindings(auditResult);
       await fs.writeFile(
         path.join(reportsDir, `audit-report-${taskId}.json`),
-        JSON.stringify({ taskId, query: task.query, findingsCount: allFindings.length, findings: allFindings }, null, 2),
+        JSON.stringify({ taskId, query: task.query, findingsCount: auditResult.findingsCount || allFindings.length, findings: allFindings }, null, 2),
         "utf8"
       );
 
@@ -796,7 +796,7 @@ async function runAudit(taskId, selectedProjectIds) {
         useReAct: task.useReAct || false,
         useStreaming: true,
         reactConfig: task.reactConfig || {},
-        enableLlmAudit: task.enableLlmAudit !== false,
+        enableLlmAudit: task.enableLlmAudit !== false && !!llmConfig?.apiKey,
         tasks,
         onProgress: (detail) => {
           const adjustedDetail = {
@@ -1058,13 +1058,33 @@ function buildAuditProgress(detail, totalProjects) {
     };
   }
 
+  // ===== 新流水线阶段 =====
+  if (detail.stage === "validation") {
+    return { stage: "validation", label: detail.label || "正在验证漏洞发现", detail: "", percent: 96, current: 0, total: 1 };
+  }
+  if (detail.stage === "adversarial-validate") {
+    return { stage: "adversarial-validate", label: detail.label || "正在进行对抗性验证", detail: detail.findingId || "", percent: 96, current: detail.current || 0, total: detail.total || 1 };
+  }
+  if (detail.stage === "trace") {
+    return { stage: "trace", label: detail.label || "正在进行可达性追踪", detail: detail.findingId || "", percent: 97, current: detail.current || 0, total: detail.total || 1 };
+  }
+  if (detail.stage === "gapfill") {
+    return { stage: "gapfill", label: detail.label || "正在进行覆盖率分析", detail: "", percent: 98, current: 0, total: 1 };
+  }
+  if (detail.stage === "feedback") {
+    return { stage: "feedback", label: detail.label || "正在进行反馈循环", detail: "", percent: 99, current: 0, total: 1 };
+  }
+  if (detail.stage === "architecture-analysis") {
+    return { stage: "architecture-analysis", label: detail.label || "正在进行架构分析", detail: "", percent: 99, current: 0, total: 1 };
+  }
+
   return {
     stage: detail.stage || "audit",
     label: detail.label || "正在审计",
     detail: detail.detail || "",
     percent: 70,
     current: detail.current || 0,
-    total: detail.total || 0
+    total: detail.total || 1
   };
 }
 

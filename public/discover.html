@@ -102,18 +102,6 @@
                   <option value="community">社区论坛</option>
                 </select>
               </label>
-              <label class="checkbox-row">
-                <input name="useMemory" type="checkbox" checked />
-                启用项目记忆
-              </label>
-              <label class="checkbox-row">
-                <input name="enableLlmAudit" type="checkbox" id="enableLlmAuditToggle" checked />
-                启用 LLM 审计
-              </label>
-              <label class="checkbox-row">
-                <input name="useReAct" type="checkbox" id="useReActToggle" />
-                启用 ReAct 深度推理审计
-              </label>
             </div>
 
             <details id="react-config-details" class="hidden-panel">
@@ -121,7 +109,7 @@
               <div class="grid-two react-config-fields">
                 <label>
                   最大推理步数
-                  <input name="reactMaxSteps" type="number" min="3" max="50" value="15" />
+                  <input name="reactMaxSteps" type="number" min="3" max="50" value="30" />
                 </label>
                 <label>
                   推理温度
@@ -156,6 +144,21 @@
               <label>
                 本地仓库路径
                 <textarea name="localRepoPaths" rows="5" placeholder="每行一个绝对路径"></textarea>
+              </label>
+            </div>
+
+            <div class="grid-two" style="margin-bottom: 12px;">
+              <label class="checkbox-row">
+                <input name="useMemory" type="checkbox" checked />
+                启用项目记忆
+              </label>
+              <label class="checkbox-row">
+                <input name="enableLlmAudit" type="checkbox" id="enableLlmAuditToggle" checked />
+                启用 LLM 审计
+              </label>
+              <label class="checkbox-row">
+                <input name="useReAct" type="checkbox" id="useReActToggle" />
+                启用 ReAct 深度推理审计
               </label>
             </div>
 

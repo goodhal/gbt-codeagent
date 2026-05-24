@@ -127,6 +127,28 @@ const QUICK_SCAN_PATTERNS = {
     { pattern: /log4j-core.*2\.(0|1[0-6])\./, vulnType: "COMPONENT_VULNERABILITY", cwe: "CWE-917", severity: "严重" },
     // === SpEL注入 ===
     { pattern: /parseExpression\s*\(/, vulnType: "SPEL_INJECTION", cwe: "CWE-94", severity: "严重" },
+    // === 手工审计对比补充 (2026-05-25) ===
+    // 硬编码凭证（含 pass/secret/token/apiKey 变量）
+    { pattern: /\b(?:pass|secret|token|apiKey|password)\s*=\s*"[^"]{2,32}"/, vulnType: "HARD_CODE_PASSWORD", cwe: "CWE-259", severity: "严重" },
+    // JNDI注入
+    { pattern: /InitialContext\s*\(\s*\)/, vulnType: "JNDI_INJECTION", cwe: "CWE-74", severity: "严重" },
+    { pattern: /\.lookup\s*\(\s*\w/, vulnType: "JNDI_INJECTION", cwe: "CWE-74", severity: "严重" },
+    // CSRF关闭 (Spring Security)
+    { pattern: /csrf\s*\(\s*\)\s*\.\s*disable\s*\(\s*\)/, vulnType: "CSRF_DISABLED", cwe: "CWE-352", severity: "高危" },
+    // 模板引擎注入
+    { pattern: /templateEngine\s*\.\s*process\s*\(/, vulnType: "SSTI", cwe: "CWE-94", severity: "严重" },
+    { pattern: /ProcessBuilder\s*\(\s*.*\+/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
+    // 文件上传无校验
+    { pattern: /transferTo\s*\(\s*new\s+File/, vulnType: "FILE_UPLOAD", cwe: "CWE-434", severity: "高危" },
+    { pattern: /MultipartFile\s+getOriginalFilename/, vulnType: "FILE_UPLOAD", cwe: "CWE-434", severity: "中危" },
+    // 安全过滤器黑名单绕过
+    { pattern: /\bblack\s*=.*\bcontains\b/, vulnType: "BLACKLIST_VALIDATION", cwe: "CWE-693", severity: "中危" },
+    // 信息泄露（System.getProperty打印）
+    { pattern: /System\.getProperty\s*\(\s*"[^"]+version/i, vulnType: "INFO_LEAK", cwe: "CWE-200", severity: "中危" },
+    // XSS - Model直接回显用户输入
+    { pattern: /model\s*\.\s*addAttribute\s*\(\s*"[^"]*"\s*,\s*(?:req|request)/, vulnType: "XSS", cwe: "CWE-79", severity: "高危" },
+    // 开放重定向 - 用户输入进入redirect
+    { pattern: /redirect:\s*\+\s*(?:url|target|redirect_uri|returnUrl)/, vulnType: "OPEN_REDIRECT", cwe: "CWE-601", severity: "高危" },
   ],
   python: [
     { pattern: /os\.system\s*\(/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
@@ -904,7 +926,7 @@ export class QuickScanService {
           remediation: this.getRemediation(vulnType),
           safeValidation: "建议人工复核代码上下文，确认是否存在实际安全风险",
           codeSnippet,
-          status: "误报"
+          status: "待验证"
         });
         console.log(`[快速扫描] 发现漏洞: ${vulnType} 在 ${relativePath}:${lineNum + 1}`);
       }

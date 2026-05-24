@@ -361,12 +361,11 @@ export class LLMOptimizer {
   }
 
   _generateFindingKey(finding) {
-    const parts = [
-      finding.title || '',
-      finding.cwe || '',
-      finding.vulnType || '',
-      finding.location || ''
-    ];
+    // 使用 file+vulnType+lineBucket 作为去重键，避免标题微调导致重复
+    const file = (finding.location || finding.file || '').split(':')[0].trim();
+    const line = finding.line || parseInt((finding.location || '').split(':')[1], 10) || 0;
+    const lineBucket = Math.floor(line / 5) * 5; // ±5 行容忍
+    const parts = [file, finding.vulnType || finding.type || '', String(lineBucket)];
     return crypto.createHash('md5').update(parts.join('|')).digest('hex');
   }
 

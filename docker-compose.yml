@@ -1,0 +1,15 @@
+version: "3.8"
+
+services:
+  gbt-codeagent:
+    build: .
+    container_name: gbt-codeagent
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./workspace:/app/workspace
+      - ./config:/app/config:ro
+    environment:
+      - PORT=3001
+      - NODE_ENV=production
+    restart: unless-stopped

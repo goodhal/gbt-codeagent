@@ -114,6 +114,24 @@ export const RUNTIME_CONTEXT_AWARENESS = `
 - 缺少前端路由守卫 → 但后端已有全局拦截 → 最多 🟡 medium
 - loading/error 状态缺失 → 体验问题 → 🟢 low`;
 
+export const FALSE_POSITIVE_EXAMPLES = `
+【不报告的示例（误报）— 发现危险模式前先判断是否为防护措施】
+
+以下场景不报告为漏洞：
+- 输出有 escapeHtml/sanitize/encode → 不是 XSS
+- 查询用了 PreparedStatement/#{} 参数化 → 不是 SQL 注入
+- 方法有 @PreAuthorize + SecurityConfig 启用 → 不是越权
+- 文件路径用 path.join/resolve/normalize → 不是路径穿越
+- @Valid + @Pattern/@Email 限制了输入 → 不是注入
+
+以下场景必须报告：
+- 用户输入直接拼接到 SQL/命令/文件路径 且无防护
+- eval()/exec() 参数含用户输入
+- JWT密钥/数据库密码硬编码
+- 管理路由无认证
+- X-Forwarded-For 用于 IP 白名单
+- Origin 直接回写到 Access-Control-Allow-Origin`;
+
 export const SEVERITY_CLASSIFICATION_GUIDE = `
 【严重级别判定标准 - 必须严格区分】
 
@@ -779,34 +797,41 @@ export const JAVA_FRAMEWORK_DETECTION = `
    - 不根据类名推断：UserServiceImpl → /UserService（错误！）
    - 反编译实现类提取所有public方法签名`;
 
-export async function loadAuditKnowledge({ languages = [], vulnerabilityTypes = [] } = {}) {
+export async function loadAuditKnowledge({ languages = [], vulnerabilityTypes = [], selectedSkillIds = [] } = {}) {
   const docsDir = path.join(process.cwd(), "docs");
   const gbtAuditDir = path.join(docsDir, "gbt-audit");
   const knowledge = {};
+  const isGbtAudit = selectedSkillIds.includes('gbt-code-audit');
 
-  try {
-    const skillContent = await fs.readFile(path.join(gbtAuditDir, "skill.md"), "utf8");
-    const lines = skillContent.split('\n');
-    let inMappingTable = false;
-    let mappingLines = [];
+  // GBT 映射表（仅在 GBT 审计模式下加载）
+  if (isGbtAudit) {
+    try {
+      const skillContent = await fs.readFile(path.join(gbtAuditDir, "skill.md"), "utf8");
+      const lines = skillContent.split('\n');
+      let inMappingTable = false;
+      let mappingLines = [];
 
-    for (const line of lines) {
-      if (line.includes('| 语言') && line.includes('GB/T')) {
-        inMappingTable = true;
-      }
-      if (inMappingTable) {
-        mappingLines.push(line);
-        if (line.trim() === '|' && mappingLines.length > 5) {
-          break;
+      for (const line of lines) {
+        if (line.includes('| 语言') && line.includes('GB/T')) {
+          inMappingTable = true;
+        }
+        if (inMappingTable) {
+          mappingLines.push(line);
+          if (line.trim() === '|' && mappingLines.length > 5) {
+            break;
+          }
         }
       }
-    }
 
-    knowledge.gbtMapping = mappingLines.join('\n');
-  } catch (error) {
+      knowledge.gbtMapping = mappingLines.join('\n');
+    } catch (error) {
+      knowledge.gbtMapping = '';
+    }
+  } else {
     knowledge.gbtMapping = '';
   }
 
+  // 语言审计要点（始终加载，按语言过滤）
   try {
     const workflowContent = await fs.readFile(path.join(gbtAuditDir, "workflow", "audit_workflow.md"), "utf8");
     const lines = workflowContent.split('\n');
@@ -854,31 +879,34 @@ export async function loadAuditKnowledge({ languages = [], vulnerabilityTypes = 
     knowledge.languageAudit = '';
   }
 
-  const gbtReferences = [];
-  const uniqueGbtFiles = new Set();
+  // GB/T 国标规则全文（仅在 GBT 审计模式下加载，按语言过滤）
+  if (isGbtAudit) {
+    const gbtReferences = [];
+    const uniqueGbtFiles = new Set();
 
-  const baseStandard = 'GBT_39412-2020.md';
-  if (!uniqueGbtFiles.has(baseStandard)) {
-    uniqueGbtFiles.add(baseStandard);
-    try {
-      const content = await fs.readFile(path.join(gbtAuditDir, "reference", baseStandard), "utf8");
-      gbtReferences.push(`\n\n=== ${baseStandard.replace('.md', '')} (通用基线) ===\n\n${content}`);
-    } catch (error) {
-    }
-  }
-
-  for (const lang of languages) {
-    const gbtFile = LANGUAGE_GBT_MAP[lang.toLowerCase()];
-    if (gbtFile && gbtFile !== baseStandard && !uniqueGbtFiles.has(gbtFile)) {
-      uniqueGbtFiles.add(gbtFile);
+    const baseStandard = 'GBT_39412-2020.md';
+    if (!uniqueGbtFiles.has(baseStandard)) {
+      uniqueGbtFiles.add(baseStandard);
       try {
-        const content = await fs.readFile(path.join(gbtAuditDir, "reference", gbtFile), "utf8");
-        gbtReferences.push(`\n\n=== ${gbtFile.replace('.md', '')} (${lang}) ===\n\n${content}`);
-      } catch (error) {
+        const content = await fs.readFile(path.join(gbtAuditDir, "reference", baseStandard), "utf8");
+        gbtReferences.push(`\n\n=== ${baseStandard.replace('.md', '')} (通用基线) ===\n\n${content}`);
+      } catch (error) {}
+    }
+
+    for (const lang of languages) {
+      const gbtFile = LANGUAGE_GBT_MAP[lang.toLowerCase()];
+      if (gbtFile && gbtFile !== baseStandard && !uniqueGbtFiles.has(gbtFile)) {
+        uniqueGbtFiles.add(gbtFile);
+        try {
+          const content = await fs.readFile(path.join(gbtAuditDir, "reference", gbtFile), "utf8");
+          gbtReferences.push(`\n\n=== ${gbtFile.replace('.md', '')} (${lang}) ===\n\n${content}`);
+        } catch (error) {}
       }
     }
+    knowledge.gbtReferences = gbtReferences.join('\n');
+  } else {
+    knowledge.gbtReferences = '';
   }
-  knowledge.gbtReferences = gbtReferences.join('\n');
 
   const vulnReferences = [];
   const uniqueVulnFiles = new Set();
@@ -933,7 +961,7 @@ export async function loadAuditKnowledge({ languages = [], vulnerabilityTypes = 
 
   // 加载框架特定安全知识 (docs/security/)
   knowledge.frameworkGuides = await loadFrameworkGuides(languages);
-  knowledge.securityDomainGuides = await loadSecurityDomainGuides();
+  knowledge.securityDomainGuides = await loadSecurityDomainGuides(vulnerabilityTypes);
 
   return knowledge;
 }
@@ -957,6 +985,36 @@ const ALWAYS_LOAD_SECURITY = [
   'api_security.md',
   'file_operations.md',
 ];
+
+const VULN_TO_DOMAIN_MAP = {
+  'command_injection': ['input_validation.md'],
+  'sql_injection': ['input_validation.md'],
+  'code_injection': ['input_validation.md'],
+  'xss': ['input_validation.md', 'frontend_frameworks.md'],
+  'xxe': ['input_validation.md'],
+  'template_injection': ['input_validation.md'],
+  'spel_injection': ['input_validation.md'],
+  'jndi_injection': ['input_validation.md'],
+  'nosql_injection': ['input_validation.md'],
+  'ssrf': ['api_security.md', 'input_validation.md'],
+  'csrf': ['api_security.md'],
+  'auth_bypass': ['authentication_authorization.md'],
+  'idor': ['authentication_authorization.md'],
+  'auth_missing': ['authentication_authorization.md'],
+  'path_traversal': ['file_operations.md'],
+  'file_upload': ['file_operations.md'],
+  'file_read': ['file_operations.md'],
+  'weak_crypto': ['cryptography.md'],
+  'weak_hash': ['cryptography.md'],
+  'deserialization': ['input_validation.md', 'api_security.md'],
+  'hard_code_password': ['cryptography.md'],
+  'open_redirect': ['api_security.md'],
+  'ssti': ['input_validation.md'],
+  'log_injection': ['logging_security.md'],
+  'race_condition': ['race_conditions.md'],
+  'cors_misconfiguration': ['frontend_frameworks.md'],
+  'info_leak': ['logging_security.md'],
+};
 
 async function loadFrameworkGuides(languages) {
   const securityDir = path.join(process.cwd(), 'docs', 'security', 'frameworks');
@@ -988,16 +1046,36 @@ async function loadFrameworkGuides(languages) {
   return sections.join('\n');
 }
 
-async function loadSecurityDomainGuides() {
+async function loadSecurityDomainGuides(vulnerabilityTypes = []) {
   const securityDir = path.join(process.cwd(), 'docs', 'security', 'domains');
   const sections = [];
+  const loadedFiles = new Set();
 
+  // 始终加载核心安全域
   for (const file of ALWAYS_LOAD_SECURITY) {
+    loadedFiles.add(file);
     try {
       const content = await fs.readFile(path.join(securityDir, file), 'utf8');
       sections.push(`\n\n=== ${file.replace('.md', '')} (安全域指南) ===\n\n${content.substring(0, 2500)}`);
     } catch (error) {
       // file not found, skip
+    }
+  }
+
+  // 按漏洞类型加载相关安全域
+  if (vulnerabilityTypes && vulnerabilityTypes.length > 0) {
+    for (const vt of vulnerabilityTypes) {
+      const domains = VULN_TO_DOMAIN_MAP[vt.toLowerCase()] || [];
+      for (const file of domains) {
+        if (loadedFiles.has(file)) continue;
+        loadedFiles.add(file);
+        try {
+          const content = await fs.readFile(path.join(securityDir, file), 'utf8');
+          sections.push(`\n\n=== ${file.replace('.md', '')} (安全域指南) ===\n\n${content.substring(0, 2000)}`);
+        } catch (error) {
+          // file not found, skip
+        }
+      }
     }
   }
 
@@ -1024,6 +1102,7 @@ export async function buildSystemPrompt(selectedSkills, auditKnowledge = {}, lan
     DUAL_TRACK_AUDIT,
     "",
     CORE_SECURITY_PRINCIPLES,
+    FALSE_POSITIVE_EXAMPLES,
     RUNTIME_CONTEXT_AWARENESS,
     SEVERITY_CONSERVATISM_GUARDRAIL,
     ADVERSARIAL_SELF_CHECK,
@@ -1330,11 +1409,12 @@ export function buildUserPrompt({ project, selectedSkills, heuristicFindings, ba
       `- 来源模式：${project.sourceType}`,
       "",
       "🔴 核心要求（再次强调）：",
-      "- 独立审计：不查看快速扫描结果，独立发现所有安全问题",
-      "- 全面覆盖：审计全部源代码文件，不得遗漏",
+      "- 两步审计：① 先逐条验证下方快速扫描发现（确认/降级/误报）② 再独立搜索清单外的其他安全问题",
+      "- 🔴 强制覆盖：必须审计本批次每一个文件！每个文件至少输出一条 finding（即使只是 Low 级别标记为 safe）。禁止跳过任何文件",
       "- 准确行号：需要验证行号，禁止凭记忆填写",
       "",
       "📝 输出要求：",
+      "🔴 只输出 JSON，不得在 JSON 代码块前后添加任何说明文字、分析摘要或问候语",
       "- 严格返回 JSON 格式，用 ```json 代码块包裹",
       "- 每个字段必须有值，禁止 null 或 undefined",
       "- evidence/impact 字数≥20，remediation 字数≥30",
@@ -1395,6 +1475,23 @@ export function buildUserPrompt({ project, selectedSkills, heuristicFindings, ba
       "- 如果发现有效净化措施，降低漏洞严重程度或标记为误报",
       "- 在 evidence 中说明检查过程和结果"
     );
+
+    const hasBatchHeuristics = heuristicFindings && heuristicFindings.length > 0;
+    if (hasBatchHeuristics) {
+      prompt.push(
+        "",
+        "【快速扫描发现 — 本批文件相关的启发式发现（必须逐条验证）】",
+        "",
+        `以下 ${heuristicFindings.length} 条由快速扫描在本批文件中发现，你必须逐条审查并给出明确判定：`,
+        "",
+        heuristicFindings.map((f, i) =>
+          `${i + 1}. ${f.title}  @ ${f.location || 'n/a'}  [${f.vulnType || '?'}, ${f.severity || '?'}]`
+        ).join('\n'),
+        "",
+        "对每条判定：确认（报告）| 降级（报告+降级理由）| 误报（仅 summary 中说明原因）",
+        "重要：清单是审计起点。在此基础上还必须独立发现清单以外的任何安全问题。"
+        );
+    }
   } else {
     const skills = selectedSkills.map((skill) => `${skill.id}: ${skill.description}`).join("\n");
 
@@ -1432,14 +1529,15 @@ ${heuristicFindings.length > 15 ? `...(共 ${heuristicFindings.length} 条，以
       "",
       "【重要】LLM 自主审计要求：",
       "- 必须先逐一审查上述清单，再独立探索其他安全问题",
+      "- 🔴 强制覆盖：必须审计本批次每一个文件！每个文件至少输出一条 finding。如文件无漏洞则输出一条 Low 级别 finding 标注 safe。禁止跳过任何文件",
       "- 可以发现任何类型的安全漏洞，不限于上述Skill列表",
       "- 包括但不限于：注入漏洞、XSS、CSRF、SSRF、路径遍历、敏感信息泄露、",
       "  认证绕过、访问控制、加密问题、反序列化、API安全、配置错误等",
       "- 每个漏洞都必须独立验证行号",
       "- 对清单中误判为漏洞的项，在 summary 中说明误判原因",
       "",
-      "严格返回如下 JSON（包含 findings、score、summary）：",
-      '{ "findings": [ { "title": "", "severity": "low|medium|high|critical", "confidence": 0.0, "location": "", "skillId": "", "vulnType": "VULN_TYPE", "cwe": "CWE-XXX", "evidence": "", "impact": "", "remediation": "", "safeValidation": "" } ], "score": 0-100, "summary": "整体评价" }'
+      "【输出方式】使用 write_finding 工具逐一报告发现，每发现一个问题立即调用。不要等到最后攒在一起输出 JSON。",
+      "🔴 强制覆盖：本批次每个文件至少调用一次 write_finding。无漏洞的文件输出 severity=low，evidence 写明「本文件未发现可利用漏洞」。"
     ]);
   }
 
@@ -1451,6 +1549,122 @@ ${heuristicFindings.length > 15 ? `...(共 ${heuristicFindings.length} 条，以
   prompt.push(snippets);
 
   return prompt.join("\n\n");
+}
+
+export function buildToolEnabledUserPrompt({ project, batch, heuristicFindings, incrementalPrompt = "" }) {
+  const fileList = batch.map(f => {
+    const lines = (f.content || '').split('\n').length;
+    const size = (f.content || '').length;
+    return `  ${f.relativePath}  (${f.language || '?'}, ${lines}行, ${size}字符)`;
+  }).join('\n');
+
+  const parts = [
+    `项目名称：${project.name}`,
+    `审计路径：${project.localPath || ""}`,
+    ``,
+    `【本批审计文件清单（共 ${batch.length} 个）】`,
+    `请使用 read_file 工具逐文件审计。可先用 search_code 搜索危险模式（exec、eval、Statement、ProcessBuilder等），再定位到具体文件行号。`,
+    ``,
+    fileList,
+  ];
+
+  if (heuristicFindings && heuristicFindings.length > 0) {
+    parts.push(
+      ``,
+      `【快速扫描发现 — 必须逐条验证（共 ${heuristicFindings.length} 条）】`,
+      heuristicFindings.map((f, i) =>
+        `${i + 1}. ${f.title}  @ ${f.location || '?'}  [${f.vulnType || '?'}, ${f.severity || '?'}]`
+      ).join('\n'),
+      ``,
+      `对每条判定：确认（报告）| 降级（报告+降级理由）| 误报（仅 summary 中说明）`,
+    );
+  }
+
+  if (incrementalPrompt) {
+    parts.push('', incrementalPrompt);
+  }
+
+  parts.push(
+    ``,
+    `【审计流程】`,
+    `1. 用 search_code 搜索危险模式: Runtime.getRuntime|ProcessBuilder|Statement\\.execute|createQuery|ObjectInputStream|XMLDecoder|\\$\\{|\.exec\(|\.eval\(|\.lookup\(`,
+    `2. 对搜索结果中的文件，用 read_file 读取关键区域`,
+    `3. 逐条验证快速扫描发现，判断真伪`,
+    `4. 完成后输出 JSON 格式 findings`,
+    ``,
+    `【输出格式】`,
+    `严格返回 JSON，用 \`\`\`json 代码块包裹，格式：`,
+    `{"findings": [{"title": "...", "severity": "critical|high|medium|low", "confidence": 0.9, "location": "path/to/File.java:42", "skillId": "gbt-code-audit", "vulnType": "SQL_INJECTION", "cwe": "CWE-89", "evidence": "代码中...", "impact": "后果...", "remediation": "修复...", "safeValidation": "验证..."}], "score": 75, "summary": "整体评价"}`,
+  );
+
+  return parts.join('\n');
+}
+
+export function getAuditToolDefinitions() {
+  return [
+    {
+      type: "function",
+      function: {
+        name: "read_file",
+        description: "读取项目源代码文件。传入相对路径，返回内容、行数。",
+        parameters: {
+          type: "object",
+          properties: {
+            file_path: { type: "string", description: "相对于项目根目录的路径，如 com/best/hello/controller/Login.java" }
+          },
+          required: ["file_path"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "search_code",
+        description: "在项目源码中搜索关键词，返回匹配行及位置。搜索是大小写敏感的文本匹配，建议使用简短关键词如 'ProcessBuilder'、'Statement'、'exec'、'createQuery'。",
+        parameters: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "搜索关键词，如 'ProcessBuilder'、'Runtime.getRuntime'" },
+            file_pattern: { type: "string", description: "限定文件类型，如 '*.java'，可选" }
+          },
+          required: ["query"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "list_files",
+        description: "列出项目根目录下所有源代码文件。",
+        parameters: {
+          type: "object",
+          properties: {}
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "write_finding",
+        description: "记录一个安全发现。每发现一个问题就立即调用这个工具记录下来，不要把所有发现攒到最后输出。",
+        parameters: {
+          type: "object",
+          properties: {
+            title: { type: "string", description: "漏洞标题，简洁描述" },
+            severity: { type: "string", description: "严重等级", enum: ["critical", "high", "medium", "low"] },
+            location: { type: "string", description: "文件:行号，如 com/example/Login.java:42" },
+            vulnType: { type: "string", description: "漏洞类型，如 SQL_INJECTION / COMMAND_INJECTION / SSRF / ..." },
+            cwe: { type: "string", description: "CWE 编号，如 CWE-89" },
+            evidence: { type: "string", description: "漏洞证据：代码上下文和漏洞分析，至少20字" },
+            impact: { type: "string", description: "潜在影响" },
+            remediation: { type: "string", description: "修复方案，至少15字" },
+            safeValidation: { type: "string", description: "验证方法，可选" }
+          },
+          required: ["title", "severity", "location", "vulnType", "evidence", "remediation"]
+        }
+      }
+    }
+  ];
 }
 
 export function createEnhancedPrompt(options = {}) {

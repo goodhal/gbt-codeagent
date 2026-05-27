@@ -247,8 +247,12 @@ export class LLMOptimizer {
       if (parts.length < 1 || !parts[0]) {
         issues.push('invalid_location_format');
       }
-      if (parts.length === 2 && isNaN(parseInt(parts[1]))) {
-        issues.push('invalid_line_number');
+      // 行号部分可包含：纯数字(27)、范围(54-56)、多范围(29-30,43-45)、引用(33-34 (Mapper) / ...)
+      if (parts.length === 2) {
+        const linePart = parts[1].trim();
+        if (!linePart || !/\d/.test(linePart)) {
+          issues.push('invalid_line_number');
+        }
       }
     }
 
@@ -256,7 +260,7 @@ export class LLMOptimizer {
       issues.push('evidence_too_short');
     }
 
-    if (!finding.remediation || finding.remediation.length < 30) {
+    if (!finding.remediation || finding.remediation.length < 15) {
       issues.push('remediation_too_short');
     }
 
@@ -369,7 +373,7 @@ export class LLMOptimizer {
     return crypto.createHash('md5').update(parts.join('|')).digest('hex');
   }
 
-  filterByConfidence(findings, threshold = 0.5) {
+  filterByConfidence(findings, threshold = 0.7) {
     return findings.filter(f => f.confidence >= threshold);
   }
 

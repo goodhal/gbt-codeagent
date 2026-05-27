@@ -16,7 +16,7 @@ import { createFingerprintService } from "./src/services/fingerprintService.js";
 import { writeAuditHtmlReport, writeSarifReport } from "./src/services/reportWriter.js";
 import { createSettingsStore } from "./src/services/settingsStore.js";
 import { createTaskStore } from "./src/store/taskStore.js";
-import { recordRequest, getPerformanceMetrics, getCache, setCache, withCache, measurePerformance } from "./src/core/performance.js";
+import { recordRequest, getPerformanceMetrics } from "./src/core/performance.js";
 import { stripTrailingSlash } from "./src/utils/fileUtils.js";
 import { streamService, EventType } from "./src/services/streamService.js";
 import { globalVulnValidator } from "./src/services/sandbox.js";

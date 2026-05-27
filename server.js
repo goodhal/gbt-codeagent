@@ -17,10 +17,9 @@ import { writeAuditHtmlReport, writeSarifReport } from "./src/services/reportWri
 import { createSettingsStore } from "./src/services/settingsStore.js";
 import { createTaskStore } from "./src/store/taskStore.js";
 import { recordRequest, getPerformanceMetrics, getCache, setCache, withCache, measurePerformance } from "./src/core/performance.js";
-
-import { warmupService } from "./src/services/warmupService.js";
 import { stripTrailingSlash } from "./src/utils/fileUtils.js";
 import { streamService, EventType } from "./src/services/streamService.js";
+import { globalVulnValidator } from "./src/services/sandbox.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const publicDir = path.join(__dirname, "public");
@@ -47,6 +46,11 @@ const fingerprintService = createFingerprintService({ downloadsDir });
 
 await fs.mkdir(downloadsDir, { recursive: true });
 await fs.mkdir(reportsDir, { recursive: true });
+
+// 初始化沙箱（需要 Docker，不可用时静默跳过）
+globalVulnValidator.initialize().then(() => {
+  console.log('[启动] 沙箱:', globalVulnValidator.isAvailable ? '可用' : '不可用 — 跳过运行时漏洞验证');
+});
 
 const server = http.createServer(async (req, res) => {
   const start = performance.now();
@@ -460,7 +464,7 @@ const server = http.createServer(async (req, res) => {
       const allFindings = collectExportFindings(auditResult);
       const jsonFileName = `audit-report-${taskId}.json`;
       const jsonFilePath = path.join(reportsDir, jsonFileName);
-      await fs.writeFile(jsonFilePath, JSON.stringify({ taskId, query: task.query, findingsCount: auditResult.findingsCount || allFindings.length, findings: allFindings }, null, 2), "utf8");
+      await fs.writeFile(jsonFilePath, JSON.stringify({ taskId, query: task.query, findingsCount: allFindings.length, findings: allFindings }, null, 2), "utf8");
       return sendJson(res, 200, { success: true, fileName: jsonFileName, downloadPath: `/reports/${jsonFileName}`, findingsCount: allFindings.length });
     }
 
@@ -541,7 +545,7 @@ const server = http.createServer(async (req, res) => {
       const allFindings = collectExportFindings(auditResult);
       await fs.writeFile(
         path.join(reportsDir, `audit-report-${taskId}.json`),
-        JSON.stringify({ taskId, query: task.query, findingsCount: auditResult.findingsCount || allFindings.length, findings: allFindings }, null, 2),
+        JSON.stringify({ taskId, query: task.query, findingsCount: allFindings.length, findings: allFindings }, null, 2),
         "utf8"
       );
 
@@ -578,6 +582,8 @@ const server = http.createServer(async (req, res) => {
       }, 15000);
 
       const listenerRemovers = [];
+
+      console.log(`[SSE] 客户端连接，taskId: ${taskId}，当前连接数: ${sseConnectionCount + 1}`);
 
       const listenAndSSE = (eventType) => {
         const remover = streamService.addListener(eventType, (event) => {
@@ -1342,19 +1348,9 @@ function sendJson(res, statusCode, payload) {
 function collectExportFindings(auditResult) {
   const allFindings = [];
   for (const project of auditResult.projects || []) {
-    // 添加验证后的发现
     for (const finding of project.findings || []) {
-      allFindings.push(finding);
-    }
-    // 添加原始的规则层发现
-    for (const finding of project.heuristicFindings || []) {
-      if (!allFindings.some(f => JSON.stringify(f) === JSON.stringify(finding))) {
-        allFindings.push(finding);
-      }
-    }
-    // 添加原始的LLM发现
-    for (const finding of project.llmAudit?.findings || []) {
-      if (!allFindings.some(f => JSON.stringify(f) === JSON.stringify(finding))) {
+      // 只导出非误报的发现，与 HTML 确认结果一致
+      if (finding.verdict !== 'false_positive') {
         allFindings.push(finding);
       }
     }
@@ -1469,8 +1465,6 @@ async function parseMultipartForm(req) {
 
   return { fields, files };
 }
-warmupService.warmup();
-
 const port = process.env.PORT || 3001;
 server.listen(port, '0.0.0.0', () => console.log(`Safe audit agents listening on http://0.0.0.0:${port}`));
 

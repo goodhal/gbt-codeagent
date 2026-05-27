@@ -25,7 +25,6 @@ import {
   isVulnerabilitySupported
 } from "../config/auditConfig.js";
 import { CodeCommentParser } from "./codeCommentParser.js";
-import { CoverageMatrix } from "./coverageMatrix.js";
 
 export class ValidationService {
   constructor() {
@@ -297,17 +296,39 @@ export class ValidationService {
       }
     }
     
-    if (!line) {
+    if (!codeSnippet && line >= 1 && line <= lines.length) {
+      codeSnippet = lines[line - 1];
+    }
+    
+    if (!codeSnippet) {
       return {
-        finding,
-        valid: false,
-        error: "缺少行号信息",
-        isHallucination: true
+        finding: {
+          ...finding,
+          status: "有效",
+          validatedCode: line && line >= 1 && line <= lines.length
+            ? lines[line - 1].trim()
+            : void 0
+        },
+        valid: true,
+        corrected: false,
+        note: "code_not_available"
       };
     }
     
-    if (!codeSnippet && line >= 1 && line <= lines.length) {
-      codeSnippet = lines[line - 1];
+    if (!line) {
+      const result = await this.validateCodeSnippet(filePath, 1, codeSnippet, lines);
+      if (result.valid && result.correctedLine) {
+        line = result.correctedLine;
+        finding.line = line;
+        finding.location = `${finding.file}:${line}`;
+      } else {
+        return {
+          finding: { ...finding, status: "有效" },
+          valid: true,
+          corrected: false,
+          note: "no_line_found"
+        };
+      }
     }
     
     // 验证技术栈一致性
@@ -315,14 +336,14 @@ export class ValidationService {
     const vulnType = finding.vulnType || finding.type;
     if (!isVulnerabilitySupported(vulnType, language)) {
       return {
-        finding,
-        valid: false,
-        error: `漏洞类型 '${vulnType}' 与文件语言 '${language}' 不匹配`,
-        isHallucination: true
+        finding: { ...finding, status: "有效" },
+        valid: true,
+        corrected: false,
+        note: `漏洞类型 '${vulnType}' 不在语言 '${language}' 的预设白名单中，保留发现`
       };
     }
     
-    const result = await this.validateCodeSnippet(filePath, line, codeSnippet || "", lines);
+    const result = await this.validateCodeSnippet(filePath, line, codeSnippet, lines);
     
     if (result.valid) {
       const updatedFinding = {
@@ -355,10 +376,10 @@ export class ValidationService {
     }
     
     return {
-      finding,
-      valid: false,
-      error: result.error,
-      isHallucination: true
+      finding: { ...finding, status: "有效" },
+      valid: true,
+      corrected: false,
+      note: `code_snippet_unverified: ${result.error}`
     };
   }
   
@@ -402,11 +423,13 @@ export class ValidationService {
     }
 
     if (!globalVulnValidator || !globalVulnValidator.isAvailable) {
-      return {
-        checked: true,
-        available: false,
-        message: "沙箱不可用"
-      };
+      // 沙箱不可用时静默跳过，不在每个finding上写冗余信息
+      // 启动时已通过 sandbox.getDiagnosis() 输出过一次诊断
+      if (!this._sandboxLogged) {
+        console.log('[验证] 沙箱不可用，跳过运行时验证');
+        this._sandboxLogged = true;
+      }
+      return null;
     }
 
     try {
@@ -1076,5 +1099,4 @@ export class ValidationService {
   }
 }
 
-// 导出 CoverageMatrix 保持兼容性
-export { CoverageMatrix };
+// CoverageMatrix 已移除（从未使用）

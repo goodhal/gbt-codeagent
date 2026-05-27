@@ -586,17 +586,13 @@ function renderTaskDetail(task) {
   const statusText = STATUS_LABELS[task.status] || task.status;
   const findingsCount = task.auditResult?.findingsCount || 0;
   const findingsTotalCount = task.auditResult?.findingsTotalCount || 0;
-  // 使用验证前的原始数据，与卡片内统计保持一致
-  const heuristicCount = projects.reduce((sum, p) => {
-    return sum + (p.heuristicFindings?.length || 0);
-  }, 0);
-  const llmCount = projects.reduce((sum, p) => {
-    return sum + (p.llmAudit?.findings?.length || 0);
-  }, 0);
+  // 使用后端验证/去重/过滤后的最终统计，与导出JSON报告保持一致
+  const heuristicCount = task.auditResult?.heuristicFindingsCount || 0;
+  const llmCount = task.auditResult?.llmFindingsCount || 0;
   const reactCount = projects.reduce((sum, p) => {
     return sum + (p.reactAudit?.issues?.length || 0);
   }, 0);
-  const totalCount = heuristicCount + llmCount + reactCount;
+  const totalCount = findingsCount + reactCount;
   const useReAct = task.useReAct === true;
   const canPause = task.status === "running";
   const canResume = task.status === "paused";
@@ -898,10 +894,12 @@ function renderSelectionView(task) {
 }
 
 function renderProjectReview(project) {
-  const heuristicFindings = project.heuristicFindings || [];
-  const llmFindings = project.llmAudit?.findings || [];
+  // 使用项目级已验证/去重的最终findings，按来源拆分
+  const projectFindings = project.findings || [];
+  const heuristicFindings = projectFindings.filter(f => f.source !== 'llm');
+  const llmFindings = projectFindings.filter(f => f.source === 'llm');
   const reactFindings = project.reactAudit?.issues || [];
-  const allFindings = [...heuristicFindings, ...llmFindings, ...reactFindings];
+  const allFindings = [...projectFindings, ...reactFindings];
   const severityStats = {
     critical: allFindings.filter(f => f.severity === 'critical' || f.severity === 'CRITICAL').length,
     high: allFindings.filter(f => f.severity === 'high' || f.severity === 'HIGH').length,

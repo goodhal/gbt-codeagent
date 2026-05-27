@@ -8,7 +8,6 @@
 
 import { promises as fs } from "node:fs";
 import path from "path";
-import { callLLM, parseJsonResponse } from "./llmFactory.js";
 import { extractSubsystem } from "../utils/fileUtils.js";
 
 /**
@@ -95,8 +94,78 @@ export function createCoverageTracker(repoPath, allFiles) {
         ),
       };
     },
+
+    /**
+     * 获取需要补充审计的高信号文件列表
+     * 返回 LLM 审查后仍未覆盖的 T1/T2 文件
+     */
+    getGapfillTargets(findings = []) {
+      this.markFromFindings(findings);
+      const report = this.generateReport();
+      const allAttackClasses = new Set();
+      for (const classes of fileAttackClasses.values()) {
+        for (const c of classes) allAttackClasses.add(c);
+      }
+
+      // 找出完全没有被 LLM 产出发现的文件
+      const allReviewed = new Set();
+      for (const f of findings) {
+        const loc = f.location || f.file || '';
+        const m = loc.match(/^(.+?):/);
+        if (m) allReviewed.add(normalizePath(m[1]));
+      }
+
+      const unreviewed = [...allFilePaths]
+        .filter(f => !allReviewed.has(normalizePath(f)))
+        .filter(f => isCodeFile(f));
+
+      // 按 Tier 分类遗漏文件
+      const gapByTier = { T1: [], T2: [], T3: [] };
+      for (const f of unreviewed) {
+        const tier = smartFileFilter.getTier(f);
+        if (gapByTier[tier]) gapByTier[tier].push(f);
+      }
+
+      return {
+        totalUnreviewed: unreviewed.length,
+        missedT1: gapByTier.T1,
+        missedT2: gapByTier.T2,
+        missedT3: gapByTier.T3,
+        // 高优先级遗漏（需要立即补充审计的）
+        critical: gapByTier.T1.length > 0 ? gapByTier.T1 : gapByTier.T2.slice(0, 10),
+        needsGapfill: gapByTier.T1.length > 0 || gapByTier.T2.length > 0,
+        summary: gapByTier.T1.length > 0 || gapByTier.T2.length > 0
+          ? `${gapByTier.T1.length} 个 Controller/Filter/Interceptor 未被 LLM 覆盖`
+          : gapByTier.T2.length > 0
+            ? `${gapByTier.T2.length} 个 Service/Util/Config 未被 LLM 覆盖`
+            : '所有高优先级文件已覆盖',
+      };
+    },
   };
 }
+
+// smartFileFilter 引用（延迟加载，避免循环依赖）
+let _smartFileFilter = null;
+function getSmartFileFilter() {
+  if (!_smartFileFilter) {
+    // 内联 getTier 逻辑避免循环 import
+    return {
+      getTier(filePath) {
+        const basename = (filePath || '').toLowerCase().split('/').pop() || '';
+        const dirname = (filePath || '').toLowerCase();
+        const T1 = [/controller/i, /filter/i, /interceptor/i, /gateway/i, /securityconfig/i, /webconfig/i, /route/i, /router/i];
+        const T2 = [/service/i, /dao/i, /mapper/i, /repository/i, /util/i, /helper/i, /manager/i, /handler/i, /config/i, /properties/i, /business/i, /core/i, /common/i];
+        const T3 = [/entity/i, /dto/i, /vo/i, /pojo/i, /model/i, /domain/i, /bean/i, /object/i];
+        for (const p of T1) if (p.test(basename) || p.test(dirname)) return 'T1';
+        for (const p of T2) if (p.test(basename) || p.test(dirname)) return 'T2';
+        for (const p of T3) if (p.test(basename) || p.test(dirname)) return 'T3';
+        return 'T2';
+      }
+    };
+  }
+  return _smartFileFilter;
+}
+const smartFileFilter = getSmartFileFilter();
 
 /**
  * 增强版 Gapfill：基于覆盖率数据生成定向审查任务
@@ -277,6 +346,8 @@ ${JSON.stringify(coverageReport.summary, null, 2)}
     targetFiles: t.target_files || t.targetFiles || [],
   })).slice(0, maxTasks);
 }
+
+// enhancedGapfill / computeBlindSpots / localBlindSpotSearch / llmGapfillTasks 已移除（从未被调用）
 
 // ========== 文件/语言工具 ==========
 

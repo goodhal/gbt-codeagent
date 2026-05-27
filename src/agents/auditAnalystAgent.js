@@ -458,9 +458,10 @@ export class AuditAnalystAgent {
 
     // ============ 覆盖率追踪（轻量，无API调用） ============
     let coverageReport = null;
+    let allProjectFiles = [];
+    let firstSourceRoot = "";
     try {
-      const allProjectFiles = [];
-      const firstSourceRoot = path.join(process.cwd(), "workspace", "downloads", validatedResults[0]?.projectId || "");
+      firstSourceRoot = path.join(process.cwd(), "workspace", "downloads", validatedResults[0]?.projectId || "");
       for (const result of validatedResults) {
         const sourceRoot = path.join(process.cwd(), "workspace", "downloads", result.projectId);
         try {
@@ -482,22 +483,109 @@ export class AuditAnalystAgent {
       console.warn(`[审计分析] 覆盖率追踪失败: ${error.message}`);
     }
 
-    // ============ 可选增强阶段（默认关闭，通过审计参数控制） ============
-    // 对抗性验证、Trace可达性、Gapfill、Feedback 均为可选增强
-    // 当前默认跳过，保留代码以备后续按需启用
+    // ============ 可选增强阶段 ============
     const adversarialStats = null;
     const traceStats = null;
-    const gapfillResult = null;
     const feedbackResult = null;
+
+    // Gapfill：检查高优先级文件是否被 LLM 遗漏，自动补充审计
+    let gapfillResult = null;
+    if (coverageReport && enableLlmAudit && llmConfig && validatedResults.length > 0) {
+      try {
+        const tracker = createCoverageTracker(
+          path.join(process.cwd(), "workspace", "downloads", validatedResults[0].projectId),
+          allProjectFiles
+        );
+        const allLlmFindings = validatedResults.flatMap(r => r.findings || []).filter(f => f.source === 'llm');
+        const gapTargets = tracker.getGapfillTargets(allLlmFindings);
+
+        if (gapTargets.needsGapfill && gapTargets.critical.length > 0) {
+          console.log(`[审计分析] 检测到高优先级文件遗漏: ${gapTargets.summary}，启动精准补充审计`);
+
+          // 读取遗漏文件的完整内容
+          const sourceRoot = path.join(process.cwd(), "workspace", "downloads", validatedResults[0].projectId);
+          const gapFiles = [];
+          for (const cf of gapTargets.critical.slice(0, 5)) {
+            try {
+              const fullPath = path.join(sourceRoot, cf);
+              const content = await fs.readFile(fullPath, "utf8");
+              if (content.length > 50 && content.length < 15000) {
+                gapFiles.push({ path: cf, content });
+              }
+            } catch { /* skip */ }
+          }
+
+          if (gapFiles.length > 0) {
+            // 构建聚焦的系统提示词
+            const gapSystemPrompt = `你是代码安全审计专家。以下文件在上一轮审计中被遗漏，请重点审查。
+
+${reviewProfile.map(s => s.reviewPrompt).join('\n\n')}
+
+【本次补充审计的遗漏文件】
+${gapFiles.map(f => `\n### ${f.path}\n\`\`\`java\n${f.content}\n\`\`\``).join('\n')}
+
+请只输出JSON：{"findings":[{"title":"...","severity":"critical|high|medium|low","confidence":0.x,"location":"文件:行号","vulnType":"...","cwe":"CWE-xxx","evidence":"...","impact":"...","remediation":"..."}]}`;
+
+            try {
+              const { callLLM } = await import("../services/llmFactory.js");
+              const response = await callLLM(llmConfig, [
+                { role: "system", content: gapSystemPrompt },
+                { role: "user", content: "请审查以上遗漏文件，仅输出JSON格式结果，不要其他文字。" }
+              ]);
+
+              const jsonMatch = String(response || '').match(/\{[\s\S]*"findings"[\s\S]*\}/);
+              if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]);
+                const gapFindings = (parsed.findings || []).filter(f => f.title && f.location);
+
+                if (gapFindings.length > 0) {
+                  // 去重合并
+                  const existingKeys = new Set(
+                    validatedResults.flatMap(r => r.findings || []).map(f =>
+                      `${(f.location || '')}|${(f.title || '').substring(0,40)}`
+                    )
+                  );
+                  const newFindings = gapFindings.filter(f =>
+                    !existingKeys.has(`${(f.location || '')}|${(f.title || '').substring(0,40)}`)
+                  ).map(f => ({ ...f, source: 'llm', skillId: 'gbt-code-audit', verdict: 'confirmed' }));
+
+                  if (newFindings.length > 0) {
+                    gapfillResult = {
+                      gapFiles: gapFiles.length,
+                      newFindings: newFindings.length,
+                      summary: `精准补充审计覆盖 ${gapFiles.length} 个遗漏文件，新增 ${newFindings.length} 条发现`,
+                    };
+                    validatedResults[0].findings.push(...newFindings);
+                    console.log(`[审计分析] Gapfill完成: ${gapfillResult.summary}`);
+                  }
+                }
+              }
+            } catch (llmError) {
+              console.warn(`[审计分析] Gapfill LLM调用失败: ${llmError.message}`);
+            }
+          }
+        } else {
+          console.log(`[审计分析] 覆盖率检查通过: ${gapTargets.summary}`);
+        }
+      } catch (error) {
+        console.warn(`[审计分析] Gapfill跳过: ${error.message}`);
+      }
+    }
 
     // 架构分析 — 代码图谱对审计结果帮助有限，默认跳过
     const architectureAnalysis = null;
+
+    // Gapfill后重新计算统计（包含补充审计结果）
+    const finalTotalValidated = validatedResults.reduce((sum, r) => sum + r.findings.length, 0);
+    const finalTotalConfirmed = validatedResults.reduce((sum, r) => sum + r.findings.filter(f => f.verdict !== 'false_positive').length, 0);
+    const finalLlmFindingsCount = validatedResults.flatMap(r => r.findings || []).filter(f => f.verdict !== 'false_positive' && f.source === 'llm').length;
+    const finalHeuristicFindingsCount = validatedResults.flatMap(r => r.findings || []).filter(f => f.verdict !== 'false_positive' && ['quick_scan','taint','rule','pattern'].includes(f.source)).length;
 
     // 最终检查点
     auditState.status = AgentStatus.COMPLETED;
     auditState.findings = validatedResults.flatMap(r => r.findings || []);
     auditState.setCompleted({
-      findingsCount: totalConfirmed,
+      findingsCount: finalTotalConfirmed,
       projectsCount: validatedResults.length
     });
     await createCheckpoint('final');
@@ -509,11 +597,11 @@ export class AuditAnalystAgent {
       reviewedAt: new Date().toISOString(),
       policy: "defensive-only",
       skillsUsed: reviewProfile.map((skill) => ({ id: skill.id, name: skill.name })),
-      findingsCount: totalConfirmed,
-      findingsTotalCount: totalValidated,
+      findingsCount: finalTotalConfirmed,
+      findingsTotalCount: finalTotalValidated,
       checkpointId: auditState.agentId,
-      heuristicFindingsCount: validatedResults.reduce((sum, item) => sum + item.heuristicFindings.length, 0),
-      llmFindingsCount: validatedResults.reduce((sum, item) => sum + (item.llmAudit?.findings?.length || 0), 0),
+      heuristicFindingsCount: finalHeuristicFindingsCount,
+      llmFindingsCount: finalLlmFindingsCount,
       llmCallCount: validatedResults.reduce((sum, item) => sum + (item.llmAudit?.called ? 1 : 0), 0),
       llmSkippedCount: validatedResults.reduce((sum, item) => sum + (item.llmAudit?.called ? 0 : 1), 0),
       validationStats: {

@@ -31,13 +31,12 @@ function buildHtml({ task, selectedProjects, auditResult, architectureAnalysis }
       const llmResult = projectResult.llmAudit;
       const llmState = describeLlmAudit(llmResult);
       const verdictMap = buildVerdictMap(projectResult.findings || []);
-      const heuristicSource = ((projectResult.heuristicFindings || []).length > 0
-        ? (projectResult.heuristicFindings || [])
-        : (projectResult.findings || []).filter(f => ['quick_scan', 'taint', 'rule', 'pattern'].includes(f.source) || !f.source))
+      // 统一从 projectResult.findings 获取已通过验证/去重/置信度过滤的最终结果
+      const heuristicSource = (projectResult.findings || [])
+        .filter(f => ['quick_scan', 'taint', 'rule', 'pattern'].includes(f.source) || !f.source)
         .filter(f => f.verdict !== 'false_positive');
-      const llmSource = ((llmResult?.findings || []).length > 0
-        ? (llmResult?.findings || [])
-        : (projectResult.findings || []).filter(f => f.source === 'llm'))
+      const llmSource = (projectResult.findings || [])
+        .filter(f => f.source === 'llm')
         .filter(f => f.verdict !== 'false_positive');
       const heuristicFindings = renderFindings(heuristicSource, "规则层本次没有保留到高置信度结果。", verdictMap);
       const llmFindings = renderFindings(llmSource, llmState.emptyMessage, verdictMap);
@@ -78,7 +77,7 @@ function buildHtml({ task, selectedProjects, auditResult, architectureAnalysis }
               <span class="badge status">${escapeHtml(llmState.statusText)}</span>
               <span class="badge ${escapeHtml(llmState.badgeClass)}">${escapeHtml(llmState.callText)}</span>
             </div>
-            <p>${escapeHtml(llmState.summary)}</p>
+            <p>LLM 已对 ${escapeHtml(String(llmResult?.auditedBatches || 0))} 个批次、${escapeHtml(String(llmResult?.auditedFiles || 0))} 个源码文件进行了二次复核。最终保留 <strong>${escapeHtml(String(llmSource.length))}</strong> 条较高置信度的结果。</p>
             ${llmState.meta ? `<p class="muted">${escapeHtml(llmState.meta)}</p>` : ""}
             ${llmWarnings ? `<ul class="warning-list">${llmWarnings}</ul>` : ""}
             ${llmFindings}

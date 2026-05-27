@@ -3,7 +3,7 @@
  * 从 config/language_adapters/*.yaml 读取语言特定的安全控制模式
  * 用于增强 contextAwareFilter 和 securityHintProfile
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "path";
 import yaml from "js-yaml";
 
@@ -13,24 +13,27 @@ function loadAllAdapters() {
   const adaptersDir = path.join(process.cwd(), "config", "language_adapters");
   const adapters = {};
 
-  const LANG_FILES = {
-    java: "java.yaml",
-    python: "python.yaml",
-    javascript: "javascript.yaml",
-    go: "go.yaml",
-    php: "php.yaml",
-  };
+  let files;
+  try {
+    files = readdirSync(adaptersDir);
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      console.debug('[适配器] language_adapters 目录不存在，跳过加载');
+    } else {
+      console.warn(`[适配器] 读取目录失败: ${err.message}`);
+    }
+    return adapters;
+  }
 
-  for (const [lang, file] of Object.entries(LANG_FILES)) {
+  for (const file of files) {
+    if (!file.endsWith('.yaml') && !file.endsWith('.yml')) continue;
+    const lang = path.basename(file, path.extname(file));
     try {
       const content = readFileSync(path.join(adaptersDir, file), "utf8");
       adapters[lang] = yaml.load(content);
+      console.debug(`[适配器] 已加载 ${lang} 语言适配器`);
     } catch (err) {
-      if (err.code === 'ENOENT') {
-        console.debug(`[适配器] ${file} 不存在，跳过`);
-      } else {
-        console.warn(`[适配器] ${file} 加载失败: ${err.message}`);
-      }
+      console.warn(`[适配器] ${file} 加载失败: ${err.message}`);
     }
   }
 

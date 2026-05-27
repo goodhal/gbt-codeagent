@@ -1,5 +1,5 @@
 import { RulesEngine, StaticAnalyzer, TaintAnalyzer, PatternAnalyzer, CompositeAnalyzer } from '../analyzers/index.js';
-import { getGlobalVectorStore, createSemanticSearchEngine } from './vectorStore.js';
+// 向量存储已移除（从未被核心审计流程使用）
 import { ASTBuilderService } from '../utils/astBuilder.js';
 
 class CodeAnalysisTool {
@@ -7,8 +7,6 @@ class CodeAnalysisTool {
     this.llmService = llmService;
     this._analyzer = null;
     this._rulesEngine = null;
-    this._vectorStore = null;
-    this._searchEngine = null;
     this._astBuilder = null;
     this._currentProjectId = null;
   }
@@ -22,14 +20,6 @@ class CodeAnalysisTool {
       enableTaint: options.enableTaint !== false,
       enablePattern: options.enablePattern !== false
     });
-
-    this._vectorStore = await getGlobalVectorStore({
-      persistPath: options.vectorPersistPath || './data/vectors.json'
-    });
-
-    if (options.embedder) {
-      this._searchEngine = createSemanticSearchEngine(this._vectorStore, options.embedder);
-    }
 
     this._astBuilder = new ASTBuilderService({
       cacheEnabled: options.enableAstCache !== false,
@@ -340,21 +330,13 @@ ${code}
     return this._aggregateResults(results);
   }
 
-  async semanticSearch(query, k = 5) {
-    if (!this._searchEngine) {
-      throw new Error('Semantic search engine not initialized. Please provide embedder in initialize().');
-    }
-
-    return this._searchEngine.search(query, k);
+  async semanticSearch(_query, _k = 5) {
+    console.warn('[CodeAnalysisTool] 语义搜索已移除（vectorStore 未启用）');
+    return [];
   }
 
-  async addToVectorStore(id, text, metadata = {}) {
-    if (!this._searchEngine) {
-      throw new Error('Semantic search engine not initialized.');
-    }
-
-    await this._searchEngine.index(id, text, metadata);
-    await this._vectorStore.persist();
+  async addToVectorStore(_id, _text, _metadata = {}) {
+    console.warn('[CodeAnalysisTool] 向量存储已移除（vectorStore 未启用）');
   }
 
   _detectLanguage(filePath) {
@@ -416,7 +398,8 @@ ${code}
   }
 
   getVectorStore() {
-    return this._vectorStore;
+    console.warn('[CodeAnalysisTool] 向量存储已移除');
+    return null;
   }
 }
 

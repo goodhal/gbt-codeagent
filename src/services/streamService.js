@@ -100,15 +100,31 @@ class StreamService {
   }
 
   emitLLMStart(model, task, taskId) {
-    return this.emit(EventType.LLM_START, { model, task, _taskId: taskId || this._taskId });
+    const tid = taskId || this._taskId;
+    console.log(`[SSE] 发射事件 llm_start → taskId=${tid || '(none)'}`);
+    // 扁平化数据以匹配前端期望：batchIndex / totalBatches 直接放在顶层
+    return this.emit(EventType.LLM_START, { 
+      model, 
+      batchIndex: task?.batchIndex || 0, 
+      totalBatches: task?.totalBatches || 0,
+      _taskId: tid 
+    });
   }
 
   emitLLMThinking(content, taskId) {
-    return this.emit(EventType.LLM_THINKING, { content, _taskId: taskId || this._taskId });
+    const tid = taskId || this._taskId;
+    console.log(`[SSE] 发射事件 llm_thinking → taskId=${tid || '(none)'}`);
+    return this.emit(EventType.LLM_THINKING, { content, _taskId: tid });
   }
 
   emitLLMStreamToken(token, batchIndex, totalBatches, taskId) {
-    return this.emit(EventType.LLM_STREAM_TOKEN, { token, batchIndex, totalBatches, _taskId: taskId || this._taskId });
+    const tid = taskId || this._taskId;
+    if (this._tokenCount === undefined) this._tokenCount = 0;
+    this._tokenCount++;
+    if (this._tokenCount <= 3 || this._tokenCount % 100 === 0) {
+      console.log(`[SSE] 发射事件 llm_stream_token #${this._tokenCount} → taskId=${tid || '(none)'}`);
+    }
+    return this.emit(EventType.LLM_STREAM_TOKEN, { token, batchIndex, totalBatches, _taskId: tid });
   }
 
   emitLLMDecision(decision, reasoning, taskId) {

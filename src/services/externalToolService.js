@@ -321,8 +321,11 @@ export class ExternalToolService {
       const reportPath = path.join(tempDir, "report.json");
 
       // 执行扫描（使用默认规则集）
+      // Windows 中文系统默认 GBK 编码，需强制 UTF-8 避免 Unicode 字符（如 ‪）导致 Python 崩溃
       const command = `semgrep --json --output "${reportPath}" "${projectRoot}"`;
-      await execAsync(command);
+      await execAsync(command, {
+        env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' }
+      });
 
       // 读取结果
       const reportContent = await fs.readFile(reportPath, "utf8");

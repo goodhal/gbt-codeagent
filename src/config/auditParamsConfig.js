@@ -9,16 +9,16 @@ import path from "path";
 import yaml from "js-yaml";
 
 const DEFAULTS = {
-  maxBatches: 16,
-  maxFilesPerBatch: 6,
-  maxCharsPerBatch: 35000,
+  maxBatches: Infinity,
+  maxFilesPerBatch: 3,
+  maxCharsPerBatch: 45000,
   maxParallelRequests: 5,
   maxParallelProjects: 4,
   embeddingMaxConcurrency: 5,
   fetchTimeoutMs: 150000,
-  codeIndexMinFiles: 50,
-  codeIndexMaxFiles: 100,
-  checkpointInterval: 3,
+  codeIndexMinFiles: 30,
+  codeIndexMaxFiles: 200,
+  checkpointInterval: 2,
 };
 
 let _auditParams = null;

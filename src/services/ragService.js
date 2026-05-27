@@ -1,5 +1,5 @@
 import { ALL_VULNERABILITY_DOCS, KnowledgeCategory, Severity } from '../knowledge/index.js';
-import { getGlobalVectorStore, createSemanticSearchEngine } from './vectorStore.js';
+// 向量存储已移除（从未被核心审计流程使用）
 
 class SimpleRetriever {
   constructor(documents) {
@@ -83,9 +83,6 @@ class SimpleRetriever {
 class RAGService {
   constructor() {
     this.retriever = new SimpleRetriever(ALL_VULNERABILITY_DOCS);
-    this._vectorStore = null;
-    this._searchEngine = null;
-    this._vectorIndexed = false;
     this._initialized = false;
   }
 
@@ -94,21 +91,7 @@ class RAGService {
       return this;
     }
 
-    try {
-      this._vectorStore = await getGlobalVectorStore({
-        persistPath: options.vectorPersistPath || './data/rag_vectors.json'
-      });
-
-      if (options.embedder) {
-        this._searchEngine = createSemanticSearchEngine(this._vectorStore, options.embedder);
-      }
-
-      if (!this._vectorIndexed && this._searchEngine) {
-        await this._indexKnowledgeBase();
-      }
-    } catch (error) {
-      console.warn('[RAGService] Vector store initialization failed:', error);
-    }
+    // 向量存储已移除，仅使用 SimpleRetriever（关键词搜索）
 
     this._initialized = true;
     console.log(`[RAG服务] 已初始化，知识文档数量: ${ALL_VULNERABILITY_DOCS.length}`);

@@ -4,27 +4,17 @@
  */
 
 export { CodeAnalysisTool } from './codeAnalysis.js';
-export { EmbeddingsService, OpenAIEmbedding, LocalEmbedding, EmbeddingProviderFactory, globalEmbeddingsService } from './embeddings.js';
-export { VectorStore, SemanticSearchEngine, ChunkedVectorStore, getGlobalVectorStore, createSemanticSearchEngine } from './vectorStore.js';
-
-/**
- * 检索服务模块
- * 统一管理知识库检索和代码检索
- */
 export { RAGService, ragService } from './ragService.js';
-export { RetrievalResult, CodeRetriever } from './retriever.js';
 
 export { LLMFactory, createLLMService } from './llmFactory.js';
 export { DefensiveLlmReviewer } from './llmReviewService.js';
 export { QuickScanService } from './quickScanService.js';
 export { FingerprintService } from './fingerprintService.js';
 export { ValidationService } from './validationService.js';
-export { EnvironmentReport } from './environmentReport.js';
 export { ExternalToolService } from './externalToolService.js';
 export { writeAuditHtmlReport, writeSarifReport } from './reportWriter.js';
 export { StreamService } from './streamService.js';
 export { MemoryStore } from './memoryStore.js';
-export { SettingsStore } from './settingsStore.js';
 export { Splitter } from './splitter.js';
 export { Sandbox } from './sandbox.js';
 
@@ -62,7 +52,7 @@ export { CircuitBreaker } from '../core/circuitBreaker.js';
 export { TokenBucketRateLimiter, RateLimiterRegistry } from '../core/rateLimiter.js';
 export { withRetry, withRetryWithFallback, createRetryDecorator } from '../core/retry.js';
 export { StatePersistence, globalStatePersistence } from '../core/stateManager.js';
-export { Tracer, getGlobalTracer } from '../core/telemetry.js';
+// telemetry 已移除（未使用）
 
 
 export { PromptCacheManager } from '../core/promptCache.js';

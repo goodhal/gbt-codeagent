@@ -9,16 +9,16 @@ try {
 }
 
 const MODEL_MAX_TOKENS = {
-  'gpt-4': 8192,
   'gpt-4-32k': 32768,
-  'gpt-3.5-turbo': 4096,
+  'gpt-4': 8192,
   'gpt-3.5-turbo-16k': 16384,
-  'qwen': 8192,
-  'deepseek-chat': 65536,
-  'deepseek-v4': 65536,
-  'deepseek-r1': 65536,
-  'deepseek': 65536,
-  'claude': 100000
+  'gpt-3.5-turbo': 4096,
+  'qwen': 65536,
+  'deepseek-chat': 131072,
+  'deepseek-v4': 131072,
+  'deepseek-r1': 131072,
+  'deepseek': 131072,
+  'claude': 200000
 };
 
 function getModelMaxTokens(model = 'gpt-3.5-turbo') {
@@ -27,7 +27,7 @@ function getModelMaxTokens(model = 'gpt-3.5-turbo') {
       return value;
     }
   }
-  return 4096;
+  return 65536;
 }
 
 async function countTokensTiktoken(text, model = 'gpt-3.5-turbo') {
@@ -511,7 +511,12 @@ class PromptCompressor {
     }
     const ratio = maxTokens / tokens;
     const targetLength = Math.floor(text.length * ratio * 0.9);
-    return text.slice(0, targetLength) + '...[已截断]';
+    let safePos = targetLength;
+    if (safePos > 0 && safePos < text.length) {
+      const ch = text.charCodeAt(safePos - 1);
+      if (ch >= 0xD800 && ch <= 0xDBFF) safePos--;
+    }
+    return text.slice(0, safePos) + '...[已截断]';
   }
 
   buildOptimizedPrompt(systemPrompt, userPrompt, maxTokens) {

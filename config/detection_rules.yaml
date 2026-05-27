@@ -3146,7 +3146,7 @@ analysisOptions:
 # 修改这些值无需改代码，重启服务即可生效
 # ==========================================================
 audit:
-  maxBatches: 16
+  maxBatches: 32
   maxFilesPerBatch: 6
   maxCharsPerBatch: 35000
   maxParallelRequests: 5

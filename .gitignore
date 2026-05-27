@@ -34,3 +34,13 @@ desktop.ini
 *~
 .vscode/
 .idea/
+
+# 运行时缓存
+data/llm_cache/
+
+# 生成报告
+audit_report*.md
+
+# 已清理的无关项目（防止误提交）
+html-ppt.zip
+java-audit-skills/

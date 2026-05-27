@@ -61,8 +61,10 @@ export function deduplicateFindings(findings, options = {}) {
         break;
       case 'type-location-line':
       default:
-        const line = finding.location?.line || finding.line || 0;
-        key = `${finding.vulnType || finding.type}::${finding.location}::${line}`;
+        const file = (finding.location || finding.file || '').split(':')[0].trim();
+        const rawLine = finding.line || parseInt((finding.location || '').split(':')[1], 10) || 0;
+        const lineBucket = Math.floor(rawLine / 5) * 5; // ±5 行内合并
+        key = `${finding.vulnType || finding.type}::${file}::${lineBucket}`;
         break;
     }
 

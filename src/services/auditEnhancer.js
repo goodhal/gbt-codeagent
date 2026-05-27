@@ -140,9 +140,10 @@ export class AgentOutputValidator {
    */
   validateFinding(finding) {
     const issues = [];
+    const warnings = [];
 
     if (!finding || typeof finding !== "object") {
-      return { isValid: false, issues: ["finding 不是有效对象"] };
+      return { isValid: false, issues: ["finding 不是有效对象"], warnings: [] };
     }
 
     const title = finding.title || "";
@@ -158,15 +159,21 @@ export class AgentOutputValidator {
       issues.push("location/filePath 缺失");
     }
 
+    // evidence/description 缺失 → 软告警而非硬拒绝：降置信度后保留
     if (!finding.evidence && !finding.description) {
-      issues.push("evidence/description 缺失");
+      warnings.push("evidence/description 缺失（已降级保留）");
+      // 设置通过 normalizeFindings 门槛的最低置信度
+      if (finding.confidence === undefined || finding.confidence < 0.55) {
+        finding.confidence = 0.55;
+      }
     }
 
     if (title.length > 200) {
-      issues.push("title 过长 (" + title.length + " 字符)");
+      warnings.push("title 过长 (" + title.length + " 字符)");
     }
 
-    return { isValid: issues.length === 0, issues };
+    const isValid = issues.length === 0;
+    return { isValid, issues, warnings };
   }
 
   /**
@@ -178,6 +185,9 @@ export class AgentOutputValidator {
 
     for (const finding of findings) {
       const validation = this.validateFinding(finding);
+      if (validation.warnings && validation.warnings.length > 0) {
+        console.warn(`[LLM审计]   软告警: ${validation.warnings.join('; ')}`);
+      }
       if (validation.isValid) {
         valid.push(finding);
       } else {

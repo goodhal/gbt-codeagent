@@ -114,24 +114,6 @@ export const RUNTIME_CONTEXT_AWARENESS = `
 - 缺少前端路由守卫 → 但后端已有全局拦截 → 最多 🟡 medium
 - loading/error 状态缺失 → 体验问题 → 🟢 low`;
 
-export const FALSE_POSITIVE_EXAMPLES = `
-【不报告的示例（误报）— 发现危险模式前先判断是否为防护措施】
-
-以下场景不报告为漏洞：
-- 输出有 escapeHtml/sanitize/encode → 不是 XSS
-- 查询用了 PreparedStatement/#{} 参数化 → 不是 SQL 注入
-- 方法有 @PreAuthorize + SecurityConfig 启用 → 不是越权
-- 文件路径用 path.join/resolve/normalize → 不是路径穿越
-- @Valid + @Pattern/@Email 限制了输入 → 不是注入
-
-以下场景必须报告：
-- 用户输入直接拼接到 SQL/命令/文件路径 且无防护
-- eval()/exec() 参数含用户输入
-- JWT密钥/数据库密码硬编码
-- 管理路由无认证
-- X-Forwarded-For 用于 IP 白名单
-- Origin 直接回写到 Access-Control-Allow-Origin`;
-
 export const SEVERITY_CLASSIFICATION_GUIDE = `
 【严重级别判定标准 - 必须严格区分】
 
@@ -1102,7 +1084,6 @@ export async function buildSystemPrompt(selectedSkills, auditKnowledge = {}, lan
     DUAL_TRACK_AUDIT,
     "",
     CORE_SECURITY_PRINCIPLES,
-    FALSE_POSITIVE_EXAMPLES,
     RUNTIME_CONTEXT_AWARENESS,
     SEVERITY_CONSERVATISM_GUARDRAIL,
     ADVERSARIAL_SELF_CHECK,

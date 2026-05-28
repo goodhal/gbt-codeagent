@@ -373,7 +373,7 @@ export class LLMOptimizer {
     return crypto.createHash('md5').update(parts.join('|')).digest('hex');
   }
 
-  filterByConfidence(findings, threshold = 0.7) {
+  filterByConfidence(findings, threshold = 0.5) {
     return findings.filter(f => f.confidence >= threshold);
   }
 

@@ -1670,7 +1670,7 @@ async function runBatch({ project, selectedSkills, llmConfig, finalSystemPrompt,
     const batchSummary = normalized.length > 0 
       ? `发现 ${normalized.length} 个问题：${normalized.map(f => f.title?.slice(0,60)).join(' | ')}` 
       : '本批次未发现新问题';
-    streamService.emitLLMStreamToken(batchSummary, batchIndex, validBatches.length - 1, taskId);
+    streamService.emitLLMStreamToken(batchSummary, batchIndex + 1, validBatches.length, taskId);
 
     onComplete?.(batch.length);
 

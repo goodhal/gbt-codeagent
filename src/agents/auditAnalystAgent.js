@@ -490,22 +490,31 @@ export class AuditAnalystAgent {
 
     // Gapfill：检查高优先级文件是否被 LLM 遗漏，自动补充审计
     let gapfillResult = null;
-    if (coverageReport && enableLlmAudit && llmConfig && validatedResults.length > 0) {
+    // 即使 coverageReport 为 null（覆盖率追踪失败），只要有多语言文件且 LLM 可用就尝试补审
+    const hasGapfillCandidates = validatedResults.length > 0 && enableLlmAudit && llmConfig;
+    if (hasGapfillCandidates) {
       try {
-        const tracker = createCoverageTracker(
-          path.join(process.cwd(), "workspace", "downloads", validatedResults[0].projectId),
-          allProjectFiles
+        // 直接从 findings 计算哪些文件完全没有 LLM 产出
+        const sourceRoot = path.join(process.cwd(), "workspace", "downloads", validatedResults[0].projectId);
+        const llmCoveredFiles = new Set(
+          validatedResults.flatMap(r => r.findings || [])
+            .filter(f => f.source === 'llm')
+            .map(f => (f.location || '').split(':')[0])
         );
-        const allLlmFindings = validatedResults.flatMap(r => r.findings || []).filter(f => f.source === 'llm');
-        const gapTargets = tracker.getGapfillTargets(allLlmFindings);
+        // 收集所有有发现的文件
+        const allFilesWithFindings = new Set(
+          validatedResults.flatMap(r => r.findings || [])
+            .map(f => (f.location || '').split(':')[0])
+        );
+        // 找出 LLM 完全未覆盖的文件
+        const gapCandidates = [...allFilesWithFindings].filter(f => !llmCoveredFiles.has(f));
 
-        if (gapTargets.needsGapfill && gapTargets.critical.length > 0) {
-          console.log(`[审计分析] 检测到高优先级文件遗漏: ${gapTargets.summary}，启动精准补充审计`);
+        if (gapCandidates.length > 0) {
+          console.log(`[审计分析] 检测到 ${gapCandidates.length} 个文件无 LLM 发现，启动精准补充审计`);
 
           // 读取遗漏文件的完整内容
-          const sourceRoot = path.join(process.cwd(), "workspace", "downloads", validatedResults[0].projectId);
           const gapFiles = [];
-          for (const cf of gapTargets.critical.slice(0, 5)) {
+          for (const cf of gapCandidates.slice(0, 5)) {
             try {
               const fullPath = path.join(sourceRoot, cf);
               const content = await fs.readFile(fullPath, "utf8");
@@ -516,13 +525,21 @@ export class AuditAnalystAgent {
           }
 
           if (gapFiles.length > 0) {
-            // 构建聚焦的系统提示词
-            const gapSystemPrompt = `你是代码安全审计专家。以下文件在上一轮审计中被遗漏，请重点审查。
+            // 构建聚焦的系统提示词（精简版，不含完整skill prompt节省token）
+            const gapSystemPrompt = `你是代码安全审计专家。以下文件在上一轮审计中被遗漏，请重点审查恶意代码模式。
 
-${reviewProfile.map(s => s.reviewPrompt).join('\n\n')}
+【必须检测的漏洞类型】
+- 命令注入、SQL注入、代码注入、路径遍历、SSRF
+- 硬编码密钥、反序列化、XXE、XSS、CSRF
+- CORS配置缺陷、访问控制缺失、信息泄露
+- 认证绕过、会话固定
 
 【本次补充审计的遗漏文件】
-${gapFiles.map(f => `\n### ${f.path}\n\`\`\`java\n${f.content}\n\`\`\``).join('\n')}
+${gapFiles.map(f => {
+  const ext = f.path.split('.').pop() || 'java';
+  const lang = {py:'python',js:'javascript',ts:'typescript',go:'go',rb:'ruby',cs:'csharp',cpp:'cpp',c:'c',java:'java',php:'php'}[ext] || 'java';
+  return `\n### ${f.path}\n\`\`\`${lang}\n${f.content}\n\`\`\``;
+}).join('\n')}
 
 请只输出JSON：{"findings":[{"title":"...","severity":"critical|high|medium|low","confidence":0.x,"location":"文件:行号","vulnType":"...","cwe":"CWE-xxx","evidence":"...","impact":"...","remediation":"..."}]}`;
 
@@ -615,8 +632,9 @@ ${gapFiles.map(f => `\n### ${f.path}\n\`\`\`java\n${f.content}\n\`\`\``).join('\
       traceReachability: traceStats,
       coverageReport: coverageReport ? coverageReport.summary : null,
       gapfillAnalysis: gapfillResult ? {
-        newTasks: gapfillResult.newTasks?.length || 0,
-        gapsIdentified: gapfillResult.gapsIdentified?.length || 0,
+        files: gapfillResult.gapFiles || 0,
+        newFindings: gapfillResult.newFindings || 0,
+        summary: gapfillResult.summary || '',
       } : null,
       feedbackAnalysis: feedbackResult ? {
         newTasks: feedbackResult.newTasks?.length || 0,

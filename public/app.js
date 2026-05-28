@@ -1317,7 +1317,7 @@ function buildStreamPanelHTML() {
 
   for (const [bi, batch] of sortedBatches) {
     const statusIcon = batch.status === "done" ? "✅" : "⏳";
-    const label = batch.total > 1 ? `批次 ${bi}/${batch.total}` : `批次 ${bi}`;
+    const label = batch.total > 1 ? `批次 ${bi + 1}/${batch.total}` : `批次 ${bi + 1}`;
     html += '<div class="stream-batch">';
     html += '<div class="stream-batch-header"><span class="stream-batch-badge ' + (batch.status === "done" ? "done" : "active") + '" data-batch="' + bi + '">' + statusIcon + ' ' + label + '</span></div>';
     html += '<pre class="stream-batch-content" data-batch="' + bi + '">' + escapeHtml(batch.text || "等待输出...") + '</pre>';

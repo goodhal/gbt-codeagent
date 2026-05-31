@@ -169,6 +169,14 @@ const QUICK_SCAN_PATTERNS = {
     { pattern: /model\s*\.\s*addAttribute\s*\(\s*"[^"]*"\s*,\s*(?:req|request)/, vulnType: "XSS", cwe: "CWE-79", severity: "高危" },
     // 开放重定向 - 用户输入进入redirect
     { pattern: /redirect:\s*\+\s*(?:url|target|redirect_uri|returnUrl)/, vulnType: "OPEN_REDIRECT", cwe: "CWE-601", severity: "高危" },
+    // === 漏报修复补充 (2026-05-31) ===
+    { pattern: /prepareStatement\s*\(\s*\w+\s*\)/, vulnType: "SQL_INJECTION", cwe: "CWE-89", severity: "高危" },
+    { pattern: /String\s+sql\s*=\s*"[^"]*"\s*\+\s*\w+/, vulnType: "SQL_INJECTION", cwe: "CWE-89", severity: "严重" },
+    { pattern: /return\s+e\.getMessage\s*\(\s*\)/, vulnType: "INFORMATION_DISCLOSURE", cwe: "CWE-209", severity: "中危" },
+    { pattern: /return\s+e\.toString\s*\(\s*\)/, vulnType: "INFORMATION_DISCLOSURE", cwe: "CWE-209", severity: "中危" },
+    { pattern: /return\s+e\.getLocalizedMessage\s*\(\s*\)/, vulnType: "INFORMATION_DISCLOSURE", cwe: "CWE-209", severity: "中危" },
+    { pattern: /assert\s+\w+\s*!=\s*null/, vulnType: "IMPROPER_EXCEPTION_HANDLING", cwe: "CWE-703", severity: "低危" },
+    { pattern: /assert\s+\w+\s*==\s*null/, vulnType: "IMPROPER_EXCEPTION_HANDLING", cwe: "CWE-703", severity: "低危" },
   ],
   python: [
     { pattern: /os\.system\s*\(/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
@@ -188,7 +196,15 @@ const QUICK_SCAN_PATTERNS = {
     { pattern: /while True:/, vulnType: "INFINITE_LOOP", cwe: "CWE-835", severity: "高危" },
     { pattern: /except:\s*pass/, vulnType: "IMPROPER_EXCEPTION_HANDLING", cwe: "CWE-703", severity: "高危" },
     { pattern: /execute\(.*f"/, vulnType: "SQL_INJECTION", cwe: "CWE-89", severity: "严重" },
-    { pattern: /open\(.*filename/, vulnType: "PATH_TRAVERSAL", cwe: "CWE-22", severity: "高危" }
+    { pattern: /open\(.*filename/, vulnType: "PATH_TRAVERSAL", cwe: "CWE-22", severity: "高危" },
+    { pattern: /format\s*\(\s*(?:user|input|request|data|param)/, vulnType: "FORMAT_STRING_VULNERABILITY", cwe: "CWE-134", severity: "高危" },
+    { pattern: /\.\s*format\s*\(\s*(?:user|input|request|data|param)/, vulnType: "FORMAT_STRING_VULNERABILITY", cwe: "CWE-134", severity: "高危" },
+    { pattern: /open\s*\(\s*(?:user|input|request|data|param|filename|filepath|path)/, vulnType: "ARBITRARY_FILE_READ", cwe: "CWE-22", severity: "高危" },
+    { pattern: /os\.path\.join\s*\([^)]*(?:user|input|request|filename)/, vulnType: "PATH_TRAVERSAL", cwe: "CWE-22", severity: "高危" },
+    { pattern: /subprocess\.\w+\s*\(.*\+/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
+    { pattern: /os\.system\s*\([^)]*\+/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
+    { pattern: /secret\s*=\s*"/, vulnType: "HARDCODED_CREDENTIALS", cwe: "CWE-798", severity: "严重" },
+    { pattern: /api_key\s*=\s*"/, vulnType: "HARDCODED_CREDENTIALS", cwe: "CWE-798", severity: "严重" }
   ],
   cpp: [
     { pattern: /system\s*\(\s*[^)]*\+/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
@@ -203,7 +219,9 @@ const QUICK_SCAN_PATTERNS = {
     { pattern: /SHA1\s*\(/, vulnType: "WEAK_HASH", cwe: "CWE-328", severity: "高危" },
     { pattern: /rand\s*\(\s*\)/, vulnType: "PREDICTABLE_RANDOM", cwe: "CWE-338", severity: "高危" },
     { pattern: /LoadLibrary\s*\(/, vulnType: "PROCESS_CONTROL", cwe: "CWE-114", severity: "高危" },
-    { pattern: /dlopen\s*\(/, vulnType: "PROCESS_CONTROL", cwe: "CWE-114", severity: "高危" }
+    { pattern: /dlopen\s*\(/, vulnType: "PROCESS_CONTROL", cwe: "CWE-114", severity: "高危" },
+    { pattern: /strcmp\s*\(\s*\w+\s*,\s*"[^"]{3,}"\s*\)/, vulnType: "HARDCODED_CREDENTIALS", cwe: "CWE-798", severity: "严重" },
+    { pattern: /fopen\s*\(\s*(?:user|input|request|filename|filepath|path)/, vulnType: "ARBITRARY_FILE_READ", cwe: "CWE-22", severity: "高危" }
   ],
   csharp: [
     { pattern: /Process\.Start\s*\(/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
@@ -397,6 +415,13 @@ const GBT_MAPPING = {
     "csharp": "GB/T34946-6.2.3.7 信息通过错误消息泄露；GB/T34946-6.2.3.8 信息通过服务器日志文件泄露",
     "default": "GB/T39412-6.2.2.1 敏感信息暴露"
   },
+  "INFORMATION_DISCLOSURE": {
+    "java": "GB/T34944-6.2.3.7 信息通过错误消息泄露",
+    "python": "GB/T39412-6.2.2.1 敏感信息暴露",
+    "cpp": "GB/T34943-6.2.3.9 信息通过错误消息泄露",
+    "csharp": "GB/T34946-6.2.3.7 信息通过错误消息泄露",
+    "default": "GB/T39412-6.2.2.1 敏感信息暴露"
+  },
   "LOG_INJECTION": {
     "java": "GB/T39412-6.4.1 对输出日志中特殊元素处理",
     "default": "GB/T39412-6.4.1 对输出日志中特殊元素处理"
@@ -441,6 +466,20 @@ const GBT_MAPPING = {
     "cpp": "GB/T34943-6.2.3.7 格式化字符串漏洞",
     "csharp": "GB/T39412-7.3.1 格式化字符串",
     "default": "GB/T39412-7.3.1 格式化字符串"
+  },
+  "FORMAT_STRING_VULNERABILITY": {
+    "java": "GB/T39412-7.3.1 格式化字符串",
+    "python": "GB/T39412-7.3.1 格式化字符串",
+    "cpp": "GB/T34943-6.2.3.7 格式化字符串漏洞",
+    "csharp": "GB/T39412-7.3.1 格式化字符串",
+    "default": "GB/T39412-7.3.1 格式化字符串"
+  },
+  "ARBITRARY_FILE_READ": {
+    "java": "GB/T39412-7.3.3 路径遍历",
+    "python": "GB/T39412-7.3.3 路径遍历",
+    "cpp": "GB/T34943-6.2.3.3 路径遍历",
+    "csharp": "GB/T39412-7.3.3 路径遍历",
+    "default": "GB/T39412-7.3.3 路径遍历"
   },
   "PROCESS_CONTROL": {
     "java": "GB/T34944-6.2.3.6 进程控制",
@@ -592,20 +631,32 @@ export class QuickScanService {
     this.vulnCounter = {};
     this._rulesEngine = null;
     this._engineReady = false;
+    this._engineInitPromise = null; // 防止并发初始化的 Promise 缓存
   }
 
   async _ensureEngine() {
+    // 如果引擎已就绪，直接返回
     if (this._engineReady) return this._rulesEngine;
-    try {
-      this._rulesEngine = await getRulesEngine('./config/detection_rules.yaml');
-      this._rulesEngine.registerQuickScanPatterns(QUICK_SCAN_PATTERNS);
-      this._engineReady = true;
-      console.log('[QuickScanService] RulesEngine initialized with unified rules (YAML + inline)');
-    } catch (error) {
-      console.warn('[QuickScanService] Failed to init RulesEngine, using inline fallback:', error.message);
-      this._engineReady = false;
-    }
-    return this._rulesEngine;
+
+    // 如果正在初始化，等待同一个 Promise 完成（防止并发初始化导致部分 scanFile 使用未完成初始化的引擎）
+    if (this._engineInitPromise) return this._engineInitPromise;
+
+    // 创建初始化 Promise 并缓存
+    this._engineInitPromise = (async () => {
+      try {
+        this._rulesEngine = await getRulesEngine('./config/detection_rules.yaml');
+        this._rulesEngine.registerQuickScanPatterns(QUICK_SCAN_PATTERNS);
+        this._engineReady = true;
+        console.log('[QuickScanService] RulesEngine initialized with unified rules (YAML + inline)');
+      } catch (error) {
+        console.warn('[QuickScanService] Failed to init RulesEngine, using inline fallback:', error.message);
+        this._engineReady = false;
+        this._engineInitPromise = null; // 失败时重置，允许重试
+      }
+      return this._rulesEngine;
+    })();
+
+    return this._engineInitPromise;
   }
 
   getSinkMetadata(vulnType) {
@@ -656,6 +707,7 @@ export class QuickScanService {
       "MISSING_ACCESS_CONTROL": "AUTH",
       "IDOR": "IDOR",
       "INFO_LEAK": "INFO",
+      "INFORMATION_DISCLOSURE": "IDISC",
       "LOG_INJECTION": "LOG",
       "SESSION_FIXATION": "SESS",
       "COOKIE_MANIPULATION": "COOKIE",
@@ -663,10 +715,12 @@ export class QuickScanService {
       "XPATH_INJECTION": "XPATH",
       "BUFFER_OVERFLOW": "BUF",
       "FORMAT_STRING": "FMT",
+      "FORMAT_STRING_VULNERABILITY": "FMT",
       "INTEGER_OVERFLOW": "INT",
       "PROCESS_CONTROL": "PROC",
       "FILE_UPLOAD": "UPLOAD",
       "FILE_READ": "READ",
+      "ARBITRARY_FILE_READ": "AREAD",
       "OPEN_REDIRECT": "REDIR",
       "CREDENTIAL_EXPOSURE": "CRED",
       "CSRF": "CSRF",
@@ -753,6 +807,7 @@ export class QuickScanService {
       "IDOR": { reachability: 3, impact: 2, complexity: 2 },
       "MISSING_ACCESS_CONTROL": { reachability: 3, impact: 3, complexity: 2 },
       "INFO_LEAK": { reachability: 2, impact: 1, complexity: 1 },
+      "INFORMATION_DISCLOSURE": { reachability: 3, impact: 2, complexity: 1 },
       "LOG_INJECTION": { reachability: 3, impact: 2, complexity: 2 },
       "BUFFER_OVERFLOW": { reachability: 2, impact: 3, complexity: 2 },
       "FORMAT_STRING": { reachability: 3, impact: 2, complexity: 3 },
@@ -761,6 +816,8 @@ export class QuickScanService {
       "XPATH_INJECTION": { reachability: 3, impact: 2, complexity: 2 },
       "FILE_UPLOAD": { reachability: 3, impact: 2, complexity: 2 },
       "FILE_READ": { reachability: 3, impact: 2, complexity: 2 },
+      "ARBITRARY_FILE_READ": { reachability: 3, impact: 3, complexity: 2 },
+      "FORMAT_STRING_VULNERABILITY": { reachability: 3, impact: 2, complexity: 3 },
       "OPEN_REDIRECT": { reachability: 2, impact: 1, complexity: 3 },
       "SESSION_FIXATION": { reachability: 2, impact: 2, complexity: 2 },
       "COOKIE_MANIPULATION": { reachability: 2, impact: 2, complexity: 2 },
@@ -1253,8 +1310,11 @@ export class QuickScanService {
       "PREDICTABLE_RANDOM": 7.5,
       "AUTH_BYPASS": 9.8,
       "INFO_LEAK": 5.3,
+      "INFORMATION_DISCLOSURE": 5.3,
       "BUFFER_OVERFLOW": 9.8,
       "FORMAT_STRING": 7.5,
+      "FORMAT_STRING_VULNERABILITY": 7.5,
+      "ARBITRARY_FILE_READ": 7.5,
       "PROCESS_CONTROL": 8.6,
       "SESSION_FIXATION": 5.9,
       "COOKIE_MANIPULATION": 5.3,
@@ -1297,9 +1357,12 @@ export class QuickScanService {
       "AUTH_INFO_EXPOSURE": "身份鉴别过程暴露多余信息可能为攻击者提供攻击线索，增加系统被攻击的风险",
       "IDOR": "不安全的直接对象引用可能导致攻击者访问其他用户的数据，造成数据泄露",
       "INFO_LEAK": "敏感信息泄露可能为攻击者提供攻击线索，增加系统被攻击的风险",
+      "INFORMATION_DISCLOSURE": "异常信息直接返回给调用方可能泄露系统内部信息，为攻击者提供攻击线索",
       "LOG_INJECTION": "日志注入可能导致日志文件被篡改或注入恶意内容，影响日志审计的准确性",
       "BUFFER_OVERFLOW": "缓冲区溢出可能导致程序崩溃或执行任意代码，攻击者可完全控制系统",
       "FORMAT_STRING": "格式化字符串漏洞可能导致信息泄露或代码执行，攻击者可利用此缺陷进行攻击",
+      "FORMAT_STRING_VULNERABILITY": "格式化字符串漏洞可能导致信息泄露或代码执行，攻击者可利用此缺陷进行攻击",
+      "ARBITRARY_FILE_READ": "任意文件读取可能导致攻击者读取服务器上的敏感文件，造成信息泄露",
       "PROCESS_CONTROL": "进程控制漏洞可能导致加载恶意库或执行恶意代码，攻击者可完全控制系统",
       "IMPROPER_EXCEPTION_HANDLING": "异常处理不当可能导致敏感信息泄露或系统状态异常",
       "INFINITE_LOOP": "无限循环可能导致服务拒绝攻击，影响系统可用性",
@@ -1341,9 +1404,12 @@ export class QuickScanService {
       "AUTH_INFO_EXPOSURE": "避免在身份鉴别过程中暴露多余信息；对错误消息进行脱敏处理",
       "IDOR": "对用户访问的资源进行权限验证；确保用户只能访问自己的资源",
       "INFO_LEAK": "避免在错误消息中泄露敏感信息；对日志和错误信息进行脱敏处理",
+      "INFORMATION_DISCLOSURE": "不要将异常消息直接返回给客户端；使用通用错误页面；对异常信息进行脱敏处理",
       "LOG_INJECTION": "对日志内容进行严格验证和过滤；避免将用户输入直接写入日志",
       "BUFFER_OVERFLOW": "使用安全的字符串处理函数；对用户输入的长度进行严格限制",
       "FORMAT_STRING": "使用格式化字符串的安全版本；避免将用户输入直接作为格式化字符串",
+      "FORMAT_STRING_VULNERABILITY": "使用格式化字符串的安全版本；避免将用户输入直接作为格式化字符串",
+      "ARBITRARY_FILE_READ": "对文件路径进行严格验证和白名单过滤；避免直接使用用户输入作为文件路径",
       "PROCESS_CONTROL": "限制可加载的库和可执行文件；对动态加载的代码进行严格验证",
       "IMPROPER_EXCEPTION_HANDLING": "实现完善的异常处理机制；避免在异常处理中泄露敏感信息",
       "INFINITE_LOOP": "设置循环的最大迭代次数；添加超时机制防止无限循环",

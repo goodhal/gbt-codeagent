@@ -4,35 +4,6 @@ import { withRetryWithFallback } from "../core/index.js";
 import { ragService } from "../services/ragService.js";
 import { buildSecurityControlContext } from "./languageAdapterLoader.js";
 
-export const THREE_LAYER_AUDIT = `
-【三层审计分工 - 各自职责明确】
-
-┌─────────────────────────────────────────────────────────────────────┐
-│  第一层：快速扫描（代码负责） - 正则表达式检测高风险函数调用            │
-│  第二层：LLM审计（LLM负责） - 语义分析检测上下文相关漏洞              │
-│  第三层：LLM审查（LLM负责） - 复杂业务逻辑和漏洞验证                  │
-└─────────────────────────────────────────────────────────────────────┘
-
-【第一层：快速扫描（代码负责）】
-职责：使用正则表达式搜索高风险函数调用
-覆盖：命令注入、SQL注入、缓冲区溢出、硬编码凭证、弱加密、反序列化等
-特点：高效率、低精度，特征明显，不需要上下文
-
-【第二层：LLM审计（LLM负责）】（本层职责）
-职责：语义分析，发现需要上下文分析的漏洞
-覆盖：
-- 输入验证问题：关键状态数据外部可控、数据真实性验证不足
-- 业务逻辑问题：条件比较不充分、条件语句缺失默认情况、死代码
-- 认证安全问题：身份鉴别过程暴露多余信息、身份鉴别被绕过
-- 并发安全问题：未加限制的外部可访问锁、共享资源并发安全
-- 会话安全问题：不同会话间信息泄露、会话固定
-特点：低效率、高精度，需要理解代码上下文和业务逻辑
-
-【第三层：LLM审查（LLM负责）】
-职责：深入分析复杂业务逻辑，验证漏洞，做出最终决策
-覆盖：认证流程、权限判断、状态转换、组合漏洞攻击链
-特点：最高精度，需要深入理解业务逻辑`;
-
 export const REVIEW_PRIORITY_LAYERS = `
 【审查规则优先级分层 - 必须严格遵守】
 
@@ -206,103 +177,6 @@ export const FILE_VALIDATION_RULES = `
 ⚠️ 知识库隔离原则：知识库示例用于理解漏洞概念和检测方法，≠ 项目代码。必须在实际代码中找到对应模式。
 
 🔥 宁可漏报，不可误报。质量优于数量。`;
-
-export const VULNERABILITY_PRIORITIES = `
-【LLM审计漏洞检测优先级 - 需要上下文分析的漏洞】
-
-⚠️ 注意：以下列表是LLM审计需要重点关注的漏洞类型。SQL注入、命令注入、硬编码密码等高风险函数调用已由快速扫描覆盖，LLM不应重复检测。
-
-🔴 Critical - 认证授权类（必须检测）：
-1. 身份认证绕过 - 密码重置漏洞、会话管理缺陷、JWT验证缺失
-2. 权限检查缺失 - 水平越权、垂直越权、权限提升
-3. 关键状态数据外部可控 - 用户输入直接控制安全决策
-4. 认证绕过 - 接口未授权访问、敏感端点暴露
-
-🟠 High - 业务逻辑类（重点检测）：
-1. 会话固定/会话劫持 - sessionId可预测、未设置HttpOnly/Secure标志
-2. 条件判断不充分 - 缺少默认值、死代码、边界条件未处理
-3. 状态绕过 - 订单状态非法跳转、支付流程绕过、状态机缺陷
-4. 竞态条件 - 余额扣减并发问题、库存超卖、优惠券重复领取
-5. Mass Assignment - 对象属性过度暴露、DTO未限制可修改字段
-6. 多租户隔离缺陷 - 不同租户数据未正确隔离、租户ID可篡改
-
-🟡 Medium - 上下文相关类（全面检测）：
-1. 开放重定向 - 用户可控重定向目标、未验证跳转URL
-2. 文件上传类型验证不足 - 仅客户端验证、文件类型绕过
-3. 整数溢出 - 数值运算边界检查缺失
-4. 配置安全 - 敏感配置硬编码、默认配置不安全
-5. 日志注入 - 用户输入进入日志、敏感信息泄露
-
-🟢 Info - 框架配置类（参考检测）：
-1. CSRF防护缺失 - 状态改变接口无CSRF保护
-2. CORS配置不当 - 允许任意来源、凭证泄露风险
-3. 错误信息泄露敏感数据 - 详细错误信息暴露、堆栈跟踪泄露
-4. 安全头缺失 - 缺少安全相关HTTP响应头`;
-
-export const FALSE_POSITIVE_RULES = `
-【误报判定规则 - 仅适用于LLM独立发现】
-
-⚠️ 注意：以下规则仅适用于LLM独立发现的漏洞，不适用于规则层（heuristicFindings）的发现。
-
-| 判定规则 | 特征 | 结论 |
-|---------|------|------|
-| 仅导入语句 | 只有 import/using，无实际调用 | 误报 |
-| 测试/演示代码 | 位于 test/demo 目录或含测试注解 | 误报 |
-| 框架自动防护 | 框架本身已做安全处理（如Spring Security） | 需验证上下文 |
-| 规则层已有 | 已在heuristicFindings中标记 | 以规则层结论为准 |
-
-⚠️ 判定流程：
-1. 检查是否有实际调用（不只是导入）
-2. 检查是否在测试/演示目录
-3. 检查是否有安全防护措施
-4. 规则层已有结论时，以规则层为准`;
-
-export const DUAL_TRACK_AUDIT = `
-【三轨审计模型 - Sink-driven、Control-driven 与 Config-driven】
-
-LLM审计必须同时执行三条审计轨道，确保各类漏洞不被遗漏：
-
-🔵 轨道一：Sink-driven（从危险代码向上追踪）
-- 发现危险函数（如 Runtime.exec、SQL.execute、file.write）时启用
-- 追踪数据从用户输入（Source）到危险函数（Sink）的传播路径
-- 评估路径中的过滤和验证措施有效性
-- 适用漏洞：SQL注入、命令注入、XSS、路径遍历、SSRF、反序列化、文件上传
-
-🟢 轨道二：Control-driven（从端点向下检查安全控制）
-- 发现API端点（如 /api/admin/*、/user/profile）时启用
-- 检查是否有认证注解（@Auth、@LoginRequired、@PreAuthorize）
-- 检查是否有权限校验（@Roles、@Permissions、hasRole）
-- 检查是否有访问控制（直接对象引用检查、资源归属验证）
-- 检查状态机转换是否合法（订单状态、支付流程）
-- 适用漏洞：认证绕过、水平越权、垂直越权、IDOR、业务逻辑漏洞
-
-🟡 轨道三：Config-driven（搜索配置检查安全基线）
-- 发现配置文件（application.yml、config.py、web.config）时启用
-- 检查认证配置（JWT密钥、密码策略、会话超时）
-- 检查加密配置（TLS版本、证书有效性、密钥管理）
-- 检查安全开关（CORS、CSRF防护、错误暴露、调试模式）
-- 检查依赖配置（第三方库版本、已知CVE漏洞）
-- 适用漏洞：配置错误、敏感信息泄露、供应链风险、弱加密
-
-⚠️ 重要：认证绕过类漏洞单独使用Sink-driven无法发现！业务逻辑漏洞需要Control-driven！配置漏洞需要Config-driven！`;
-
-export const LINE_NUMBER_VERIFICATION = `
-【行号验证强制要求】
-
-🔴 必须执行的验证步骤：
-1. 使用 Grep 精确搜索问题代码关键字
-2. 在源文件中确认行号对应实际代码行
-3. 确认不是注释行、空行或无关代码
-
-🔴 禁止行为：
-- ❌ 凭记忆填写行号
-- ❌ 根据函数名推断行号
-- ❌ 报告注释行作为漏洞代码
-
-🔴 正确流程：
-发现漏洞 → Grep搜索精确位置 → 确认行号 → 创建发现
-
-⚠️ ValidationService验证：验证逻辑使用关键词匹配，只要2个关键词重叠就认为匹配。LLM必须主动验证行号！`;
 
 export const EVIDENCE_CONTRACT_GUIDE = `
 【证据契约要求 - 每个漏洞必须提供标准证据】
@@ -570,51 +444,6 @@ export const DEPENDENCY_INTERPRETATION_RULES = `
  * 参考: code-security-audit attack_path_priority.md
  * 核心理念: 攻击者总是选择阻力最小的路径
  */
-export const ATTACK_PATH_PRIORITY = `
-【攻击路径优先级 — P0/P1/P2/P3 分级规则】
-
-根据攻击者视角的可利用性，为每个漏洞计算优先级分数（最高12分）：
-
-维度1: 认证要求
-- 无需登录: +3分 → P0候选
-- 普通用户: +2分
-- 需特权用户: +1分
-- 仅管理员: +0分
-
-维度2: 请求复杂度
-- 单请求完成: +3分
-- 2-3步骤: +2分
-- 需竞态条件: +1分
-- 需时序攻击: +0分
-
-维度3: 社工依赖
-- 无需交互: +3分
-- 需用户点击链接: +2分
-- 需用户输入: +1分
-- 需管理员操作: +0分
-
-维度4: 利用门槛
-- 浏览器/curl即可: +3分
-- 需常见工具（sqlmap等）: +2分
-- 需自定义exploit: +1分
-- 需0day: +0分
-
-优先级分级:
-- P0 (Critical Path): 10-12分 → 立即修复
-- P1 (High Path): 7-9分 → 优先修复
-- P2 (Medium Path): 4-6分 → 计划修复
-- P3 (Low Path): 0-3分 → 知晓即可
-
-特殊情况降级:
-- 内网隔离环境 → 优先级-1
-- WAF/IPS已部署 → 优先级-1
-- 利用窗口极短(<1ms竞态) → 优先级-1
-
-案例:
-- 公开接口SQL注入(无需认证, 单请求, 浏览器即可): 3+3+3+3=12分 → P0
-- 管理员接口RCE(需管理员, 单请求): 0+3+3+3=9分 → P1
-- IDOR(需登录, 单请求): 2+3+3+3=11分 → P0 ← 虽严重度可能只是High，但攻击路径极短`;
-
 /**
  * 借鉴 AiCodeAudit：结构化输出格式增强
  * 在原有 findings JSON 基础上，增强每个 finding 的攻击向量和潜在影响描述
@@ -941,7 +770,7 @@ export async function loadAuditKnowledge({ languages = [], vulnerabilityTypes = 
     knowledge.qualityStandards = { prohibited: '', examples: '' };
   }
 
-  // 加载框架特定安全知识 (docs/security/)
+  // 加载框架特定安全知识
   knowledge.frameworkGuides = await loadFrameworkGuides(languages);
   knowledge.securityDomainGuides = await loadSecurityDomainGuides(vulnerabilityTypes);
 
@@ -1023,7 +852,7 @@ async function loadFrameworkGuides(languages) {
 
   const sections = [];
   for (const [name, content] of Object.entries(guides)) {
-    sections.push(`\n\n=== ${name} (框架安全指南) ===\n\n${content.substring(0, 3000)}`);
+    sections.push(`\n\n=== ${name} (框架安全指南) ===\n\n${content.substring(0, 1500)}`);
   }
   return sections.join('\n');
 }
@@ -1068,32 +897,38 @@ export async function buildSystemPrompt(selectedSkills, auditKnowledge = {}, lan
   const gbtSkill = selectedSkills.find(skill => skill.id === "gbt-code-audit");
   const isGbtAudit = gbtSkill !== undefined;
 
-  let prompt = [
-    "【角色】",
-    "你是一个资深代码安全审计专家，专注于多语言代码的安全性、性能和代码质量审查。",
-    "具备丰富的安全漏洞检测经验，熟悉 OWASP TOP 10、CWE 分类和 GB/T 国家标准。",
-    "你的职责是对代码进行全面的安全审计，发现潜在漏洞并提供专业的修复建议。",
-    "",
-    "【行为准则】",
-    "- 只输出风险说明、证据、影响、修复建议和安全验证建议",
-    "- 不要提供利用步骤、payload、绕过思路、攻击链构造或 weaponization 细节",
-    "- 如果证据不足，就降低置信度或不要报出该问题",
-    "- 请只返回 JSON 对象，不要输出额外说明",
-    "",
-    REVIEW_PRIORITY_LAYERS,
-    DUAL_TRACK_AUDIT,
-    "",
-    CORE_SECURITY_PRINCIPLES,
-    RUNTIME_CONTEXT_AWARENESS,
-    SEVERITY_CONSERVATISM_GUARDRAIL,
-    ADVERSARIAL_SELF_CHECK,
-    "",
-    SEVERITY_CLASSIFICATION_GUIDE,
-    FALSE_POSITIVE_KILL_SWITCH,
-    ATTACK_PATH_PRIORITY,
-    FILE_VALIDATION_RULES,
-    DE_DUPLICATION_RULES
-  ];
+  // 使用精简模板系统作为基础（token 节省 ~75% vs 旧版全量拼接）
+  let prompt;
+  try {
+    const { buildSlimSystemPrompt } = await import("./prompts/index.js");
+    const slimBase = await buildSlimSystemPrompt({
+      languages,
+      isGbtAudit,
+    });
+    prompt = [slimBase];
+    console.log('[LLM提示词] 使用精简模板系统 (v2)');
+  } catch (err) {
+    // 降级到旧版拼接（兼容性保留）
+    console.warn('[LLM提示词] 精简模板加载失败，降级到旧版:', err.message);
+    prompt = [
+      "【角色】",
+      "你是一个资深代码安全审计专家。对代码进行全面的安全审计，发现漏洞并提供修复建议。",
+      "",
+      "【行为准则】",
+      "- 只输出 JSON 对象，不要输出额外说明",
+      "- 如果证据不足，就降低置信度或不要报出该问题",
+      "",
+      REVIEW_PRIORITY_LAYERS,
+      "",
+      CORE_SECURITY_PRINCIPLES,
+      RUNTIME_CONTEXT_AWARENESS,
+      "",
+      SEVERITY_CLASSIFICATION_GUIDE,
+      FALSE_POSITIVE_KILL_SWITCH,
+      FILE_VALIDATION_RULES,
+      DE_DUPLICATION_RULES
+    ];
+  }
 
   try {
     const knowledgeContext = await withRetryWithFallback(
@@ -1239,7 +1074,7 @@ export async function buildSystemPrompt(selectedSkills, auditKnowledge = {}, lan
     if (auditKnowledge.frameworkGuides) {
       prompt.push(
         "",
-        "【框架特定安全指南】（根据项目技术栈加载，仅参考）：",
+        "【框架特定安全指南】（根据项目技术栈加载）：",
         "---",
         auditKnowledge.frameworkGuides,
         "---"
@@ -1288,7 +1123,48 @@ export async function buildSystemPrompt(selectedSkills, auditKnowledge = {}, lan
   const skills = selectedSkills.map((skill) => `- ${skill.name}: ${skill.reviewPrompt}`).join("\n");
   prompt.push(skills);
 
-  return prompt.join("\n");
+  // System Prompt 总量控制：超过 30K tokens 时渐进裁剪
+  const fullPrompt = prompt.join("\n");
+  const { estimateTokens } = await import("../utils/contextManager.js");
+  const totalTokens = estimateTokens ? estimateTokens(fullPrompt) : fullPrompt.length / 2;
+  const MAX_SYSTEM_TOKENS = 30000;
+
+  if (totalTokens > MAX_SYSTEM_TOKENS) {
+    console.warn(`[LLM提示词] System Prompt 过大 (${totalTokens} tokens)，执行渐进裁剪`);
+    
+    // 策略：裁剪 RAG 知识段（保留核心检测规则和 Checklist）
+    let trimmed = fullPrompt;
+    
+    // 1. 裁剪安全域指南（保留前 40%）
+    if (trimmed.includes("安全域通用指南")) {
+      const parts = trimmed.split("安全域通用指南");
+      if (parts.length > 1) {
+        const domainContent = parts[1].split("---")[1] || "";
+        if (domainContent.length > 2000) {
+          const shortened = domainContent.substring(0, Math.floor(domainContent.length * 0.4));
+          trimmed = parts[0] + "安全域通用指南（已裁剪至核心内容）\n---\n" + shortened + "\n---" + parts[1].substring(parts[1].indexOf("---", parts[1].indexOf("---") + 1));
+        }
+      }
+    }
+    
+    // 2. 裁剪框架安全指南（保留前 30%）
+    if (trimmed.includes("框架特定安全指南")) {
+      const parts = trimmed.split("框架特定安全指南");
+      if (parts.length > 1) {
+        const frameworkContent = parts[1].split("---")[1] || "";
+        if (frameworkContent.length > 1500) {
+          const shortened = frameworkContent.substring(0, Math.floor(frameworkContent.length * 0.3));
+          trimmed = parts[0] + "框架特定安全指南（已裁剪至核心内容）\n---\n" + shortened + "\n---" + parts[1].substring(parts[1].indexOf("---", parts[1].indexOf("---") + 1));
+        }
+      }
+    }
+    
+    const newTokens = estimateTokens ? estimateTokens(trimmed) : trimmed.length / 2;
+    console.log(`[LLM提示词] 裁剪后: ${newTokens} tokens (从 ${totalTokens})`);
+    return trimmed;
+  }
+
+  return fullPrompt;
 }
 
 export function buildUserPrompt({ project, selectedSkills, heuristicFindings, batch, codeContext = "", incrementalPrompt = "", validationFeedback = {}, codeGraphContext = null }) {
@@ -1524,8 +1400,8 @@ ${heuristicFindings.length > 15 ? `...(共 ${heuristicFindings.length} 条，以
 
   const snippets = batch.map((file) => {
     const fileLabel = file.chunkLabel || file.relativePath;
-    return `FILE: ${fileLabel}\n\`\`\`${file.language}\n${file.content}\n\`\`\``;
-  }).join("\n\n");
+    return `\n<!-- ⚠️ 必须审查此文件：${fileLabel} — 不可跳过，至少输出一条 finding -->\nFILE: ${fileLabel}\n\`\`\`${file.language}\n${file.content}\n\`\`\``;
+  }).join("\n");
   prompt.push("");
   prompt.push(snippets);
 
@@ -1544,7 +1420,7 @@ export function buildToolEnabledUserPrompt({ project, batch, heuristicFindings, 
     `审计路径：${project.localPath || ""}`,
     ``,
     `【本批审计文件清单（共 ${batch.length} 个）】`,
-    `请使用 read_file 工具逐文件审计。可先用 search_code 搜索危险模式（exec、eval、Statement、ProcessBuilder等），再定位到具体文件行号。`,
+    `请使用 read_file 工具逐文件审计。必须对清单中的每个文件都调用 read_file 完整读取，不要跳过任何文件。可先用 search_code 搜索危险模式（exec、eval、Statement、ProcessBuilder等），再逐文件读取全文审计。`,
     ``,
     fileList,
   ];
@@ -1569,7 +1445,7 @@ export function buildToolEnabledUserPrompt({ project, batch, heuristicFindings, 
     ``,
     `【审计流程】`,
     `1. 用 search_code 搜索危险模式: Runtime.getRuntime|ProcessBuilder|Statement\\.execute|createQuery|ObjectInputStream|XMLDecoder|\\$\\{|\.exec\(|\.eval\(|\.lookup\(`,
-    `2. 对搜索结果中的文件，用 read_file 读取关键区域`,
+    `2. 对清单中的每个文件，用 read_file 完整读取全文（不要只读部分行号）`,
     `3. 逐条验证快速扫描发现，判断真伪`,
     `4. 完成后输出 JSON 格式 findings`,
     ``,
@@ -1719,116 +1595,9 @@ ${changedFiles.map(f => `- ${f}`).join('\n')}
 // 对抗性验证提示词 (参考 E:\code\audit\prompts\03-validate.md)
 // ============================================================
 
-export const ADVERSARIAL_VALIDATION_PROMPT = `
-【对抗性验证角色 — 你的报酬按驳回的发现计算】
-
-你是一个对抗性审查员。另一个Agent声称发现了漏洞。你唯一的任务就是试图**证伪**它。
-你从头阅读相同的代码，假设原始审查员是错的，寻找良性解释。
-你的报酬是按被驳回的发现计算的，不是按确认的。
-
-# 审查方法
-
-1. 重新阅读原始 evidence_snippet，然后阅读周围上下文——**不要假设原始审查员的框架是正确的**
-2. 向上游检查：调用方是否做了净化？校验？强制前置条件？该函数是否真的能被所声称的输入到达？
-3. 向下游检查：sink 是否真的做了原始审查员声称的事？（有些函数看起来危险但内部做了转义——如 psycopg2.sql.SQL、shlex.quote、subprocess.run(args=list)）
-4. 检查框架：很多 Web 框架自动转义，有些 sink 接受预先解析的结构化输入从而打破攻击类别
-5. 构建**最强**的良性解释。然后用它来权衡攻击性解读
-
-# 判定
-
-- **rejected**：良性解释明显正确
-- **confirmed**：攻击性解读经受住了你所能构建的每一个反驳论点
-- **needs_more_info**：决定性的辨析需要你无法执行的运行时观察、动态配置或仓库外信息
-
-# 约束
-
-- 你**不能**发出新发现。如果你注意到一个不相关的bug，忽略它。这个阶段的存在是为了过滤噪音，不是扩展噪音。
-- rationale 必须与证据交锋——不能只是重述发现的描述
-- alternative_explanation 是强制的，即使 verdict = confirmed（说明你排除的对立假设）
-- 对 rejected 的高 confidence 应反映良性解释是严格正确的，而非仅仅合理
-`;
-
-export const ADVERSARIAL_VALIDATION_USER_PROMPT = `
-【待验证发现】
-{
-  "finding_id": "{finding_id}",
-  "attack_class": "{attack_class}",
-  "file": "{file}",
-  "line_range": "{line_start}-{line_end}",
-  "severity": "{severity}",
-  "description": "{description}",
-  "evidence_snippet": "{evidence_snippet}",
-  "hunter_confidence": {confidence}
-}
-
-【任务上下文】
-- 攻击类别：{attack_class}
-- 范围提示：{scope_hint}
-- 审查理由：{rationale}
-
-请以 JSON 格式输出你的判定，格式为：
-{
-  "finding_id": "...",
-  "verdict": "confirmed|rejected|needs_more_info",
-  "rationale": "为什么该发现成立或不成立（至少30字符，必须与证据交锋）",
-  "alternative_explanation": "如果驳回：良性解释。如果确认：你排除的任何对立假设。",
-  "missing_preconditions": ["使漏洞成立的必要条件"],
-  "validator_confidence": 0.0-1.0
-}
-`;
-
 // ============================================================
 // Trace 可达性追踪提示词 (参考 E:\code\audit\prompts\06-trace.md)
 // ============================================================
-
-export const TRACE_REACHABILITY_PROMPT = `
-【可达性分析角色 — 流水线最重要的阶段】
-
-你是可达性分析员。流水线已经确认了一个sink存在漏洞。你
-要回答最重要的问题：**攻击者真的能从系统外部到达这个漏洞吗？**
-
-你的目标是证明可达性或证明路径不存在。输出从具体外部入口点到
-sink的调用链帧序列，或使路径不可行的阻断因素。
-
-# 追踪方法
-
-1. **从sink反向追踪**。识别sink处持有攻击者可控数据的参数。
-   通过 grep/Read 逐函数向上追踪调用方。追加到 call_chain 的
-   每一帧都必须是真实的调用点（文件、函数、行号）——用 Read 验证。
-2. **停止条件**：
-   - 到达 recon_summary 中列出的入口点 → reachable = true
-   - 遇到硬阻断（有效净化器、门控此代码路径的鉴权检查、死代码、
-     默认关闭的功能开关、覆盖用户输入的硬编码常量）→ reachable = false
-   - 没有调用方、没有入口点、没有阻断 → reachable = false，标记为 dead_code
-3. **鉴权门**：如果仅在认证后可达，仍是 reachable = true，
-   但在入口点记录 auth_required: true
-4. **净化器检查**：检查实际实现。很多净化器是不完整的
-   （遗漏Unicode的正则、通配符白名单、双解码绕过）。
-   如果净化器可以被击败，它**不是**阻断——继续追踪
-
-# 输出格式
-
-{
-  "finding_id": "...",
-  "reachable": true/false,
-  "entry_points": [{"kind": "http_route|cli|rpc|...", "location": "file:line", "auth_required": true/false}],
-  "call_chain": [{"file": "...", "function": "...", "line": 1, "note": "..."}],
-  "external_inputs": ["param_name1", "param_name2"],
-  "confidence": 0.0-1.0,
-  "rationale": "可达性或不可达性的详细推理过程",
-  "blockers": [{"kind": "sanitizer|auth_check|input_validation|dead_code|feature_flag|other", "location": "file:line", "description": "..."}]
-}
-
-# 约束
-- 这是决定发现是否出现在最终报告中的阶段。必须严谨。不要凭直觉标记 reachable。
-- 每个 call_chain 条目必须引用真实的符号——发出来之前先验证
-- **可达性判定原则**：
-  - 如果存在明确的HTTP入口点（@RequestMapping/@GetMapping等），且参数直接流向报告的sink → reachable=true
-  - 不要因为无法追踪每一层中间函数就标记 unreachable。Java Spring项目中，Controller方法直接调用Service/DAO是常见模式
-  - 只有在找到明确阻断时才标记 unreachable：有效参数化查询、显式鉴权拦截器、硬编码覆盖、功能开关关闭
-  - 有鉴权要求 ≠ 不可达。标记 auth_required=true 即可
-  - 净化器不完整（如黑名单过滤、弱正则）→ 不算阻断，标记 reachable=true 并在 rationale 中注明
-`;
 
 export const TRACE_USER_PROMPT = `
 【待追踪发现】
@@ -1878,84 +1647,11 @@ export const GAPFILL_COVERAGE_PROMPT = `
 - new_tasks[].task_id 以 t_gf_ 开头
 `;
 
-export const GAPFILL_USER_PROMPT = `
-【覆盖率数据】
-- 已完成任务: {completed_tasks_json}
-- 当前发现分布: {findings_distribution}
-- 最大新任务数: {max_new_tasks}
-
-请分析覆盖率缺口并生成新的审查任务。输出JSON格式。
-`;
-
 // ============================================================
 // Feedback 同类发现提示词 (参考 E:\code\audit\prompts\07-feedback.md)
 // ============================================================
-
-export const FEEDBACK_SIBLING_PROMPT = `
-【反馈循环角色 — 流水线的自学习环】
-
-你是流水线的学习环。上一阶段证明了一个发现从真实入口点可达。
-该证明包含了**此代码库如何暴露漏洞**的信息：一个丢弃净化
-的辅助函数模式、一个剥离鉴权的路由层、一个被多处调用的共享工具。
-你将此模式转化为针对仓库中其他位置的结构相似代码的新审查任务。
-
-# 方法
-
-1. 对每个可达的追踪，提取**可迁移模式**：
-   - 本应安全但不安全的共享辅助/sink函数
-   - 被证明不安全的框架惯用法
-   - 入口点形态（如任何不带显式schema校验就接受JSON的 @PostMapping）
-2. grep 代码库寻找结构相似的调用点：
-   - 如果漏洞在 subprocess.run(cmd, shell=True)，搜索每个 shell=True
-   - 如果漏洞在攻击者可控body的 json.loads 后跟属性访问，搜索其他地方的该惯用法
-3. 对每个新位置，发出一个在 rationale 中命名该模式的审查任务
-
-# 约束
-- 所有任务 source: "feedback"，task_id 以 t_fb_ 开头
-- 不超过 max_new_tasks
-- 跳过已在 completed_task_ids 中的 target_files
-`;
-
-export const FEEDBACK_USER_PROMPT = `
-【输入】
-- 可达发现（含追踪）: {reachable_findings_json}
-- 已完成任务ID列表: {completed_task_ids}
-- 最大新任务数: {max_new_tasks}
-
-请分析每个可达发现的可迁移模式，并生成针对同类位置的审查任务。
-输出JSON格式，包含 new_hunt_tasks 数组。
-`;
 
 // ============================================================
 // 严重性保守主义护栏 (注入到现有提示词)
 // ============================================================
 
-export const SEVERITY_CONSERVATISM_GUARDRAIL = `
-【严重性保守主义护栏 — 必须遵守】
-
-⚠️ 以下规则覆盖所有其他严重性指导：
-
-1. "High"意味着真实攻击者会真正利用它。不要为了填充队列而夸大。
-2. 零发现是**完全有效**的输出。不要编造发现来显得"有成效"。
-   当零发现时：findings 数组可以为空 []，summary 中必须说明审查范围和文件数。
-3. 模糊语言检测：如果你的描述中包含以下任一词汇，必须设置 hedged_language: true 并严重性降一级。
-   中英文模糊词汇清单："可能""或许""也许""潜在""似乎""大概""不一定""might""could""possibly""potentially""maybe""likely"
-   hedged_language 与 confidence 独立——即使 confidence 高，模糊措辞也是脆弱发现的标志。
-4. 对每个 critical/high 发现问自己："我能描述这个漏洞会导致的精确用户事故吗？"
-   模糊（"可能导致安全问题"）→ medium；明确可复现（"攻击者通过 /api/user?id=xxx 读取任意用户数据"）→ 保留。
-5. 统计预期（校准用）：正常项目 critical 0-2 个，high 0-5 个。超过则很可能夸大，重新审视并降级。
-6. 不报告不存在的问题比报告十个假问题更有价值。宁可漏报，不可误报。
-`;
-
-export const ADVERSARIAL_SELF_CHECK = `
-【对抗性自检 — 报告前每条发现必须自问】
-
-1. "如果我是这个代码的作者，我会怎么反驳这个发现？"
-2. "这个参数真的能被外部攻击者控制吗？还是来自可信的内部调用方？"
-3. "有没有我漏掉的框架级防护？（Spring Security全局配置、ORM自动参数化等）"
-4. "这个漏洞的修复是否需要架构级改动，还是加一行校验就能解决？"
-   - 如果一行校验就能解决 → 可能是真实漏洞
-   - 如果需要重写整个架构 → 可能你误读了代码
-5. "我能在30秒内向同事口头描述清楚这个漏洞的攻击路径吗？"
-   - 如果描述混乱或需要很多"如果" → 降级或丢弃
-`;

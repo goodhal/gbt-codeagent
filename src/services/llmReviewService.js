@@ -263,6 +263,10 @@ export class DefensiveLlmReviewer {
   }
 
   async auditProject({ project, selectedSkills, llmConfig, codeGraphContext, codeGraph, routeTable = null, onProgress, useStreaming = false, taskId }) {
+    // 每次审计开始时重置熔断器
+    if (llmCircuitBreaker.currentState !== 'closed') {
+      llmCircuitBreaker.forceClose();
+    }
     console.log(`[LLM审计] auditProject 开始 - 项目: ${project.name}, 提供商: ${llmConfig.providerId}, 模型: ${llmConfig.model}`);
     console.log(`[LLM审计] 代码知识图谱上下文: ${codeGraphContext ? '已提供' : '未提供'}`);
     if (!llmConfig?.apiKey) {
@@ -360,6 +364,9 @@ export class DefensiveLlmReviewer {
 
     // 验证管线（与 reviewProject 保持一致）：逐条校验 + 误报检测 + 置信度过滤
     const filteredFindings = findings.map(f => {
+      if (f.confidence === undefined || f.confidence === null || !Number.isFinite(f.confidence)) {
+        f.confidence = 0.65;
+      }
       const validation = llmOptimizer.validateFinding(f);
       if (!validation.isValid) {
         console.log(`[LLM优化] 发现无效结果: ${f.title}, 问题: ${validation.issues.join(', ')}`);
@@ -576,7 +583,7 @@ function getToolExecutor(sourceRoot) {
   return executor;
 }
 
-async function executeToolCall(toolCall, sourceRoot, batchFindings = null) {
+async function executeToolCall(toolCall, sourceRoot, batchFindings = null, readFiles = null) {
   const fn = toolCall.function;
   const name = fn.name;
   let args;
@@ -591,6 +598,7 @@ async function executeToolCall(toolCall, sourceRoot, batchFindings = null) {
       let result;
       if (name === 'read_file') {
         result = await executor.executeFileContent({ file_path: args.file_path });
+        if (readFiles && args.file_path) readFiles.add(args.file_path);
       } else if (name === 'search_code') {
         let fileType = args.file_pattern;
         if (fileType && fileType.startsWith('*.')) fileType = fileType.slice(2);
@@ -687,7 +695,7 @@ async function requestWithTools({ llmConfig, messages, tools }) {
   };
 }
 
-async function runToolEnabledAudit({ llmConfig, systemPrompt, userPrompt, sourceRoot, findingsAccumulator }) {
+async function runToolEnabledAudit({ llmConfig, systemPrompt, userPrompt, sourceRoot, findingsAccumulator, batchFiles = [] }) {
   const tools = getAuditToolDefinitions();
   const messages = [
     { role: "system", content: sanitizeContent(systemPrompt) },
@@ -697,6 +705,7 @@ async function runToolEnabledAudit({ llmConfig, systemPrompt, userPrompt, source
   let allContent = '';
   const startTime = Date.now();
   const batchFindings = []; // write_finding 工具写入的发现
+  const readFiles = new Set(); // 追踪 LLM 读取过的文件
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const result = await withReviewRetry(() => 
@@ -715,7 +724,7 @@ async function runToolEnabledAudit({ llmConfig, systemPrompt, userPrompt, source
       });
 
       for (const tc of result.toolCalls) {
-        const toolResult = await executeToolCall(tc, sourceRoot, batchFindings);
+        const toolResult = await executeToolCall(tc, sourceRoot, batchFindings, readFiles);
         messages.push({
           role: "tool",
           tool_call_id: tc.id,
@@ -739,7 +748,12 @@ async function runToolEnabledAudit({ llmConfig, systemPrompt, userPrompt, source
     findingsAccumulator.push(...batchFindings);
   }
 
-  return { content: allContent, findings: batchFindings };
+  const unreadFiles = batchFiles.filter(f => !readFiles.has(f) && !readFiles.has(f.replace(/\\/g, '/')));
+  if (unreadFiles.length > 0) {
+    console.log(`[LLM工具] 文件覆盖检查: ${batchFiles.length} 个文件中 ${readFiles.size} 个已读取, ${unreadFiles.length} 个未读取: ${unreadFiles.join(', ')}`);
+  }
+
+  return { content: allContent, findings: batchFindings, readFiles, unreadFiles };
 }
 
 async function requestStructuredReview({ llmConfig, systemPrompt, userPrompt }) {
@@ -1166,7 +1180,7 @@ async function walk(root, currentPath, output) {
 }
 
 function rankFiles(files, heuristicFindings, selectedSkills) {
-  const locationHints = new Set(heuristicFindings.map((finding) => finding.location).filter(Boolean));
+  const locationHints = new Set(heuristicFindings.map((finding) => (finding.location || '').split(':')[0].trim()).filter(Boolean));
   const keywordHints = selectedSkills.flatMap((skill) =>
     skill.reviewPrompt.toLowerCase().split(/[^\p{L}\p{N}_-]+/u).filter((token) => token.length > 3)
   );
@@ -1456,10 +1470,50 @@ function extractFindingsFromText(text) {
   });
 }
 
-function normalizeFindings(findings, selectedSkills) {
+function normalizeFindings(findings, selectedSkills, knownFilePaths = []) {
   const validSkillIds = new Set(selectedSkills.map((skill) => skill.id));
   const gbtSkill = selectedSkills.find(skill => skill.id === "gbt-code-audit");
   const isGbtAudit = gbtSkill !== undefined;
+
+  const VULN_TYPE_NORMALIZE = {
+    '命令注入': 'COMMAND_INJECTION',
+    'sql注入': 'SQL_INJECTION',
+    'sql 注入': 'SQL_INJECTION',
+    '代码注入': 'CODE_INJECTION',
+    'xss': 'XSS',
+    '跨站脚本': 'XSS',
+    'ssrf': 'SSRF',
+    '服务端请求伪造': 'SSRF',
+    'xxe': 'XXE_INJECTION',
+    '路径遍历': 'PATH_TRAVERSAL',
+    '文件上传': 'FILE_UPLOAD',
+    '反序列化': 'DESERIALIZATION',
+    'csrf': 'CSRF_MISSING',
+    '跨站请求伪造': 'CSRF_MISSING',
+    '认证绕过': 'AUTH_BYPASS',
+    '越权': 'BROKEN_ACCESS_CONTROL',
+    '信息泄露': 'INFORMATION_DISCLOSURE',
+    '硬编码': 'HARDCODED_CREDENTIALS',
+    '弱加密': 'WEAK_CRYPTO',
+  };
+
+  const filePathLookup = new Map();
+  for (const fp of knownFilePaths) {
+    const basename = fp.split('/').pop();
+    if (basename) filePathLookup.set(basename.toLowerCase(), fp);
+  }
+
+  function fixLocation(loc) {
+    if (!loc || loc.includes('/')) return loc;
+    const colonIdx = loc.indexOf(':');
+    const fileName = colonIdx > 0 ? loc.slice(0, colonIdx) : loc;
+    const suffix = colonIdx > 0 ? loc.slice(colonIdx) : '';
+    const matched = filePathLookup.get(fileName.toLowerCase());
+    if (matched) {
+      return matched + suffix;
+    }
+    return loc;
+  }
 
   console.log(`[LLM 审计] normalizeFindings - 输入 findings 数量：${findings?.length || 0}`);
   
@@ -1470,11 +1524,12 @@ function normalizeFindings(findings, selectedSkills) {
 
   const normalized = findings
     .map((finding) => {
+      const fixedLocation = fixLocation(safeString(finding.location, "n/a"));
       const normalized = {
         title: safeString(finding.title, "LLM 复核发现"),
         severity: normalizeSeverity(finding.severity),
         confidence: clampConfidence(finding.confidence),
-        location: safeString(finding.location, "n/a"),
+        location: fixedLocation,
         skillId: validSkillIds.has(finding.skillId) ? finding.skillId : selectedSkills[0]?.id || "access-control",
         evidence: safeString(finding.evidence, "模型复核认为这里存在值得继续人工确认的实现迹象。"),
         impact: safeString(finding.impact, "该实现如果在真实部署中成立，可能扩大管理面、数据面或配置暴露面。"),
@@ -1498,13 +1553,51 @@ function normalizeFindings(findings, selectedSkills) {
         normalized.cwe = safeString(finding.cwe, "CWE-000");
         normalized.gbtMapping = safeString(finding.gbtMapping, "GB/T39412-2020 通用基线");
         normalized.cvssScore = clampCvssScore(finding.cvssScore);
-        normalized.language = safeString(finding.language, "unknown");
-        
-        // 添加 OWASP 字段
+        const locPath = normalized.location || '';
+        if (!finding.language && locPath) {
+          const ext = locPath.split('.').pop().split(':')[0].toLowerCase();
+          const extLangMap = { py: 'python', java: 'java', js: 'javascript', ts: 'typescript', cs: 'csharp', cpp: 'cpp', c: 'c', go: 'go', php: 'php', rb: 'ruby', rs: 'rust' };
+          normalized.language = extLangMap[ext] || 'unknown';
+        } else {
+          normalized.language = safeString(finding.language, "unknown");
+        }
+      }
+
+      // VulnType 标准化：中文→英文映射
+      if (finding.vulnType) {
+        const key = (finding.vulnType || '').toLowerCase().trim();
+        normalized.vulnType = VULN_TYPE_NORMALIZE[key] || finding.vulnType;
+      }
+
+      // OWASP/GBT 映射放在 vulnType 标准化之后
+      if (isGbtAudit && finding.skillId === "gbt-code-audit") {
         const vulnType = normalized.vulnType;
         const owaspIds = OWASP_MAPPING[vulnType] || [];
         normalized.owaspIds = owaspIds;
-        normalized.owasp = owaspIds.join(", ");
+        normalized.owasp = owaspIds.length > 0 ? owaspIds.join(", ") : "无";
+        if (normalized.cwe === "CWE-000" || !normalized.cwe) {
+          const CWE_MAP = {
+            'SQL_INJECTION': 'CWE-89', 'COMMAND_INJECTION': 'CWE-78', 'CODE_INJECTION': 'CWE-94',
+            'XSS': 'CWE-79', 'PATH_TRAVERSAL': 'CWE-22', 'SSRF': 'CWE-918',
+            'DESERIALIZATION': 'CWE-502', 'HARDCODED_CREDENTIALS': 'CWE-798', 'WEAK_CRYPTO': 'CWE-327',
+            'INFORMATION_DISCLOSURE': 'CWE-200', 'AUTH_BYPASS': 'CWE-287', 'CSRF_MISSING': 'CWE-352',
+            'BUFFER_OVERFLOW': 'CWE-120', 'FORMAT_STRING': 'CWE-134', 'INTEGER_OVERFLOW': 'CWE-190',
+            'SESSION_FIXATION': 'CWE-384', 'UNRESTRICTED_FILE_UPLOAD': 'CWE-434',
+            'PLAINTEXT_PASSWORD_STORAGE': 'CWE-256', 'PLAINTEXT_PASSWORD_TRANSMISSION': 'CWE-319',
+            'XXE_INJECTION': 'CWE-611', 'LDAP_INJECTION': 'CWE-90', 'XPATH_INJECTION': 'CWE-643',
+            'PREDICTABLE_RANDOM': 'CWE-330', 'HARD_CODE_PASSWORD': 'CWE-798',
+            'COOKIE_MANIPULATION': 'CWE-613', 'PROCESS_CONTROL': 'CWE-114',
+            'MISSING_ACCESS_CONTROL': 'CWE-862', 'BROKEN_ACCESS_CONTROL': 'CWE-862',
+            'WEAK_PASSWORD_POLICY': 'CWE-521', 'INFO_LEAK': 'CWE-200',
+            'PLAINTEXT_TRANSMISSION': 'CWE-319', 'WEAK_RANDOM': 'CWE-330',
+            'UNCHECKED_ALLOCATION': 'CWE-252',
+          };
+          normalized.cwe = CWE_MAP[vulnType] || 'CWE-000';
+        }
+        if (normalized.cvssScore === 0 || !normalized.cvssScore) {
+          const sevToCvss = { critical: 9.5, high: 7.5, medium: 5.0, low: 2.5, info: 0.1 };
+          normalized.cvssScore = sevToCvss[normalized.severity] || 5.0;
+        }
       }
 
       return normalized;
@@ -1631,25 +1724,45 @@ async function runBatch({ project, selectedSkills, llmConfig, finalSystemPrompt,
 
     let responseText;
     console.log(`[SSE诊断] 即将调用 emitLLMStart，taskId=${taskId}`);
-    streamService.emitLLMStart(llmConfig.model, { batchIndex: batchIndex + 1, totalBatches: validBatches.length }, taskId);
+    streamService.emitLLMStart(llmConfig.model, { batchIndex, totalBatches: validBatches.length }, taskId);
     console.log(`[SSE诊断] emitLLMStart 调用完成`);
     let toolFindings = [];
+    let unreadBatchFiles = [];
     try {
       const result = await withReviewRetry(() => llmCircuitBreaker.callWithFallback(() =>
-        runToolEnabledAudit({ llmConfig, systemPrompt: finalSystemPrompt, userPrompt, sourceRoot, findingsAccumulator: toolFindings }),
+        runToolEnabledAudit({ llmConfig, systemPrompt: finalSystemPrompt, userPrompt, sourceRoot, findingsAccumulator: toolFindings, batchFiles }),
         () => { throw new Error('LLM服务熔断'); }
       ));
       responseText = result.content || '';
       if (result.findings && result.findings.length > 0) {
         console.log(`[LLM审计] write_finding 工具产出 ${result.findings.length} 个发现`);
       }
+      unreadBatchFiles = result.unreadFiles || [];
     } catch (toolError) {
       console.warn(`[LLM审计] 工具模式失败 (${toolError.message})，回退到嵌入代码模式`);
       const fallbackPrompt = buildUserPrompt({ project, selectedSkills, heuristicFindings: batchHeuristicFindings, batch, incrementalPrompt: incPrompt }) + routeChecklist;
-      // 降级路径绕过熔断器：工具模式失败不意味着标准API也失败（可能是模型不支持function calling等）
       responseText = await withReviewRetry(() =>
         requestStructuredReview({ llmConfig, systemPrompt: finalSystemPrompt, userPrompt: fallbackPrompt })
       );
+    }
+
+    if (unreadBatchFiles.length > 0) {
+      console.log(`[LLM审计] 批次 ${batchIndex + 1} 有 ${unreadBatchFiles.length} 个文件未被工具审计，追加逐文件审计`);
+      for (const unreadPath of unreadBatchFiles) {
+        const unreadFile = batch.find(f => f.relativePath === unreadPath || f.relativePath === unreadPath.replace(/\\/g, '/'));
+        if (!unreadFile) continue;
+        try {
+          const singleBatch = [unreadFile];
+          const singlePrompt = buildToolEnabledUserPrompt({ project, batch: singleBatch, heuristicFindings: batchHeuristicFindings, incrementalPrompt: incPrompt }) + routeChecklist;
+          const singleResult = await processSingleFile({ llmConfig, systemPrompt: finalSystemPrompt, userPrompt: singlePrompt, sourceRoot, file: unreadFile, batchHeuristicFindings, incPrompt, routeChecklist, project, selectedSkills });
+          if (singleResult.success && singleResult.findings?.length > 0) {
+            toolFindings.push(...singleResult.findings);
+            console.log(`[LLM审计] 追加审计 ${unreadPath} 产出 ${singleResult.findings.length} 个发现`);
+          }
+        } catch (e) {
+          console.warn(`[LLM审计] 追加审计 ${unreadPath} 失败: ${e.message}`);
+        }
+      }
     }
 
     const parsed = parseJsonResponse(responseText);
@@ -1663,14 +1776,14 @@ async function runBatch({ project, selectedSkills, llmConfig, finalSystemPrompt,
       }
     }
 
-    const normalized = normalizeFindings(validationResult.valid, selectedSkills);
+    const normalized = normalizeFindings(validationResult.valid, selectedSkills, batchFiles);
     auditFailureTracker.recordSuccess();
 
     // 发送批次结果摘要到前端 SSE
     const batchSummary = normalized.length > 0 
       ? `发现 ${normalized.length} 个问题：${normalized.map(f => f.title?.slice(0,60)).join(' | ')}` 
       : '本批次未发现新问题';
-    streamService.emitLLMStreamToken(batchSummary, batchIndex + 1, validBatches.length, taskId);
+    streamService.emitLLMStreamToken(batchSummary, batchIndex, validBatches.length, taskId);
 
     onComplete?.(batch.length);
 

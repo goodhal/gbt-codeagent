@@ -15,6 +15,15 @@ const DEFAULT_CONFIG = {
   strictMode: true,
 };
 
+const MUST_PASS_VULN_TYPES = new Set([
+  'XSS', 'OPEN_REDIRECT', 'RACE_CONDITION', 'FORMAT_STRING_VULNERABILITY',
+  'FORMAT_STRING', 'SENSITIVE_INFO_IN_LOGS', 'MISSING_ACCESS_CONTROL',
+  'ARBITRARY_FILE_READ', 'PLAINTEXT_PASSWORD_TRANSMISSION', 'PLAINTEXT_TRANSMISSION',
+  'UNRESTRICTED_FILE_UPLOAD', 'FILE_UPLOAD', 'INTEGER_OVERFLOW',
+  'INSECURE_DESERIALIZATION', 'UNRESTRICTED_UPLOAD', 'CREDENTIAL_EXPOSURE',
+  'CORS_MISCONFIGURATION', 'LOG_INJECTION', 'TRUST_BOUNDARY_VIOLATION'
+]);
+
 export class AuditCandidateFilter {
   constructor(config = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -106,7 +115,7 @@ export class AuditCandidateFilter {
       const priority = this._classifyPriority(item.score);
       item.priority = priority;
 
-      if (item.score >= threshold) {
+      if (item.score >= threshold || MUST_PASS_VULN_TYPES.has(item.finding.vulnType)) {
         passed.push({ ...item.finding, _auditScore: item.score, _auditPriority: priority });
         this._stats.passed++;
         this._stats.byPriority[priority]++;
@@ -149,6 +158,7 @@ export class AuditCandidateFilter {
       let shouldPass = false;
       if (priority === "high") shouldPass = true;
       else if (priority === "medium" && item.score >= threshold) shouldPass = true;
+      else if (MUST_PASS_VULN_TYPES.has(item.finding.vulnType)) shouldPass = true;
 
       if (shouldPass) {
         passed.push({ ...item.finding, _auditScore: item.score, _auditPriority: priority });

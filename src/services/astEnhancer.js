@@ -685,11 +685,45 @@ class ASTEnhancerService {
       const contextLines = lines.slice(contextStart, contextEnd);
 
       const matchedSink = this.detectSink(evidence);
+      const vulnTypeSinkMap = {
+        'COMMAND_INJECTION': { sink: 'os.command', severity: 'critical', desc: '操作系统命令执行' },
+        'CODE_INJECTION': { sink: 'dynamic.exec', severity: 'critical', desc: '动态代码执行' },
+        'SQL_INJECTION': { sink: 'sql.query', severity: 'high', desc: 'SQL查询构造' },
+        'XSS': { sink: 'html.output', severity: 'high', desc: 'HTML输出未转义' },
+        'PATH_TRAVERSAL': { sink: 'file.read', severity: 'high', desc: '文件路径操作' },
+        'SSRF': { sink: 'http.request', severity: 'high', desc: '服务端HTTP请求' },
+        'DESERIALIZATION': { sink: 'object.deserialize', severity: 'critical', desc: '对象反序列化' },
+        'INSECURE_DESERIALIZATION': { sink: 'object.deserialize', severity: 'critical', desc: '不安全反序列化' },
+        'XXE_INJECTION': { sink: 'xml.parse', severity: 'high', desc: 'XML外部实体解析' },
+        'HARDCODED_CREDENTIALS': { sink: 'credential.store', severity: 'high', desc: '凭据硬编码' },
+        'HARD_CODE_PASSWORD': { sink: 'password.hardcode', severity: 'high', desc: '密码硬编码' },
+        'WEAK_CRYPTO': { sink: 'crypto.weak', severity: 'medium', desc: '弱加密算法' },
+        'WEAK_HASH': { sink: 'hash.weak', severity: 'medium', desc: '弱哈希算法' },
+        'PREDICTABLE_RANDOM': { sink: 'random.weak', severity: 'medium', desc: '可预测随机数' },
+        'INSUFFICIENT_RANDOMNESS': { sink: 'random.weak', severity: 'medium', desc: '随机数不足' },
+        'PLAINTEXT_PASSWORD_STORAGE': { sink: 'password.plaintext', severity: 'high', desc: '明文密码存储' },
+        'PLAINTEXT_PASSWORD_TRANSMISSION': { sink: 'password.plaintext', severity: 'high', desc: '明文密码传输' },
+        'PLAINTEXT_TRANSMISSION': { sink: 'data.plaintext', severity: 'medium', desc: '明文数据传输' },
+        'SESSION_FIXATION': { sink: 'session.manage', severity: 'high', desc: '会话固定风险' },
+        'COOKIE_MANIPULATION': { sink: 'cookie.manage', severity: 'medium', desc: 'Cookie操作' },
+        'PROCESS_CONTROL': { sink: 'process.control', severity: 'high', desc: '进程控制' },
+        'FORMAT_STRING': { sink: 'format.string', severity: 'high', desc: '格式化字符串' },
+        'BUFFER_OVERFLOW': { sink: 'buffer.overflow', severity: 'high', desc: '缓冲区溢出' },
+        'INTEGER_OVERFLOW': { sink: 'integer.overflow', severity: 'medium', desc: '整数溢出' },
+        'UNRESTRICTED_FILE_UPLOAD': { sink: 'file.upload', severity: 'high', desc: '文件上传未限制' },
+        'AUTH_BYPASS': { sink: 'auth.bypass', severity: 'critical', desc: '认证绕过' },
+        'MISSING_ACCESS_CONTROL': { sink: 'access.missing', severity: 'high', desc: '访问控制缺失' },
+        'CSRF_MISSING': { sink: 'csrf.missing', severity: 'medium', desc: 'CSRF防护缺失' },
+        'OPEN_REDIRECT': { sink: 'redirect.open', severity: 'medium', desc: '开放重定向' },
+        'INFO_LEAK': { sink: 'info.leak', severity: 'medium', desc: '信息泄露' },
+        'INFORMATION_DISCLOSURE': { sink: 'info.disclosure', severity: 'medium', desc: '信息暴露' },
+      };
+      const fallback = vulnTypeSinkMap[finding.vulnType || finding.type] || { sink: 'generic', severity: 'medium', desc: '通用风险分析' };
 
       return {
-        sink: matchedSink || 'generic',
-        sinkSeverity: 'unknown',
-        sinkDesc: '通用风险分析',
+        sink: matchedSink || fallback.sink,
+        sinkSeverity: matchedSink ? (DANGEROUS_SINKS[matchedSink]?.severity || fallback.severity) : fallback.severity,
+        sinkDesc: matchedSink ? (DANGEROUS_SINKS[matchedSink]?.desc || fallback.desc) : fallback.desc,
         contextLines: contextLines.map((line, idx) => ({
           lineNum: contextStart + idx + 1,
           content: line.trim()

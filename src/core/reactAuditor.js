@@ -1,5 +1,7 @@
 import { withRetry } from './retry.js';
 import { EVIDENCE_REQUIRED_MAP } from '../config/llmPrompts.js';
+import { TokenTracker, estimateMessagesTokens, getModelMaxTokens } from '../utils/contextManager.js';
+import { ContextCompressor } from '../services/contextCompressor.js';
 
 const THOUGHT_PATTERN = /^(?:Thought|思考)[:：]\s*([\s\S]*?)$/im;
 const ACTION_PATTERN = /^(?:Action|行动)[:：]\s*(\w+)\s*(?:\(([^)]*)\))?$/im;
@@ -97,14 +99,17 @@ class ReActAuditorConfig {
 }
 
 class ReActAuditor {
-  constructor(llmAdapter, toolExecutor, config = new ReActAuditorConfig()) {
+  constructor(llmAdapter, toolExecutor, config = new ReActAuditorConfig(), contextCompressor = null) {
     this.llmAdapter = llmAdapter;
     this.toolExecutor = toolExecutor;
     this.config = config;
+    this.contextCompressor = contextCompressor; // ContextCompressor 实例（可选）
+    this.useNativeTools = false; // 默认使用文本协议，可切换为原生 Tool Use API
     this.messages = [];
     this.result = new ReActResult();
     this.evidencePoints = [];
     this.discoveryHistory = [];
+    this._toolDefsCache = null; // ToolDef 缓存
     
     this.registeredTools = {
       read: {
@@ -167,7 +172,83 @@ class ReActAuditor {
     return toolDescriptions.join('\n');
   }
 
+  /**
+   * 将 registeredTools 转换为 OpenAI ToolDef 格式
+   * 借鉴 open-code-review 的原生 Tool Use API 设计
+   * @returns {Array<{type: string, function: {name: string, description: string, parameters: Object}}>}
+   */
+  _buildToolDefinitions() {
+    if (this._toolDefsCache) return this._toolDefsCache;
+    
+    const toolDefs = [];
+    for (const [name, tool] of Object.entries(this.registeredTools)) {
+      const properties = {};
+      const required = [];
+      for (const [param, desc] of Object.entries(tool.params)) {
+        properties[param] = {
+          type: 'string',
+          description: desc,
+        };
+        required.push(param);
+      }
+      toolDefs.push({
+        type: 'function',
+        function: {
+          name,
+          description: tool.description,
+          parameters: {
+            type: 'object',
+            properties,
+            required: required.length > 0 ? required : undefined,
+          },
+        },
+      });
+    }
+    this._toolDefsCache = toolDefs;
+    return toolDefs;
+  }
+
+  /**
+   * 使用原生 Tool Use API 调用 LLM
+   * 返回 { content, toolCalls } 而非仅 content 字符串
+   */
+  async _callLLMWithTools(messages) {
+    const tools = this._buildToolDefinitions();
+    return withRetry(async () => {
+      return await this.llmAdapter.complete(messages, {
+        temperature: this.config.temperature,
+        maxTokens: 4096,
+        tools, // 传递原生 ToolDef
+      });
+    }, {
+      maxAttempts: this.config.maxRetries,
+      baseDelay: 1000,
+      maxDelay: 30000
+    });
+  }
+
   _buildSystemPrompt(systemPromptContent) {
+    if (this.useNativeTools) {
+      // 原生 Tool Use API 模式：工具由 API 层定义，不需要文本描述
+      return [
+        { role: 'system', content: `
+${systemPromptContent}
+
+【工具使用】
+你可以调用提供的工具来读取文件、搜索代码、追踪数据流等。
+完成分析后，输出 Final Answer 包含发现的问题。
+
+【证据收集要求】
+每个漏洞发现必须收集：
+1. EVID_* 证据点标识
+2. 代码片段位置
+3. 数据流追踪路径（如适用）
+4. 验证结果
+        `.trim() }
+      ];
+    }
+
+    // 文本协议模式（向后兼容）
     const toolDesc = this._getToolDescription();
     return [
       { role: 'system', content: `
@@ -420,12 +501,60 @@ Action: 工具名(参数)
       maxSteps: this.config.maxSteps
     });
 
+    // 初始化 Token 追踪器（借鉴 open-code-review 双阈值策略）
+    const modelName = this.llmAdapter.config?.model || 'deepseek-chat';
+    const modelMaxTokens = getModelMaxTokens(modelName);
+    const initialTokens = estimateMessagesTokens(this.messages);
+    const tokenTracker = new TokenTracker(modelMaxTokens, {
+      initialSystemTokens: initialTokens,
+      softThreshold: 0.60,
+      hardThreshold: 0.80,
+    });
+    this._log('info', `TokenTracker: max=${modelMaxTokens}, initial=${initialTokens} (${Math.round(initialTokens/modelMaxTokens*100)}%)`);
+
+    let prevInputEstimate = initialTokens; // 用于计算每轮增量（而非全部消息总量）
+
     try {
       for (let step = 0; step < this.config.maxSteps; step++) {
         this._log('info', `Step ${step + 1}/${this.config.maxSteps}`);
 
+        // 硬阈值检查：超过 80% 且已压缩过 → 停止循环
+        if (tokenTracker.shouldStopLoop()) {
+          this._log('warn', `TokenTracker: 硬阈值触发 (${tokenTracker.getStatus().usageRatio}%)，停止循环`);
+          this.result.setError('上下文超过硬阈值，已安全停止');
+          break;
+        }
+
         const content = await this._callLLM(this.messages);
         this._log('info', `LLM response length: ${content.length}`);
+
+        // 记录本轮 token 消耗（增量：当前总 token - 上轮总 token）
+        const currentTotalInput = estimateMessagesTokens(this.messages);
+        const roundInputTokens = currentTotalInput - prevInputEstimate;
+        const roundOutputTokens = content ? content.length / 2 : 0;
+        tokenTracker.addRound(roundInputTokens, roundOutputTokens);
+        prevInputEstimate = currentTotalInput;
+
+        // 软阈值 → 触发异步上下文压缩
+        if (tokenTracker.shouldTriggerAsyncCompression()) {
+          this._log('warn', `TokenTracker: 软阈值触发 (${tokenTracker.getStatus().usageRatio}%)，执行上下文压缩`);
+          if (this.contextCompressor && this.messages.length > 6) {
+            try {
+              const result = await this.contextCompressor.compressAndReplace(
+                this.messages,
+                { keepRecent: 3 }
+              );
+              this.messages = result;
+              const compressedTokens = estimateMessagesTokens(this.messages);
+              tokenTracker.markCompressed(compressedTokens);
+              this._log('info', `TokenTracker: 压缩完成，新 token=${compressedTokens}`);
+            } catch (err) {
+              this._log('error', `TokenTracker: 压缩失败 - ${err.message}`);
+            }
+          } else {
+            this._log('warn', 'TokenTracker: 未配置 ContextCompressor，跳过压缩');
+          }
+        }
 
         const parsed = this._parseResponse(content);
 
@@ -514,7 +643,22 @@ Action: 工具名(参数)
 }
 
 function createReActAuditor(llmAdapter, toolExecutor, config) {
-  return new ReActAuditor(llmAdapter, toolExecutor, new ReActAuditorConfig(config));
+  const auditorConfig = new ReActAuditorConfig(config);
+  
+  // 自动创建 ContextCompressor（压缩用 flash 模型）
+  let contextCompressor = null;
+  if (llmAdapter && typeof llmAdapter.complete === 'function') {
+    try {
+      contextCompressor = new ContextCompressor(
+        (messages, options) => llmAdapter.complete(messages, options),
+        { compressionTriggerMsgCount: 6 }
+      );
+    } catch {
+      // 压缩器创建失败不影响核心功能
+    }
+  }
+  
+  return new ReActAuditor(llmAdapter, toolExecutor, auditorConfig, contextCompressor);
 }
 
 export {

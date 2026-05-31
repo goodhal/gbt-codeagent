@@ -241,6 +241,9 @@ export class RulesEngine {
         const regex = this._createRegex(patternStr);
         if (!regex) continue;
 
+        // 重置 lastIndex，避免缓存复用 regex 时并发扫描导致状态混乱
+        regex.lastIndex = 0;
+
         let match;
         while ((match = regex.exec(code)) !== null) {
           results.push({
@@ -448,6 +451,9 @@ export class RulesEngine {
         const regex = this._createRegex(pattern);
         if (!regex) continue;
         
+        // 重置 lastIndex，避免缓存复用 regex 时并发扫描导致状态混乱
+        regex.lastIndex = 0;
+        
         let match;
         while ((match = regex.exec(code)) !== null) {
           matches.push({
@@ -478,6 +484,9 @@ export class RulesEngine {
       const pattern = typeof patternDef === 'string' ? patternDef : patternDef.pattern;
       const regex = this._createRegex(pattern);
       if (!regex) continue;
+      
+      // 重置 lastIndex，避免缓存复用 regex 时并发扫描导致状态混乱
+      regex.lastIndex = 0;
       
       let match;
 
@@ -521,8 +530,11 @@ export class RulesEngine {
     for (const safeDef of safePatterns) {
       const safePattern = typeof safeDef === 'string' ? safeDef : safeDef.pattern;
       const regex = this._createRegex(safePattern);
-      if (regex && regex.test(context)) {
-        return true;
+      if (regex) {
+        regex.lastIndex = 0;
+        if (regex.test(context)) {
+          return true;
+        }
       }
     }
 
@@ -835,6 +847,9 @@ export class RulesEngine {
         const regex = this._createRegex(pattern);
         if (!regex) continue;
         
+        // 重置 lastIndex，避免缓存复用 regex 时并发扫描导致状态混乱
+        regex.lastIndex = 0;
+        
         let match;
         while ((match = regex.exec(code)) !== null) {
           const line = this._getLineNumber(code, match.index);
@@ -858,6 +873,9 @@ export class RulesEngine {
       for (const pattern of sink.patterns || []) {
         const regex = this._createRegex(pattern);
         if (!regex) continue;
+        
+        // 重置 lastIndex，避免缓存复用 regex 时并发扫描导致状态混乱
+        regex.lastIndex = 0;
         
         let match;
         while ((match = regex.exec(code)) !== null) {
@@ -902,7 +920,8 @@ export class RulesEngine {
     );
 
     const allMatches = await Promise.all(promises);
-    const vulnerabilities = allMatches.flat();
+    const vulnerabilities = allMatches.flat()
+      .sort((a, b) => ((a.line || 0) - (b.line || 0)) || ((a.vulnType || '').localeCompare(b.vulnType || '')));
     
     results.vulnerabilities = this.filterFalsePositives(vulnerabilities, {
       minConfidence: options.minConfidence,

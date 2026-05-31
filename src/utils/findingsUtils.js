@@ -46,11 +46,41 @@ export function assignVulnIds(findings) {
  * @returns {Array} 去重后的 findings
  */
 export function deduplicateFindings(findings, options = {}) {
-  const { keyType = 'type-location-line' } = options;
-  const seen = new Set();
+  const { keyType = 'type-location-line', preserveSources = false } = options;
+  const seen = new Map();
   const deduped = [];
 
-  for (const finding of findings) {
+  const sorted = [...findings].sort((a, b) => {
+    const la = a.line || parseInt((a.location || '').split(':')[1], 10) || 0;
+    const lb = b.line || parseInt((b.location || '').split(':')[1], 10) || 0;
+    if (la !== lb) return la - lb;
+    return (b.confidence || 0) - (a.confidence || 0);
+  });
+
+  function normalizeFilePath(rawPath) {
+    const file = (rawPath || '').split(':')[0].trim();
+    if (!file) return file;
+    const parts = file.split('/');
+    const normalized = parts.length >= 2
+      ? (parts.length >= 3 ? parts.slice(-3).join('/') : parts.slice(-2).join('/'))
+      : file;
+    return normalized.toLowerCase();
+  }
+
+  function getFileBasename(rawPath) {
+    const file = (rawPath || '').split(':')[0].trim();
+    if (!file) return '';
+    const parts = file.split('/');
+    return (parts[parts.length - 1] || '').toLowerCase();
+  }
+
+  function pathDepth(rawPath) {
+    const file = (rawPath || '').split(':')[0].trim();
+    if (!file) return 0;
+    return file.split('/').length;
+  }
+
+  for (const finding of sorted) {
     let key;
     switch (keyType) {
       case 'title-location':
@@ -61,16 +91,27 @@ export function deduplicateFindings(findings, options = {}) {
         break;
       case 'type-location-line':
       default:
-        const file = (finding.location || finding.file || '').split(':')[0].trim();
+        const rawFile = finding.location || finding.file || '';
+        const basename = getFileBasename(rawFile);
         const rawLine = finding.line || parseInt((finding.location || '').split(':')[1], 10) || 0;
-        const lineBucket = Math.floor(rawLine / 5) * 5; // ±5 行内合并
-        key = `${finding.vulnType || finding.type}::${file}::${lineBucket}`;
+        const lineBucket = Math.floor(rawLine / 3) * 3;
+        const sourceKey = preserveSources ? (finding.source || 'unknown') : '';
+        key = `${finding.vulnType || finding.type}::${basename}::${lineBucket}::${sourceKey}`;
         break;
     }
 
     if (!seen.has(key)) {
-      seen.add(key);
+      seen.set(key, finding);
       deduped.push(finding);
+    } else {
+      const existing = seen.get(key);
+      const existingDepth = pathDepth(existing.location || existing.file || '');
+      const newDepth = pathDepth(finding.location || finding.file || '');
+      if (newDepth > existingDepth || (finding.confidence || 0) > (existing.confidence || 0)) {
+        const idx = deduped.indexOf(existing);
+        if (idx >= 0) deduped[idx] = finding;
+        seen.set(key, finding);
+      }
     }
   }
 

@@ -20,6 +20,8 @@ import { componentVulnService } from "../services/componentVulnService.js";
 import { createCoverageTracker } from "../services/coverageService.js";
 
 import { getMaxParallelProjects, getCheckpointInterval } from "../config/auditParamsConfig.js";
+import { jsonrepair } from "jsonrepair";
+import { fetchWithTimeout } from "../services/llmFactory.js";
 
 export class AuditAnalystAgent {
   constructor({ llmReviewer }) {
@@ -393,17 +395,29 @@ export class AuditAnalystAgent {
         sourceRoot
       );
       
-      // 深度验证漏洞路径（参考 SAST2AI 的 vuln_verifier 模型）
-      const deepValidated = await Promise.all(validated.map(async (finding) => {
-        const verification = await validationService.verifyVulnerabilityPath(finding, sourceRoot);
-        return {
-          ...finding,
-          verdict: verification.verdict,
-          verificationReason: verification.reason,
-          adjustedSeverity: verification.adjustedSeverity,
-          verifiedCallChain: verification.verifiedCallChain,
-          sanitizersFound: verification.sanitizersFound
-        };
+      // 深度验证漏洞路径（使用 CommentWorkerPool 有界并发）
+      const { CommentWorkerPool } = await import("../core/commentWorkerPool.js");
+      const pool = new CommentWorkerPool(8);
+      
+      // 提交所有任务到 worker pool（有界并发，最多 8 个并行）
+      const jobs = validated.map((finding, idx) =>
+        pool.submit(
+          () => validationService.verifyVulnerabilityPath(finding, sourceRoot),
+          finding.location || finding.title || `finding-${idx}`
+        )
+      );
+      
+      // 等待全部完成
+      await pool.awaitAll();
+      
+      // 组装结果（pool 内保存的是原始 verification，这里做合并）
+      const deepValidated = (await Promise.all(jobs)).map((verification, i) => ({
+        ...validated[i],
+        verdict: verification.verdict,
+        verificationReason: verification.reason,
+        adjustedSeverity: verification.adjustedSeverity,
+        verifiedCallChain: verification.verifiedCallChain,
+        sanitizersFound: verification.sanitizersFound
       }));
 
       // 同步 verdict → status（修复：之前 status 默认"误报"从未被更新）
@@ -509,12 +523,28 @@ export class AuditAnalystAgent {
         // 找出 LLM 完全未覆盖的文件
         const gapCandidates = [...allFilesWithFindings].filter(f => !llmCoveredFiles.has(f));
 
+        // 同时检查是否有文件完全没有被审计过（QuickScan和LLM都没有发现）
+        const allSourceFiles = (await collectFiles(sourceRoot).catch(() => [])).map(f => {
+          const rel = typeof f === 'string' ? f.replace(sourceRoot, '').replace(/^[\\/]+/, '') : (f.relativePath || '');
+          return rel.replace(/\\/g, '/');
+        }).filter(Boolean);
+        const allAuditedFiles = new Set(
+          validatedResults.flatMap(r => r.findings || []).map(f => (f.location || '').split(':')[0])
+        );
+        const fullyMissed = allSourceFiles
+          .filter(f => !allAuditedFiles.has(f))
+          .slice(0, 5);
+        if (fullyMissed.length > 0) {
+          console.log(`[审计分析] 检测到 ${fullyMissed.length} 个文件完全未被审计，纳入补充审计`);
+          gapCandidates.push(...fullyMissed);
+        }
+
         if (gapCandidates.length > 0) {
           console.log(`[审计分析] 检测到 ${gapCandidates.length} 个文件无 LLM 发现，启动精准补充审计`);
 
           // 读取遗漏文件的完整内容
           const gapFiles = [];
-          for (const cf of gapCandidates.slice(0, 5)) {
+          for (const cf of gapCandidates.slice(0, 10)) {
             try {
               const fullPath = path.join(sourceRoot, cf);
               const content = await fs.readFile(fullPath, "utf8");
@@ -541,18 +571,50 @@ ${gapFiles.map(f => {
   return `\n### ${f.path}\n\`\`\`${lang}\n${f.content}\n\`\`\``;
 }).join('\n')}
 
-请只输出JSON：{"findings":[{"title":"...","severity":"critical|high|medium|low","confidence":0.x,"location":"文件:行号","vulnType":"...","cwe":"CWE-xxx","evidence":"...","impact":"...","remediation":"..."}]}`;
+请仅输出精简JSON（每个发现只填4个字段，减少token消耗）：{"findings":[{"title":"漏洞名称(15字内)","severity":"critical|high|medium|low","location":"文件:行号","vulnType":"XSS|SQL_INJECTION|..."}]}`;
 
             try {
-              const { callLLM } = await import("../services/llmFactory.js");
-              const response = await callLLM(llmConfig, [
-                { role: "system", content: gapSystemPrompt },
-                { role: "user", content: "请审查以上遗漏文件，仅输出JSON格式结果，不要其他文字。" }
-              ]);
+              // Gapfill 使用独立 fetch 调用（避免 callLLM 内部的 JSON 解析问题）
+              const baseUrl = String(llmConfig.baseUrl || "").replace(/\/+$/, "");
+              const apiResponse = await fetchWithTimeout(`${baseUrl}/chat/completions`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${llmConfig.apiKey}` },
+                body: JSON.stringify({
+                  model: llmConfig.model,
+                  temperature: 0.1,
+                  max_tokens: 8192,
+                  messages: [
+                    { role: "system", content: gapSystemPrompt },
+                    { role: "user", content: "请审查以上遗漏文件，仅输出JSON格式结果，不要其他文字。" }
+                  ]
+                }),
+              });
+              if (!apiResponse.ok) throw new Error(`HTTP ${apiResponse.status}`);
+              // 尝试 JSON 解析；失败则用文本提取
+              let responseText = "";
+              try {
+                const data = JSON.parse(await apiResponse.text());
+                responseText = data.choices?.[0]?.message?.content || "";
+              } catch {
+                // 如果 API 返回非标准 JSON，直接读文本
+                responseText = await apiResponse.text();
+              }
 
-              const jsonMatch = String(response || '').match(/\{[\s\S]*"findings"[\s\S]*\}/);
+              const jsonMatch = String(responseText).match(/\{[\s\S]*"findings"[\s\S]*\}/);
               if (jsonMatch) {
-                const parsed = JSON.parse(jsonMatch[0]);
+                let parsed;
+                try {
+                  parsed = JSON.parse(jsonMatch[0]);
+                } catch (e1) {
+                  try {
+                    const repaired = jsonrepair(jsonMatch[0]);
+                    parsed = JSON.parse(repaired);
+                    console.log('[审计分析] Gapfill JSON 经 jsonrepair 修复成功');
+                  } catch (e2) {
+                    console.warn(`[审计分析] Gapfill JSON 无法解析: ${e2.message}`);
+                    return;
+                  }
+                }
                 const gapFindings = (parsed.findings || []).filter(f => f.title && f.location);
 
                 if (gapFindings.length > 0) {
@@ -564,7 +626,20 @@ ${gapFiles.map(f => {
                   );
                   const newFindings = gapFindings.filter(f =>
                     !existingKeys.has(`${(f.location || '')}|${(f.title || '').substring(0,40)}`)
-                  ).map(f => ({ ...f, source: 'llm', skillId: 'gbt-code-audit', verdict: 'confirmed' }));
+                  ).map(f => ({
+                    ...f,
+                    source: 'llm',
+                    skillId: 'gbt-code-audit',
+                    verdict: 'confirmed',
+                    evidence: f.evidence || '模型复核认为这里存在值得继续人工确认的实现迹象。',
+                    impact: f.impact || '该实现如果在真实部署中成立，可能扩大管理面、数据面或配置暴露面。',
+                    remediation: f.remediation || '建议结合服务端收口、权限校验和配置默认值治理进行修复。',
+                    safeValidation: f.safeValidation || '建议在本地或测试环境里补充代码走读与单元测试来确认边界。',
+                    cvssScore: f.cvssScore || 0,
+                    language: f.language || (f.location ? (() => { const ext = f.location.split('.').pop().split(':')[0].toLowerCase(); return { py: 'python', java: 'java', js: 'javascript', cs: 'csharp', cpp: 'cpp', go: 'go', php: 'php' }[ext] || 'unknown'; })() : 'unknown'),
+                    owasp: f.owasp || '无',
+                    gbtMapping: f.gbtMapping || '无',
+                  }));
 
                   if (newFindings.length > 0) {
                     gapfillResult = {
@@ -582,7 +657,7 @@ ${gapFiles.map(f => {
             }
           }
         } else {
-          console.log(`[审计分析] 覆盖率检查通过: ${gapTargets.summary}`);
+          console.log(`[审计分析] 覆盖率检查通过: 所有文件均有发现覆盖`);
         }
       } catch (error) {
         console.warn(`[审计分析] Gapfill跳过: ${error.message}`);
@@ -915,7 +990,8 @@ async function buildHeuristicFindings(project, reviewProfile) {
   }
 
   // 返回所有快速扫描和规则检测发现的问题，按严重程度排序
-  return { findings: prioritizeFindings(findings), javaRoutes };
+  // 不在此处做 confidence 过滤，留给最终合并时统一处理，避免双重过滤导致发现丢失
+  return { findings: deduplicateAndSort(findings), javaRoutes };
 }
 
 async function analyzeWithTaint(codeAnalysis, sourceRoot, existingFindings) {
@@ -1330,8 +1406,126 @@ function createFinding(finding) {
 }
 
 function prioritizeFindings(findings) {
-  return deduplicateAndSort(findings)
-    .filter((finding) => finding.confidence >= 0.6);
+  return deduplicateAndSort(findings, { preserveSources: true })
+    .map(f => enrichFindingFields(f))
+    .filter((finding) => finding.confidence >= 0.4);
+}
+
+function enrichFindingFields(f) {
+  const VULN_TYPE_NORMALIZE = {
+    'SQL注入': 'SQL_INJECTION', '命令注入': 'COMMAND_INJECTION', '代码注入': 'CODE_INJECTION',
+    'SENSITIVE_INFO_EXPOSURE': 'INFORMATION_DISCLOSURE', 'INFORMATION_LEAKAGE': 'INFORMATION_DISCLOSURE',
+    'INFO_LEAK': 'INFORMATION_DISCLOSURE', 'INFO': 'INFORMATION_DISCLOSURE',
+    'AUTHENTICATION_BYPASS': 'AUTH_BYPASS',
+    'INSECURE_DESERIALIZATION': 'DESERIALIZATION', 'UNSAFE_DESERIALIZATION': 'DESERIALIZATION',
+    'HARDCODED_SECRET': 'HARDCODED_CREDENTIALS', 'HARDCODED_SECRETS': 'HARDCODED_CREDENTIALS',
+    'IMPROPER_ERROR_HANDLING': 'IMPROPER_EXCEPTION_HANDLING',
+    'IDOR': 'MISSING_ACCESS_CONTROL',
+    'XXE': 'XXE_INJECTION',
+    'FILE_UPLOAD': 'UNRESTRICTED_FILE_UPLOAD',
+    'XSS_REFLECTED': 'XSS', 'XSS_STORED': 'XSS',
+    'SQL_INJECTION_HQL': 'SQL_INJECTION', 'SQL_INJECTION_ORDERBY': 'SQL_INJECTION',
+    'SQL_INJECTION_GROUPBY': 'SQL_INJECTION', 'SQL_INJECTION_MYBATIS': 'SQL_INJECTION',
+    'SQL_INJECTION_MITIGATION_BYPASS': 'SQL_INJECTION',
+    'DESERIALIZATION_RCE': 'DESERIALIZATION',
+    'AUTH_BYPASS_URI': 'AUTH_BYPASS', 'AUTH_BYPASS_SPRING': 'AUTH_BYPASS',
+    'AUTH_BYPASS_SUFFIX': 'AUTH_BYPASS', 'REFERER_AUTH_BYPASS': 'AUTH_BYPASS',
+    'AUTH_CSRF_DISABLED': 'CSRF', 'CSRF_DISABLED': 'CSRF', 'CSRF_PROTECTION': 'CSRF',
+    'WEAK_RANDOM': 'PREDICTABLE_RANDOM',
+    'PLAINTEXT_PASSWORD': 'HARD_CODE_PASSWORD',
+    'SPEL_INJECTION': 'CODE_INJECTION',
+    'BLACKLIST_VALIDATION': 'INSUFFICIENT_INPUT_VALIDATION',
+    'SWAGGER_EXPOSURE': 'INFORMATION_DISCLOSURE',
+    'COMPONENT_VULNERABILITY': 'VULNERABLE_DEPENDENCY',
+    'HARD_CODE_PASSWORD': 'HARDCODED_CREDENTIALS',
+    'PLAINTEXT_PASSWORD_STORAGE': 'WEAK_PASSWORD_STORAGE',
+    'PLAINTEXT_PASSWORD_TRANSMISSION': 'PLAINTEXT_TRANSMISSION',
+  };
+  const rawVulnType = f.vulnType || f.type || '';
+  const normalizedVulnType = VULN_TYPE_NORMALIZE[rawVulnType] || rawVulnType;
+  if (normalizedVulnType !== rawVulnType) {
+    f.vulnType = normalizedVulnType;
+  }
+  const vulnType = normalizedVulnType;
+  const CWE_MAP = {
+    'SQL_INJECTION': 'CWE-89', 'COMMAND_INJECTION': 'CWE-78', 'CODE_INJECTION': 'CWE-94',
+    'XSS': 'CWE-79', 'PATH_TRAVERSAL': 'CWE-22', 'SSRF': 'CWE-918',
+    'DESERIALIZATION': 'CWE-502', 'INSECURE_DESERIALIZATION': 'CWE-502',
+    'HARDCODED_CREDENTIALS': 'CWE-798', 'HARD_CODE_PASSWORD': 'CWE-259',
+    'WEAK_CRYPTO': 'CWE-327', 'WEAK_HASH': 'CWE-328', 'WEAK_ENCRYPTION': 'CWE-327',
+    'PREDICTABLE_RANDOM': 'CWE-338', 'INSUFFICIENT_RANDOMNESS': 'CWE-338',
+    'PLAINTEXT_PASSWORD_STORAGE': 'CWE-256', 'PLAINTEXT_PASSWORD_TRANSMISSION': 'CWE-319',
+    'PLAINTEXT_TRANSMISSION': 'CWE-319', 'PLAINTEXT_PASSWORD': 'CWE-256',
+    'SESSION_FIXATION': 'CWE-384', 'COOKIE_MANIPULATION': 'CWE-565',
+    'PROCESS_CONTROL': 'CWE-114', 'FORMAT_STRING': 'CWE-134',
+    'BUFFER_OVERFLOW': 'CWE-120', 'INTEGER_OVERFLOW': 'CWE-190',
+    'UNRESTRICTED_FILE_UPLOAD': 'CWE-434', 'AUTH_BYPASS': 'CWE-287',
+    'MISSING_ACCESS_CONTROL': 'CWE-862', 'BROKEN_ACCESS_CONTROL': 'CWE-862',
+    'CSRF_MISSING': 'CWE-352', 'OPEN_REDIRECT': 'CWE-601',
+    'INFO_LEAK': 'CWE-200', 'INFORMATION_DISCLOSURE': 'CWE-200',
+    'XXE_INJECTION': 'CWE-611', 'LDAP_INJECTION': 'CWE-90',
+    'XPATH_INJECTION': 'CWE-643', 'REVERSIBLE_PASSWORD_STORAGE': 'CWE-257',
+    'SENSITIVE_INFO_IN_LOG': 'CWE-532', 'SENSITIVE_INFO_IN_LOGS': 'CWE-532',
+    'WEAK_PASSWORD_POLICY': 'CWE-521', 'HARDCODED_SECRETS': 'CWE-798',
+    'INSECURE_COOKIE_AUTH': 'CWE-565', 'HASH_WITHOUT_SALT': 'CWE-759',
+    'RSA_WEAK_PADDING': 'CWE-780', 'HTTP_RESPONSE_SPLITTING': 'CWE-113',
+    'INSECURE_FILE_VALIDATION': 'CWE-434', 'INFO_LEAK_VIA_ERROR': 'CWE-209',
+    'UNCHECKED_LOOP_CONDITION': 'CWE-606', 'CLICKJACKING': 'CWE-1021',
+    'AUTH_INFO_LEAK': 'CWE-204', 'NO_RATE_LIMIT': 'CWE-307',
+    'IMPROPER_EXCEPTION_HANDLING': 'CWE-703', 'INFINITE_LOOP': 'CWE-835',
+    'DIVIDE_BY_ZERO': 'CWE-369', 'LOG_INJECTION': 'CWE-117',
+    'UNSAFE_TEMP_FILE': 'CWE-377', 'UNCONTROLLED_RECURSION': 'CWE-674',
+    'RESOURCE_LEAK': 'CWE-404', 'SENSITIVE_DATA_IN_COOKIE': 'CWE-315',
+    'REFERER_AUTH': 'CWE-293', 'FORMAT_STRING_VULNERABILITY': 'CWE-134',
+    'ARBITRARY_FILE_READ': 'CWE-22', 'HARDCODED_SECRETS': 'CWE-798',
+  };
+  const OWASP_MAP = {
+    'SQL_INJECTION': 'A03:2021', 'COMMAND_INJECTION': 'A03:2021', 'CODE_INJECTION': 'A03:2021',
+    'XSS': 'A03:2021', 'PATH_TRAVERSAL': 'A01:2021', 'SSRF': 'A10:2021',
+    'DESERIALIZATION': 'A08:2021', 'INSECURE_DESERIALIZATION': 'A08:2021',
+    'HARDCODED_CREDENTIALS': 'A07:2021', 'HARD_CODE_PASSWORD': 'A07:2021',
+    'HARDCODED_SECRETS': 'A07:2021', 'WEAK_CRYPTO': 'A02:2021',
+    'WEAK_HASH': 'A02:2021', 'WEAK_ENCRYPTION': 'A02:2021',
+    'PREDICTABLE_RANDOM': 'A02:2021', 'INSUFFICIENT_RANDOMNESS': 'A02:2021',
+    'PLAINTEXT_PASSWORD_STORAGE': 'A02:2021', 'PLAINTEXT_PASSWORD_TRANSMISSION': 'A02:2021',
+    'PLAINTEXT_TRANSMISSION': 'A02:2021', 'PLAINTEXT_PASSWORD': 'A02:2021',
+    'SESSION_FIXATION': 'A07:2021', 'COOKIE_MANIPULATION': 'A07:2021',
+    'PROCESS_CONTROL': 'A03:2021', 'FORMAT_STRING': 'A03:2021',
+    'BUFFER_OVERFLOW': 'A03:2021', 'INTEGER_OVERFLOW': 'A03:2021',
+    'UNRESTRICTED_FILE_UPLOAD': 'A04:2021', 'AUTH_BYPASS': 'A07:2021',
+    'MISSING_ACCESS_CONTROL': 'A01:2021', 'BROKEN_ACCESS_CONTROL': 'A01:2021',
+    'CSRF_MISSING': 'A01:2021', 'OPEN_REDIRECT': 'A01:2021',
+    'INFO_LEAK': 'A01:2021', 'INFORMATION_DISCLOSURE': 'A01:2021',
+    'XXE_INJECTION': 'A03:2021', 'LDAP_INJECTION': 'A03:2021',
+    'XPATH_INJECTION': 'A03:2021', 'REVERSIBLE_PASSWORD_STORAGE': 'A02:2021',
+    'SENSITIVE_INFO_IN_LOG': 'A01:2021', 'SENSITIVE_INFO_IN_LOGS': 'A01:2021',
+    'WEAK_PASSWORD_POLICY': 'A07:2021', 'INSECURE_COOKIE_AUTH': 'A07:2021',
+    'HASH_WITHOUT_SALT': 'A02:2021', 'RSA_WEAK_PADDING': 'A02:2021',
+    'HTTP_RESPONSE_SPLITTING': 'A03:2021', 'INSECURE_FILE_VALIDATION': 'A04:2021',
+    'INFO_LEAK_VIA_ERROR': 'A01:2021', 'CLICKJACKING': 'A01:2021',
+    'AUTH_INFO_LEAK': 'A01:2021', 'NO_RATE_LIMIT': 'A07:2021',
+    'IMPROPER_EXCEPTION_HANDLING': 'A05:2021', 'INFINITE_LOOP': 'A05:2021',
+    'DIVIDE_BY_ZERO': 'A05:2021', 'LOG_INJECTION': 'A03:2021',
+    'UNSAFE_TEMP_FILE': 'A01:2021', 'UNCONTROLLED_RECURSION': 'A05:2021',
+    'RESOURCE_LEAK': 'A05:2021', 'SENSITIVE_DATA_IN_COOKIE': 'A07:2021',
+    'REFERER_AUTH': 'A07:2021', 'FORMAT_STRING_VULNERABILITY': 'A03:2021',
+    'ARBITRARY_FILE_READ': 'A01:2021', 'HARDCODED_SECRETS': 'A07:2021',
+  };
+  if (!f.cwe || f.cwe === 'CWE-000' || f.cwe === 'unknown' || f.cwe === 'undefined') {
+    f.cwe = CWE_MAP[vulnType] || f.cwe || '';
+  }
+  if (!f.owasp || f.owasp === '' || f.owasp === 'unknown' || f.owasp === 'undefined') {
+    f.owasp = OWASP_MAP[vulnType] || '';
+  }
+  if (!f.language || f.language === 'unknown' || f.language === 'undefined') {
+    const loc = f.location || f.file || '';
+    if (loc) {
+      const ext = loc.split('.').pop().split(':')[0].split('#')[0].toLowerCase();
+      const extLangMap = { py: 'python', java: 'java', js: 'javascript', ts: 'typescript', cs: 'csharp', cpp: 'cpp', c: 'c', go: 'go', php: 'php', rb: 'ruby', rs: 'rust' };
+      f.language = extLangMap[ext] || f.language || 'unknown';
+    }
+  }
+  return f;
 }
 
 function hasObjectAccessIndicator(content) {

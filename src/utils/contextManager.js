@@ -534,6 +534,160 @@ class PromptCompressor {
   }
 }
 
+/**
+ * TokenTracker — 轮间 Token 追踪器，实现双阈值上下文管理。
+ * 
+ * 借鉴 open-code-review 的压缩策略：
+ * - 软阈值 (SOFT_THRESHOLD = 0.60)：累计 token 达到模型上限 60% 时，
+ *   触发异步后台压缩（不阻塞当前循环）
+ * - 硬阈值 (HARD_THRESHOLD = 0.80)：累计 token 达到 80% 时，
+ *   必须同步压缩后才能继续，否则停止循环
+ * 
+ * 用法：
+ *   const tracker = new TokenTracker(131072); // DeepSeek
+ *   tracker.addRound(2500, 500);  // 每轮调用后记录
+ *   if (tracker.isHardThresholdExceeded()) {
+ *     // 触发同步压缩或停止循环
+ *   }
+ */
+class TokenTracker {
+  /**
+   * @param {number} modelMaxTokens - 模型最大上下文长度
+   * @param {Object} options
+   * @param {number} [options.softThreshold=0.60] - 软阈值比例
+   * @param {number} [options.hardThreshold=0.80] - 硬阈值比例
+   * @param {number} [options.initialSystemTokens=0] - System Prompt 固定消耗
+   */
+  constructor(modelMaxTokens, {
+    softThreshold = 0.60,
+    hardThreshold = 0.80,
+    initialSystemTokens = 0,
+  } = {}) {
+    this.modelMaxTokens = modelMaxTokens;
+    this.softThreshold = softThreshold;
+    this.hardThreshold = hardThreshold;
+    
+    // 累计 token 计数
+    this.cumulativeInputTokens = initialSystemTokens;
+    this.cumulativeOutputTokens = 0;
+    this.roundCount = 0;
+    
+    // 阈值触发状态
+    this._softTriggered = false;
+    this._hardTriggered = false;
+    this._compressionCount = 0;
+    
+    // 每轮历史（用于诊断）
+    this.rounds = [];
+  }
+
+  /** 记录一轮 LLM 调用的 token 消耗 */
+  addRound(inputTokens, outputTokens) {
+    this.cumulativeInputTokens += inputTokens;
+    this.cumulativeOutputTokens += outputTokens;
+    this.roundCount++;
+    
+    const total = this.totalTokens;
+    const ratio = this.modelMaxTokens > 0 ? total / this.modelMaxTokens : 0;
+    
+    this.rounds.push({
+      round: this.roundCount,
+      inputTokens,
+      outputTokens,
+      cumulativeTotal: total,
+      ratio: Math.round(ratio * 100) / 100,
+    });
+    
+    // 更新触发状态（maxTokens <= 0 时永不触发）
+    if (this.modelMaxTokens <= 0) return;
+    if (ratio >= this.hardThreshold) {
+      this._hardTriggered = true;
+    } else if (ratio >= this.softThreshold) {
+      this._softTriggered = true;
+    }
+  }
+
+  /** 累计总 token */
+  get totalTokens() {
+    return this.cumulativeInputTokens + this.cumulativeOutputTokens;
+  }
+
+  /** 当前使用比例 (0.0-1.0) */
+  get usageRatio() {
+    if (this.modelMaxTokens <= 0) return 0;
+    return this.totalTokens / this.modelMaxTokens;
+  }
+
+  /** 剩余可用 token */
+  get remainingTokens() {
+    return Math.max(0, this.modelMaxTokens - this.totalTokens);
+  }
+
+  /** 是否超过软阈值（应触发异步压缩） */
+  isSoftThresholdExceeded() {
+    return this._softTriggered;
+  }
+
+  /** 是否超过硬阈值（必须同步压缩或停止） */
+  isHardThresholdExceeded() {
+    return this._hardTriggered;
+  }
+
+  /** 应该触发后台压缩（软阈值首次触发且未压缩过） */
+  shouldTriggerAsyncCompression() {
+    return this._softTriggered && this._compressionCount === 0;
+  }
+
+  /** 应该停止循环（硬阈值触发且已压缩过） */
+  shouldStopLoop() {
+    return this._hardTriggered && this._compressionCount > 0;
+  }
+
+  /** 压缩后重置状态（保留累计 token，但重置触发标志） */
+  markCompressed(compressedTokens) {
+    this._compressionCount++;
+    this._softTriggered = false;
+    this._hardTriggered = false;
+    // 压缩后的 token 作为新的基准
+    this.cumulativeInputTokens = compressedTokens;
+  }
+
+  /** 计算达到硬阈值前还能发送的轮数（估算） */
+  estimateRemainingRounds(avgTokensPerRound) {
+    if (avgTokensPerRound <= 0) return Infinity;
+    const remaining = this.modelMaxTokens * this.hardThreshold - this.totalTokens;
+    return Math.max(0, Math.floor(remaining / avgTokensPerRound));
+  }
+
+  /** 导出状态快照 */
+  getStatus() {
+    return {
+      modelMaxTokens: this.modelMaxTokens,
+      cumulativeInputTokens: this.cumulativeInputTokens,
+      cumulativeOutputTokens: this.cumulativeOutputTokens,
+      totalTokens: this.totalTokens,
+      usageRatio: Math.round(this.usageRatio * 100),
+      remainingTokens: this.remainingTokens,
+      roundCount: this.roundCount,
+      softTriggered: this._softTriggered,
+      hardTriggered: this._hardTriggered,
+      compressionCount: this._compressionCount,
+      rounds: this.rounds.slice(-5), // 最近 5 轮
+    };
+  }
+
+  /** 重置（用于新文件审查） */
+  reset(initialSystemTokens = 0) {
+    this.cumulativeInputTokens = initialSystemTokens;
+    this.cumulativeOutputTokens = 0;
+    this.roundCount = 0;
+    this._softTriggered = false;
+    this._hardTriggered = false;
+    this._compressionCount = 0;
+    this.rounds = [];
+  }
+}
+
 export {
   estimateTokens,
   estimateTokensAsync,
@@ -545,5 +699,6 @@ export {
   IncrementalSummary,
   SemanticChunker,
   StreamCompressor,
-  PromptCompressor
+  PromptCompressor,
+  TokenTracker
 };

@@ -6,20 +6,17 @@ const AUDIT_SKILLS = [
     version: "1.0.0",
     tags: ["security", "authorization", "owasp-a01"],
     triggers: ["越权", "权限", "访问控制", "authorization", "permission", "role", "admin"],
-    reviewPrompt: `重点检查对象级访问控制(OWASP Top 10 A01)、公共角色权限、管理接口与插件路由是否存在过宽暴露。
+    reviewPrompt: `## 访问控制审查清单
+- [ ] 用户/资源 ID 是否来自请求参数（非 session 绑定）→ IDOR 风险
+- [ ] 管理/特权端点是否有鉴权注解/中间件（@Roles, @PreAuthorize, middleware）
+- [ ] 数据库查询是否按当前用户过滤（WHERE user_id = ?），而非仅靠 URL 参数
+- [ ] 水平越权：同角色用户能否通过修改 ID 访问他人数据
+- [ ] 垂直越权：低权限用户能否访问管理功能
 
-【漏洞模式】
-- 直接对象引用：用户可直接访问其他用户的资源
-- 水平越权：同级别用户可访问他人数据
-- 垂直越权：低权限用户可执行高权限操作
-- 缺少角色检查：关键接口无 @Roles 或权限注解
-- 插件路由暴露：管理路由未鉴权
-
-【检测要点】
-1. 检查用户ID是否可被篡改（如URL参数、请求体）
-2. 检查是否存在无需鉴权的管理接口
-3. 检查JWT/session中是否包含权限信息
-4. 检查数据库查询是否包含用户ID过滤`,
+## 不报告的情况
+- 框架全局鉴权拦截器已覆盖（如 Spring Security filter chain 无例外）
+- 端点明确设计为公开（如登录、注册、公开 API）
+- 使用了成熟的鉴权框架且配置正确（如 Spring Security, Passport.js）`,
     profiles: ["security", "default", "sensitive"],
     priority: "high",
     integrations: ["gbt-code-audit", "secret-exposure"],
@@ -34,20 +31,18 @@ const AUDIT_SKILLS = [
     version: "1.0.0",
     tags: ["security", "configuration", "owasp-a05", "hardcoded"],
     triggers: ["配置", "初始化", "setup", "init", "config", "secret", "cors"],
-    reviewPrompt: `重点检查初始化管理员(OWASP Top 10 A05:2021)、开发开关、默认凭据、演示密钥和 fail-open 配置。
+    reviewPrompt: `## 初始化与配置审查清单
+- [ ] DEBUG / DEV 模式是否在生产环境开启
+- [ ] 是否存在硬编码默认密码或初始管理员凭据
+- [ ] CORS 是否允许 '*' 且 allowCredentials: true
+- [ ] 是否存在未清理的 setup/init/install 端点
+- [ ] 错误处理是否 fail-open（异常时放行而非拒绝）
+- [ ] 错误响应是否泄露堆栈/路径/DB 信息
 
-【危险模式】
-- 调试/开发模式在生产环境开启
-- 默认密码或硬编码凭证未修改
-- fail-open 错误处理导致安全绕过
-- CORS配置允许任意来源
-
-【检测要点】
-1. 检查是否存在 setup/init/install 管理路由
-2. 检查是否存在硬编码的管理员账户
-3. 检查是否使用生产禁用函数如 eval()
-4. 检查错误处理是否泄露敏感信息
-5. 检查是否有测试数据残留`,
+## 不报告的情况
+- DEBUG 从环境变量读取且生产环境未设置
+- 默认凭据来自配置文件且有文档说明需要修改
+- CORS 配置通过白名单管理且测试时临时放开`,
     profiles: ["security", "default", "sensitive"],
     priority: "high",
     integrations: ["secret-exposure", "gbt-code-audit"],
@@ -62,20 +57,19 @@ const AUDIT_SKILLS = [
     version: "1.0.0",
     tags: ["security", "file-upload", "owasp-a03", "path-traversal"],
     triggers: ["上传", "文件", "upload", "storage", "file", "path"],
-    reviewPrompt: `重点检查文件上传(OWASP Top 10 A03:2021)、路径约束、公开访问目录、文件类型和路径规范化控制。
+    reviewPrompt: `## 上传与存储审查清单
+- [ ] 文件类型验证是否仅客户端（可绕过）→ 需服务端 MIME + 魔数验证
+- [ ] 文件名是否直接使用用户输入（含 '../' 可路径穿越）
+- [ ] 上传目录是否可通过 URL 直接访问（需在 Web 根外或禁用执行权限）
+- [ ] 是否限制文件大小（防止 DoS）
+- [ ] 上传 HTML/SVG 是否会导致存储型 XSS
+- [ ] 是否重命名为 UUID/随机名（防止覆盖和猜测）
 
-【高危场景】
-- 任意文件上传：无文件类型验证或仅客户端验证
-- 路径遍历：上传文件名包含 ../ 绕过目录限制
-- 文件包含：上传文件被当作脚本执行
-- 存储XSS：上传HTML/SVG可被浏览器执行
-
-【检测要点】
-1. 检查是否验证文件扩展名和MIME类型
-2. 检查是否使用白名单而非黑名单
-3. 检查上传目录是否可通过URL直接访问
-4. 检查是否重命名文件而非使用原始文件名
-5. 检查是否限制文件大小`,
+## 不报告的情况
+- 使用白名单验证扩展名 + MIME type（双重验证）
+- 上传目录配置了禁止脚本执行（.htaccess / nginx 配置）
+- 文件重命名为服务端生成的随机名
+- 上传到对象存储（S3/OSS）且不通过应用服务器`,
     profiles: ["security", "default"],
     priority: "medium",
     integrations: ["query-safety", "gbt-code-audit"],
@@ -97,30 +91,18 @@ const AUDIT_SKILLS = [
       LDAP: ["EVID_LDAP_EXEC_POINT", "EVID_LDAP_FILTER_STRING_CONSTRUCTION", "EVID_LDAP_USER_PARAM_TO_FILTER_FRAGMENT"],
       EXPR: ["EVID_EXPR_EVAL_ENTRY", "EVID_EXPR_EXPR_CONTROL", "EVID_EXPR_EXEC_CHAIN_ENTRY"]
     },
-    reviewPrompt: `重点检查注入漏洞(OWASP Top 10 A03:2021)：SQL注入、NoSQL注入、命令注入、模板注入、LDAP注入、XPath注入。
+    reviewPrompt: `## 注入漏洞审查清单
+- [ ] SQL/NoSQL：用户输入是否直接拼接进查询字符串（非参数化）
+- [ ] 命令注入：用户输入是否进入 exec() / os.system() / subprocess(shell=True) / Runtime.exec()
+- [ ] 模板注入：用户输入是否进入模板引擎渲染上下文（非数据上下文）
+- [ ] LDAP/XPATH：用户输入是否进入查询过滤器字符串
+- [ ] 先 sanitize 后拼接 → sanitize 可能被绕过，仍需标记
 
-【注入类型检测】
-1. SQL注入：字符串拼接构建查询
-   - 危险: "SELECT * FROM users WHERE id=" + userId
-   - 安全: 使用参数化查询
-
-2. 命令注入：用户输入进入系统命令
-   - 危险: os.system("ping " + userInput)
-   - 安全: 使用 subprocess.run with args=[]
-
-3. 模板注入：用户输入进入模板渲染
-   - 危险: render_template_string(user_input)
-   - 安全: 模板中不包含用户输入
-
-4. NoSQL注入：MongoDB/Redis查询中的注入
-   - 危险: db.users.find({"name": userInput})
-   - 安全: 使用参数化或验证输入
-
-【检测要点】
-1. 检查数据库查询是否使用参数化
-2. 检查命令执行是否使用安全API
-3. 检查模板渲染是否隔离用户输入
-4. 检查是否对特殊字符进行转义`,
+## 不报告的情况
+- 使用参数化查询（JDBC PreparedStatement / ORM 安全方法 / Mongoose schema validation）
+- 使用 subprocess.run([...]) 参数数组（非 shell 字符串）
+- 使用白名单 + 类型强校验过滤用户输入
+- 框架自带的自动转义已生效（如 Django ORM, Hibernate HQL parameter binding）`,
     profiles: ["security", "default", "sensitive", "extreme"],
     priority: "critical",
     integrations: ["gbt-code-audit", "upload-storage"],
@@ -135,20 +117,18 @@ const AUDIT_SKILLS = [
     version: "1.0.0",
     tags: ["security", "secrets", "owasp-a02", "data-leak"],
     triggers: ["密钥", "密码", "敏感", "secret", "password", "token", "api"],
-    reviewPrompt: `重点检查敏感数据泄露(OWASP Top 10 A02:2021)：硬编码密钥、API密钥泄露、日志中的敏感信息、客户端存储的敏感数据。
+    reviewPrompt: `## 敏感信息审查清单
+- [ ] 硬编码密钥：password / api_key / secret / token / private_key 在源文件中
+- [ ] 日志输出：是否打印 token、密码、请求体全量 JSON
+- [ ] 前端存储：localStorage/sessionStorage 是否存储 token 或敏感数据
+- [ ] 错误响应：是否泄露堆栈路径、DB 结构、内部 IP
+- [ ] 数据库连接串是否含明文密码
 
-【敏感信息类型】
-- 密码/密钥：password, secret, token, api_key, private_key
-- 个人信息：身份证、银行卡、手机号、邮箱
-- 认证凭据：session, jwt, credential
-- 配置信息：数据库连接串、加密盐
-
-【检测要点】
-1. 检查是否将敏感信息硬编码在代码中
-2. 检查日志记录是否包含敏感数据
-3. 检查前端localStorage/sessionStorage存储敏感信息
-4. 检查错误响应是否泄露敏感信息
-5. 检查Git历史中是否曾提交过密钥`,
+## 不报告的情况
+- 值从环境变量/密钥管理服务读取（process.env.SECRET, os.getenv()）
+- 明显的占位符/示例值（YOUR_API_KEY, changeme, test_）
+- 代码中的公钥、client_id（这些天然公开）
+- 仅变量名为 secret/token 但值来自外部配置`,
     profiles: ["security", "default", "sensitive"],
     priority: "high",
     integrations: ["bootstrap-config", "gbt-code-audit"],
@@ -163,21 +143,18 @@ const AUDIT_SKILLS = [
     version: "1.0.0",
     tags: ["security", "business-logic", "owasp-a07"],
     triggers: ["业务逻辑", "竞态", "状态机", "mass assignment", "race condition", "并发"],
-    reviewPrompt: `重点检查业务逻辑漏洞(OWASP Top 10 A07:2021)：竞态条件、Mass Assignment、状态机验证、多租户隔离、IDOR。
+    reviewPrompt: `## 业务逻辑审查清单
+- [ ] 竞态条件：余额/库存/优惠券操作是否缺乏原子性（无锁、无 SELECT FOR UPDATE）
+- [ ] Mass Assignment：请求体是否可批量绑定敏感字段（如 role, isAdmin, balance）
+- [ ] 状态机：订单/支付/审批状态跳转是否校验了前置状态合法性
+- [ ] 多租户：跨租户数据访问是否仅靠 URL 参数过滤（无 session 绑定校验）
+- [ ] 幂等性：支付/扣款接口是否有防重复提交机制
 
-【漏洞模式】
-- 竞态条件：余额扣减、库存更新、优惠券发放等并发场景
-- Mass Assignment：对象属性过度暴露导致未授权修改
-- 状态机漏洞：订单状态非法跳转、支付流程绕过
-- 多租户隔离：不同租户数据未正确隔离
-- IDOR：水平越权访问他人资源
-
-【检测要点】
-1. 检查是否有 @Transactional 或并发控制机制
-2. 检查DTO是否限制可修改字段（@JsonIgnore、@JsonProperty(access=READ_ONLY)）
-3. 检查状态转换是否有完整校验
-4. 检查敏感操作是否验证资源归属
-5. 检查是否使用乐观锁或悲观锁`,
+## 不报告的情况
+- 使用乐观锁（@Version / version 字段）或悲观锁（SELECT FOR UPDATE）
+- DTO 显式声明允许字段（@JsonProperty(access=READ_ONLY) / 白名单绑定）
+- 状态机使用枚举 + 合法转换表校验
+- 租户 ID 从 JWT/session 中提取（非请求参数）`,
     profiles: ["security", "default", "sensitive"],
     priority: "high",
     integrations: ["access-control", "gbt-code-audit"],
@@ -192,29 +169,19 @@ const AUDIT_SKILLS = [
     version: "1.0.0",
     tags: ["security", "configuration", "owasp-a05", "secure-config"],
     triggers: ["配置", "config", "application", "settings", "properties", "yml", "yaml"],
-    reviewPrompt: `重点检查配置文件的安全基线(OWASP Top 10 A05:2021)：认证配置、加密配置、安全开关、调试模式。
+    reviewPrompt: `## 配置文件审查清单
+- [ ] 明文密码/密钥在配置文件中
+- [ ] DEBUG=True / debug:true / NODE_ENV=development 在生产配置中
+- [ ] CORS allowOrigins:* 且 allowCredentials:true
+- [ ] CSRF 保护被显式禁用
+- [ ] Session cookie 缺少 Secure / HttpOnly / SameSite 标志
+- [ ] 日志级别设为 DEBUG/TRACE（泄露敏感信息）
+- [ ] TLS 版本 < 1.2 / 弱密码套件
 
-【配置文件类型】
-- application.yml/application.properties (Java)
-- config.py/settings.py (Python)
-- web.config (C#)
-- .env (Node.js)
-- package.json (Node.js)
-- pom.xml (Maven)
-
-【危险配置模式】
-- 认证配置：JWT密钥硬编码、密码策略过弱、会话超时过长
-- 加密配置：TLS版本过低、证书配置错误、弱加密算法
-- 安全开关：CORS允许任意来源、CSRF防护禁用、调试模式开启
-- 数据库配置：明文密码、允许远程访问、测试账户未删除
-
-【检测要点】
-1. 检查是否存在明文密码或密钥
-2. 检查CORS配置是否允许任意来源
-3. 检查是否启用调试模式
-4. 检查会话超时配置是否合理
-5. 检查是否禁用了敏感HTTP头
-6. 检查日志级别是否过高`,
+## 不报告的情况
+- 值从 $ENV_VAR 或环境变量引用（非字面量）
+- 开发/测试配置文件（application-dev.yml, .env.example）
+- 已使用配置加密方案（Spring Cloud Config 加密 / Vault）`,
     profiles: ["security", "default", "sensitive"],
     priority: "high",
     integrations: ["secret-exposure", "bootstrap-config", "gbt-code-audit"],
@@ -229,28 +196,16 @@ const AUDIT_SKILLS = [
     version: "1.0.0",
     tags: ["security", "supply-chain", "dependencies", "cve", "owasp-a06"],
     triggers: ["依赖", "package", "npm", "maven", "pip", "cve", "漏洞", "版本"],
-    reviewPrompt: `重点检查供应链安全(OWASP Top 10 A06:2021)：第三方依赖库的已知CVE漏洞、过时版本、恶意包风险。
+    reviewPrompt: `## 供应链安全审查清单
+- [ ] 依赖是否有已知 CVE（检查版本号是否在受影响范围内）
+- [ ] 是否依赖已废弃/不再维护的包
+- [ ] 是否有版本锁定文件（package-lock.json / go.sum / Pipfile.lock）
+- [ ] 是否有未审核的第三方脚本/SDK 直接引入
 
-【依赖文件类型】
-- package.json / package-lock.json (Node.js)
-- requirements.txt / Pipfile (Python)
-- pom.xml / dependency-reduced-pom.xml (Maven)
-- go.mod / go.sum (Go)
-- Cargo.toml / Cargo.lock (Rust)
-- composer.json / composer.lock (PHP)
-
-【危险模式】
-- 使用已知漏洞的库版本（如Log4j、Spring框架漏洞）
-- 使用过时的库版本（超过2年未更新）
-- 使用未验证的第三方包
-- 使用带已知安全风险的包（如event-stream事件攻击）
-
-【检测要点】
-1. 检查是否存在已知CVE漏洞的依赖
-2. 检查依赖版本是否过时
-3. 检查是否使用了有安全风险的包
-4. 检查是否启用了依赖安全检查工具
-5. 检查是否有依赖锁定文件`,
+## 不报告的情况
+- 版本号已包含安全补丁（需确认 CVE 的 fixed version）
+- 依赖仅用于开发/测试（devDependencies / test scope）
+- 使用内部私有包且有安全审计流程`,
     profiles: ["security", "default", "sensitive"],
     priority: "medium",
     integrations: ["secret-exposure", "gbt-code-audit"],
@@ -265,27 +220,19 @@ const AUDIT_SKILLS = [
     version: "1.0.0",
     tags: ["security", "cryptography", "encryption", "owasp-a02", "secure-crypto"],
     triggers: ["加密", "密钥", "crypto", "hash", "aes", "rsa", "ssl", "tls"],
-    reviewPrompt: `重点检查加密安全(OWASP Top 10 A02:2021)：密钥管理、密码算法强度、随机数生成、TLS配置。
+    reviewPrompt: `## 加密安全审查清单
+- [ ] 弱哈希：MD5 / SHA1 用于密码存储或完整性校验
+- [ ] 弱加密：DES / 3DES / RC4 / ECB 模式
+- [ ] 密钥长度不足：AES < 256, RSA < 2048, EC < 256
+- [ ] 非加密安全随机：Math.random() / Random() / rand() 用于 token/密钥生成
+- [ ] 密钥硬编码在源代码或配置文件中
+- [ ] TLS < 1.2 / 自签名证书 / 弱密码套件
 
-【加密安全维度】
-- 密钥管理：密钥存储、密钥轮换、密钥派生函数(KDF)
-- 算法选择：对称加密、非对称加密、哈希算法
-- 随机数：密码学安全随机数生成
-- TLS配置：协议版本、证书、密码套件
-
-【危险模式】
-- 使用弱加密算法：MD5、SHA1、DES、3DES
-- 使用弱密钥长度：小于256位的AES、小于2048位的RSA
-- 使用不安全的随机数生成器：Math.random()、Random类
-- 密钥硬编码或明文存储
-- TLS版本过低：SSLv3、TLS 1.0、TLS 1.1
-
-【检测要点】
-1. 检查是否使用弱加密算法（MD5、SHA1、DES）
-2. 检查密钥长度是否足够（AES至少256位，RSA至少2048位）
-3. 检查是否使用密码学安全的随机数生成器
-4. 检查密钥是否安全存储（不硬编码、使用密钥管理服务）
-5. 检查TLS配置是否符合安全标准`,
+## 不报告的情况
+- MD5/SHA1 用于非安全场景（如文件去重 hash、缓存 key）
+- 加密密钥从 KMS/Vault/HSM 获取
+- 使用 crypto.randomBytes() / SecureRandom / secrets 模块
+- 密码使用 bcrypt/scrypt/argon2 哈希`,
     profiles: ["security", "sensitive", "extreme"],
     priority: "high",
     integrations: ["secret-exposure", "config-audit", "gbt-code-audit"],
@@ -300,32 +247,16 @@ const AUDIT_SKILLS = [
     version: "1.0.0",
     tags: ["security", "dotnet", "aspnet", "route", "api", "csharp"],
     triggers: ["路由", "ASP.NET", ".NET", "API", "Controller", "endpoint"],
-    reviewPrompt: `重点审计 ASP.NET 路由配置(OWASP Top 10 A01:2021)：
+    reviewPrompt: `## .NET 路由审查清单
+- [ ] 识别所有 HTTP 端点（Controller/Action/Minimal API/Page）
+- [ ] 检查参数来源（Query/Form/Body/Path/Header/Cookie）
+- [ ] 鉴权标注：[Authorize] vs [AllowAnonymous] — 敏感端点是否缺鉴权
+- [ ] 路由参数是否直接用于数据库查询/命令执行
 
-【支持的框架】
-- ASP.NET MVC 5：MapRoute 约定路由 + 属性路由
-- ASP.NET Core：最小 API + 控制器路由 + 属性路由
-- Web Forms：物理文件路径 + MapPageRoute
-- Web API 2：MapHttpRoute + RoutePrefix
-
-【检测要点】
-1. 识别所有 HTTP 端点（Controller/Action/页面）
-2. 分析参数来源（Query/Form/Body/Path/Header/Cookie）
-3. 检查鉴权标注（[Authorize]/[AllowAnonymous]）
-4. 识别未授权的管理接口
-5. 检查路由参数是否存在注入风险
-6. 检查敏感操作是否需要身份验证
-
-【危险模式】
-- 未授权的管理接口暴露
-- 路由参数直接用于数据库查询
-- 缺少 [Authorize] 属性的敏感端点
-- 路由配置错误导致资源暴露
-
-【输出要求】
-1. 路由清单：URL、HTTP方法、控制器/动作、授权状态
-2. 参数清单：参数名、类型、来源
-3. 安全问题：未授权端点、潜在注入风险`,
+## 不报告的情况
+- 端点有全局 [Authorize] filter 覆盖
+- 路由参数仅用于查询且使用参数化
+- [AllowAnonymous] 仅用于公开端点（login/register/health）`,
     profiles: ["security", "default", "sensitive"],
     priority: "high",
     gbtStandards: {
@@ -344,54 +275,18 @@ const AUDIT_SKILLS = [
     version: "1.0.0",
     tags: ["security", "dotnet", "aspnet", "authentication", "authorization", "identity", "jwt"],
     triggers: ["鉴权", "认证", "登录", "JWT", "Identity", "Cookie", "token"],
-    reviewPrompt: `重点检查 ASP.NET 认证授权机制(OWASP Top 10 A01:2021)：
+    reviewPrompt: `## .NET 鉴权审查清单
+- [ ] 登录流程：密码是否哈希存储（Identity 默认 BCrypt，非明文）
+- [ ] JWT：密钥是否硬编码？是否验证签名+过期+issuer
+- [ ] [Authorize] 是否覆盖所有非公开端点（检查 Controller/Page 级别）
+- [ ] Cookie：Secure / HttpOnly / SameSite 标志是否设置
+- [ ] 密码策略：最小长度、锁定机制、重置流程是否安全
+- [ ] 默认账户（admin/administrator）是否已删除或修改
 
-【鉴权机制类型】
-- Forms Authentication：传统表单认证
-- ASP.NET Identity：现代身份管理系统
-- JWT Bearer Authentication：无状态令牌认证
-- Cookie Authentication：Cookie会话管理
-- OpenID Connect/OAuth2：第三方身份提供者
-
-【检测要点】
-1. 登录认证流程是否安全
-   - 密码复杂度验证
-   - 多因素认证支持
-   - 登录失败锁定机制
-   - 密码重置流程
-
-2. 权限验证是否完整
-   - [Authorize] 属性是否正确使用
-   - 角色检查是否完整
-   - 策略授权是否正确配置
-
-3. 是否存在认证绕过漏洞
-   - 调试模式是否禁用
-   - 默认账户是否删除
-   - 测试账户是否清理
-
-4. Session 管理是否安全
-   - Session 超时配置
-   - Cookie Secure/HttpOnly 标志
-   - Session 固定攻击防护
-
-5. 密码策略是否合理
-   - 最小长度要求
-   - 复杂度要求
-   - 过期策略
-   - 历史密码检查
-
-【危险模式】
-- 缺少 [Authorize] 属性的敏感操作
-- 密码以明文或弱哈希存储
-- JWT 密钥硬编码
-- Cookie 缺少 Secure/HttpOnly 标志
-- Session 超时时间过长
-
-【输出要求】
-1. 鉴权配置评估
-2. 安全问题清单
-3. 修复建议`,
+## 不报告的情况
+- 使用 ASP.NET Identity 默认配置（密码哈希+锁定已内置）
+- JWT 密钥来自 appsettings.json 且已加密 / 来自 Key Vault
+- Cookie 策略由 CookiePolicyMiddleware 统一配置`,
     profiles: ["security", "sensitive"],
     priority: "high",
     gbtStandards: {
@@ -432,40 +327,32 @@ const AUDIT_SKILLS = [
       SESS: ["EVID_SESS_SESSION_INIT_REGEN", "EVID_SESS_COOKIE_FLAGS", "EVID_SESS_JWT_VERIFY_CLAIMS", "EVID_SESS_LOGOUT_CLEAR"],
       CFG: ["EVID_CFG_CONFIG_LOCATION", "EVID_CFG_RUNTIME_SETTING_CODE", "EVID_CFG_IMPACT_ASSOCIATION", "EVID_CFG_SECURITY_SWITCH_EVIDENCE"]
     },
-    reviewPrompt: `基于 GB/T 国标进行深度代码安全审计，遵循 GB/T 34943-2017(C/C++)、GB/T 34944-2017(Java)、GB/T 34946-2017(C#)、GB/T 39412-2020 标准。
+    reviewPrompt: `## GB/T 国标代码安全审计清单
+标准依据：GB/T 34943(C/C++) / GB/T 34944(Java) / GB/T 34946(C#) / GB/T 39412-2020
 
-【必须检测的漏洞类型】
-1. 命令注入 (GB/T34944-6.1.1.6)：os.system, subprocess.Popen, exec(), eval()
-2. SQL注入 (GB/T34944-6.1.2.1)：字符串拼接查询, raw SQL
-3. 代码注入 (GB/T34944-6.1.1.7)：eval, exec, pickle.loads
-4. 路径遍历 (GB/T34944-6.2.1.3)：文件路径拼接用户输入
-5. 硬编码密钥 (GB/T34944-6.3.2.1)：密码、密钥在代码中明文存储
-6. 弱加密算法 (GB/T34944-6.3.3.1)：MD5, SHA1, DES
-7. 反序列化 (GB/T34944-6.1.3.2)：pickle.loads, yaml.load, ObjectInputStream
-8. SSRF (GB/T39412-6.4)：用户输入进入HTTP请求URL
-9. XXE (GB/T39412-6.5)：XML解析未禁用外部实体
-10. 认证绕过 (GB/T34944-6.3.1.2)：绕过登录验证逻辑
-11. XSS跨站脚本 (GB/T39412-6.1.1.3)：未转义的用户输入输出到HTML/JavaScript上下文
-12. CSRF跨站请求伪造 (GB/T39412-6.1.2.3)：状态变更端点（POST/PUT/DELETE）缺少CSRF令牌验证
-13. CORS配置缺陷 (GB/T39412-6.3.2.2)：跨域资源共享配置允许任意Origin或凭证传递
-14. 信息泄露 (GB/T39412-6.3.2.1)：Swagger/Actuator/调试端点暴露、错误响应泄露堆栈/版本信息
+### 必须检测（按标准条款）
+- [ ] 命令注入 (GB/T34944-6.1.1.6)：用户输入进入 exec/system/popen
+- [ ] SQL注入 (GB/T34944-6.1.2.1)：字符串拼接构建查询
+- [ ] 代码注入 (GB/T34944-6.1.1.7)：eval/exec/pickle/yaml.load 接收用户数据
+- [ ] 路径遍历 (GB/T34944-6.2.1.3)：文件路径含用户可控输入
+- [ ] 硬编码密钥 (GB/T34944-6.3.2.1)：password/secret/key 明文
+- [ ] 弱加密 (GB/T34944-6.3.3.1)：MD5/SHA1/DES/3DES/RC4
+- [ ] 反序列化 (GB/T34944-6.1.3.2)：不可信数据反序列化
+- [ ] SSRF (GB/T39412-6.4)：用户输入进入 HTTP 请求 URL
+- [ ] XXE (GB/T39412-6.5)：XML 解析未禁用外部实体
+- [ ] 认证绕过 (GB/T34944-6.3.1.2)
+- [ ] XSS (GB/T39412-6.1.1.3)
+- [ ] CSRF (GB/T39412-6.1.2.3)
+- [ ] CORS 缺陷 (GB/T39412-6.3.2.2)
+- [ ] 信息泄露 (GB/T39412-6.3.2.1)
 
-【输出要求】
-1. 每个漏洞必须包含：
-   - gbtMapping: 对应GB/T条款，如 "GB/T34944-6.1.1.6 命令注入"
-   - cvssScore: 0.0-10.0 的CVSS评分
-   - confidence: 0.0-1.0 的置信度
+### 关键判定规则
+- 先 sanitize 后拼接 → sanitize 可能被绕过，仍需标记
+- 输出要求：每个发现必须包含 gbtMapping, cvssScore, confidence, evidenceLabel (CONFIRMED/SUSPICIOUS)
 
-2. 修复建议必须包含：
-   - 具体代码示例（安全版本）
-   - 使用的安全API/库名称
-   - 验证方法（如何确认已修复）
-
-【置信度评级】
-- 0.9-1.0: 明显的漏洞模式，无误报可能
-- 0.7-0.9: 典型漏洞模式，需人工确认
-- 0.5-0.7: 可能的漏洞，需更多上下文
-- <0.5: 低置信度，建议忽略`,
+### 不报告的情况
+- 使用框架安全 API 且配置正确（参数化查询、安全反序列化器、标准认证中间件）
+- 安全测试用例 / 示例代码 / 文档中的代码片段`,
     profiles: ["security", "default", "sensitive", "extreme", "portability"],
     priority: "critical",
     gbtStandards: {

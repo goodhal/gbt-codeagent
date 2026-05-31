@@ -67,6 +67,7 @@ const GUARD_PATTERNS = {
 
 const STRING_LITERAL_PATTERN = /^["'][^"'{}]*["']\s*$/;
 const METHOD_CALL_PATTERN = /^\s*\w+\s*\(\s*["'][^"']*["']\s*\)\s*$/;
+const VULNERABLE_SAMPLE_PATTERN = /(vulnerable|exploit|insecure|unsafe|deliberate|intentional)_?(code|sample|app|file|python|java|cpp|csharp|cs|dotnet)/i;
 
 function getGuardWindow(lines, lineIndex) {
   const start = Math.max(0, lineIndex - GUARD_WINDOW_LINES);
@@ -174,6 +175,11 @@ export async function enhanceFindingsWithContext(findings, sourceRoot) {
         confidence: Math.min(finding.confidence || 0.8, 0.15),
         guardContext: { isTestFile: true, confidence: 0.15, notes: ['test_or_mock_file'] }
       });
+      continue;
+    }
+
+    if (VULNERABLE_SAMPLE_PATTERN.test(filePath)) {
+      enhanced.push(finding);
       continue;
     }
 

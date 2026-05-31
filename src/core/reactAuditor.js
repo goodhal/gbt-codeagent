@@ -1,6 +1,7 @@
 import { withRetry } from './retry.js';
 import { EVIDENCE_REQUIRED_MAP } from '../config/llmPrompts.js';
 import { TokenTracker, estimateMessagesTokens, getModelMaxTokens } from '../utils/contextManager.js';
+import { getCompletionTokens } from '../config/auditParamsConfig.js';
 import { ContextCompressor } from '../services/contextCompressor.js';
 
 const THOUGHT_PATTERN = /^(?:Thought|思考)[:：]\s*([\s\S]*?)$/im;
@@ -214,11 +215,12 @@ class ReActAuditor {
    */
   async _callLLMWithTools(messages) {
     const tools = this._buildToolDefinitions();
+    const completionTokens = getCompletionTokens(getModelMaxTokens(this.config.model));
     return withRetry(async () => {
       return await this.llmAdapter.complete(messages, {
         temperature: this.config.temperature,
-        maxTokens: 4096,
-        tools, // 传递原生 ToolDef
+        maxTokens: completionTokens,
+        tools,
       });
     }, {
       maxAttempts: this.config.maxRetries,
@@ -402,10 +404,11 @@ Action: 工具名(参数)
   }
 
   async _callLLM(messages) {
+    const completionTokens = getCompletionTokens(getModelMaxTokens(this.config.model));
     return withRetry(async () => {
       return await this.llmAdapter.complete(messages, {
         temperature: this.config.temperature,
-        maxTokens: 4096
+        maxTokens: completionTokens
       });
     }, {
       maxAttempts: this.config.maxRetries,

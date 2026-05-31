@@ -8,6 +8,7 @@
 
 import { promises as fs } from "node:fs";
 import path from "path";
+import { getFrameworkConfig, getRouteAnnotations } from "../config/languageAdapterLoader.js";
 
 // === 框架注解/配置识别 ===
 
@@ -117,11 +118,18 @@ export function detectFrameworks(fileList, projectRoot) {
   const detected = new Set();
   const evidence = {};
 
+  const yamlFrameworkConfig = getFrameworkConfig("java");
+  const yamlConfigFiles = {};
+  for (const [fwKey, cfg] of Object.entries(yamlFrameworkConfig)) {
+    if (cfg.config_files) {
+      yamlConfigFiles[fwKey] = cfg.config_files.map(f => f.toLowerCase());
+    }
+  }
+
   for (const file of fileList) {
     const basename = path.basename(file).toLowerCase();
     const dirname = path.dirname(file).toLowerCase();
 
-    // 配置文件检测
     if (basename === "pom.xml" || basename === "build.gradle") {
       // 稍后通过内容检测
     }
@@ -145,10 +153,64 @@ export function detectFrameworks(fileList, projectRoot) {
       detected.add("cxf_ws");
       evidence.cxf_ws = file;
     }
+
+    for (const [fwKey, configFiles] of Object.entries(yamlConfigFiles)) {
+      if (configFiles.some(cf => basename === cf || basename.endsWith(cf))) {
+        const mappedKey = FRAMEWORK_KEY_MAP[fwKey] || fwKey;
+        if (!detected.has(mappedKey)) {
+          detected.add(mappedKey);
+          evidence[mappedKey] = file;
+        }
+      }
+    }
+
+    if (dirname.includes("security") && basename.endsWith(".java")) {
+      if (!detected.has("spring_security")) {
+        detected.add("spring_security");
+        evidence.spring_security = file;
+      }
+    }
+    if (dirname.includes("mapper") && (basename.endsWith(".xml") || basename.endsWith(".java"))) {
+      if (!detected.has("mybatis")) {
+        detected.add("mybatis");
+        evidence.mybatis = file;
+      }
+    }
+    if (dirname.includes("entity") && basename.endsWith(".java")) {
+      if (!detected.has("hibernate")) {
+        detected.add("hibernate");
+        evidence.hibernate = file;
+      }
+    }
+  }
+
+  const yamlSecurityPatterns = yamlFrameworkConfig.spring_security?.config_class_pattern;
+  if (yamlSecurityPatterns && detected.has("spring_mvc") && !detected.has("spring_security")) {
+    for (const file of fileList) {
+      if (!file.endsWith(".java")) continue;
+      try {
+        const content = require("fs").readFileSync(file, "utf8");
+        const patterns = yamlSecurityPatterns.split("|");
+        if (patterns.some(p => content.includes(p.trim()))) {
+          detected.add("spring_security");
+          evidence.spring_security = file;
+          break;
+        }
+      } catch {}
+    }
   }
 
   return { frameworks: [...detected], evidence };
 }
+
+const FRAMEWORK_KEY_MAP = {
+  spring_boot: "spring_mvc",
+  spring_security: "spring_security",
+  shiro: "shiro",
+  struts2: "struts2",
+  mybatis: "mybatis",
+  hibernate: "hibernate",
+};
 
 /**
  * 从 Java 源代码提取路由信息

@@ -1,6 +1,7 @@
 import { RulesEngine, StaticAnalyzer, TaintAnalyzer, PatternAnalyzer, CompositeAnalyzer } from '../analyzers/index.js';
-// 向量存储已移除（从未被核心审计流程使用）
 import { ASTBuilderService } from '../utils/astBuilder.js';
+import { getCompletionTokens } from '../config/auditParamsConfig.js';
+import { getModelMaxTokens } from '../utils/contextManager.js';
 
 class CodeAnalysisTool {
   constructor(llmService) {
@@ -177,7 +178,7 @@ class CodeAnalysisTool {
         const response = await this.llmService.complete({
           prompt,
           temperature: 0.1,
-          maxTokens: 4096
+          maxTokens: getCompletionTokens(getModelMaxTokens())
         });
 
         const aiResult = this._parseResponse(response.content, filePath, language);

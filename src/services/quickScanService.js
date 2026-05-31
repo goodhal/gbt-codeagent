@@ -6,294 +6,7 @@ import { smartFileFilter } from "./smartFileFilter.js";
 import { scanComponentVulnerabilities, LANGUAGE_EXTENSIONS } from "../config/auditConfig.js";
 import { getRulesEngine } from "../analyzers/rulesEngine.js";
 
-const QUICK_SCAN_PATTERNS = {
-  java: [
-    { pattern: /Runtime\.getRuntime\(\)\.exec\s*\(/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
-    { pattern: /ProcessBuilder\s*\(/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "高危" },
-    { pattern: /ProcessImpl\.start/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
-    { pattern: /String\s+sql\s*=\s*"/, vulnType: "SQL_INJECTION", cwe: "CWE-89", severity: "高危" },
-    { pattern: /Statement\.execute/, vulnType: "SQL_INJECTION", cwe: "CWE-89", severity: "高危" },
-    { pattern: /ORDER BY.*\+/, vulnType: "SQL_INJECTION", cwe: "CWE-89", severity: "高危" },
-    { pattern: /HibernateTemplate\.execute\s*\(/, vulnType: "SQL_INJECTION", cwe: "CWE-89", severity: "高危" },
-    { pattern: /entityManager\.createQuery\s*\(/, vulnType: "SQL_INJECTION", cwe: "CWE-89", severity: "高危" },
-    { pattern: /createNativeQuery\s*\(/, vulnType: "SQL_INJECTION", cwe: "CWE-89", severity: "高危" },
-    { pattern: /JdbcTemplate\s*\(/, vulnType: "SQL_INJECTION", cwe: "CWE-89", severity: "高危" },
-    { pattern: /XPath.*\+/, vulnType: "XPATH_INJECTION", cwe: "CWE-643", severity: "高危" },
-    { pattern: /XPathFactory\.newInstance\s*\(/, vulnType: "XPATH_INJECTION", cwe: "CWE-643", severity: "高危" },
-    { pattern: /xpath\.evaluate\s*\(/, vulnType: "XPATH_INJECTION", cwe: "CWE-643", severity: "高危" },
-    { pattern: /password\s*=\s*"[^"]{3,}"/, vulnType: "HARD_CODE_PASSWORD", cwe: "CWE-259", severity: "高危" },
-    { pattern: /new\s+File\s*\(\s*/, vulnType: "PATH_TRAVERSAL", cwe: "CWE-22", severity: "高危" },
-    { pattern: /FileInputStream\s*\(\s*/, vulnType: "PATH_TRAVERSAL", cwe: "CWE-22", severity: "高危" },
-    { pattern: /Files\.lines\s*\(\s*filePath\s*\)/, vulnType: "PATH_TRAVERSAL", cwe: "CWE-22", severity: "高危" },
-    { pattern: /Files\.readAllBytes\s*\(/, vulnType: "PATH_TRAVERSAL", cwe: "CWE-22", severity: "高危" },
-    { pattern: /StreamUtils\.copy\s*\(/, vulnType: "PATH_TRAVERSAL", cwe: "CWE-22", severity: "高危" },
-    { pattern: /ScriptEngine.*eval\s*\(/, vulnType: "CODE_INJECTION", cwe: "CWE-94", severity: "严重" },
-    { pattern: /GroovyShell\s*\(/, vulnType: "CODE_INJECTION", cwe: "CWE-94", severity: "严重" },
-    { pattern: /shell\.evaluate\s*\(/, vulnType: "CODE_INJECTION", cwe: "CWE-94", severity: "严重" },
-    { pattern: /System\.load\s*\(/, vulnType: "PROCESS_CONTROL", cwe: "CWE-114", severity: "高危" },
-    { pattern: /MessageDigest.*getInstance.*MD5/, vulnType: "WEAK_HASH", cwe: "CWE-328", severity: "高危" },
-    { pattern: /MessageDigest.*getInstance.*SHA1/, vulnType: "WEAK_HASH", cwe: "CWE-328", severity: "高危" },
-    { pattern: /Cipher.*getInstance.*DES/, vulnType: "WEAK_CRYPTO", cwe: "CWE-327", severity: "高危" },
-    { pattern: /new\s+Random\s*\(\s*\)/, vulnType: "PREDICTABLE_RANDOM", cwe: "CWE-338", severity: "高危" },
-    { pattern: /SecureRandom\s*\(\s*\)/, vulnType: "WEAK_RANDOM", cwe: "CWE-338", severity: "中危" },
-    { pattern: /println.*password/, vulnType: "INFO_LEAK", cwe: "CWE-532", severity: "中危" },
-    { pattern: /session\.put\s*\(/, vulnType: "SESSION_FIXATION", cwe: "CWE-384", severity: "高危" },
-    { pattern: /Cookie.*=.*=/, vulnType: "COOKIE_MANIPULATION", cwe: "CWE-565", severity: "高危" },
-    { pattern: /referer.*contains/, vulnType: "AUTH_BYPASS", cwe: "CWE-287", severity: "高危" },
-    { pattern: /referer\.startsWith\s*\(/, vulnType: "REFERER_AUTH_BYPASS", cwe: "CWE-293", severity: "高危" },
-    { pattern: /request\.getHeader\s*\(\s*"referer"/, vulnType: "REFERER_AUTH_BYPASS", cwe: "CWE-293", severity: "高危" },
-    { pattern: /code_verify/, vulnType: "AUTH_BYPASS", cwe: "CWE-287", severity: "高危" },
-    { pattern: /stepData\.put\s*\(/, vulnType: "AUTH_BYPASS", cwe: "CWE-287", severity: "高危" },
-    { pattern: /orderStatusMap\.get\s*\(/, vulnType: "AUTH_BYPASS", cwe: "CWE-287", severity: "高危" },
-    { pattern: /paymentStatusMap\.get\s*\(/, vulnType: "AUTH_BYPASS", cwe: "CWE-287", severity: "高危" },
-    { pattern: /status\.isPaid\s*=/, vulnType: "AUTH_BYPASS", cwe: "CWE-287", severity: "高危" },
-    { pattern: /SecurityContextHolder\.getContext\s*\(/, vulnType: "AUTH_BYPASS", cwe: "CWE-287", severity: "中危" },
-    { pattern: /REAL_USERNAMES\.contains\s*\(/, vulnType: "AUTH_INFO_EXPOSURE", cwe: "CWE-204", severity: "中危" },
-    { pattern: /userMapper\.getAllByUsername\s*\(/, vulnType: "IDOR", cwe: "CWE-639", severity: "高危" },
-    { pattern: /byte\[.*\]\s*=\s*new\s+byte\[.*size/, vulnType: "UNCONTROLLED_MEMORY", cwe: "CWE-770", severity: "高危" },
-    { pattern: /catch\s*\(\s*Exception\s*\)\s*\{\s*\}/, vulnType: "IMPROPER_EXCEPTION_HANDLING", cwe: "CWE-703", severity: "高危" },
-    { pattern: /password\.length\s*\(\s*\)\s*>=\s*4/, vulnType: "WEAK_PASSWORD_POLICY", cwe: "CWE-521", severity: "中危" },
-    { pattern: /http:\/\/api\./, vulnType: "PLAINTEXT_TRANSMISSION", cwe: "CWE-319", severity: "中危" },
-    { pattern: /return\s+"redirect:"/, vulnType: "OPEN_REDIRECT", cwe: "CWE-601", severity: "高危" },
-    { pattern: /response\.sendRedirect\s*\(/, vulnType: "OPEN_REDIRECT", cwe: "CWE-601", severity: "高危" },
-    { pattern: /ModelAndView\s*\(\s*"redirect:"/, vulnType: "OPEN_REDIRECT", cwe: "CWE-601", severity: "高危" },
-    { pattern: /headers\.setLocation\s*\(/, vulnType: "OPEN_REDIRECT", cwe: "CWE-601", severity: "高危" },
-    { pattern: /response\.setHeader\s*\(\s*"Location"/, vulnType: "OPEN_REDIRECT", cwe: "CWE-601", severity: "高危" },
-    { pattern: /XMLDecoder\s*\(/, vulnType: "DESERIALIZATION", cwe: "CWE-502", severity: "严重" },
-    { pattern: /ObjectInputStream\s*\(/, vulnType: "DESERIALIZATION", cwe: "CWE-502", severity: "严重" },
-    { pattern: /enableDefaultTyping\s*\(/, vulnType: "DESERIALIZATION", cwe: "CWE-502", severity: "严重" },
-    { pattern: /XStream\s*\(\s*\)/, vulnType: "DESERIALIZATION", cwe: "CWE-502", severity: "严重" },
-    { pattern: /JSON\.parseObject\s*\(/, vulnType: "DESERIALIZATION", cwe: "CWE-502", severity: "高危" },
-    { pattern: /XMLReaderFactory\.createXMLReader\s*\(/, vulnType: "XXE", cwe: "CWE-611", severity: "高危" },
-    { pattern: /SAXParserFactory\.newInstance\s*\(/, vulnType: "XXE", cwe: "CWE-611", severity: "高危" },
-    { pattern: /DocumentBuilderFactory\.newInstance\s*\(/, vulnType: "XXE", cwe: "CWE-611", severity: "高危" },
-    { pattern: /logger\.error\s*\(/, vulnType: "LOG_INJECTION", cwe: "CWE-93", severity: "高危" },
-    { pattern: /NoOpPasswordEncoder\.getInstance\s*\(/, vulnType: "PLAINTEXT_PASSWORD", cwe: "CWE-256", severity: "严重" },
-    // === CORS 配置缺陷检测 ===
-    { pattern: /Access-Control-Allow-Origin.*\*/, vulnType: "CORS_MISCONFIGURATION", cwe: "CWE-942", severity: "高危" },
-    { pattern: /Access-Control-Allow-Credentials.*true/, vulnType: "CORS_MISCONFIGURATION", cwe: "CWE-942", severity: "高危" },
-    { pattern: /response\.setHeader\s*\(\s*"Access-Control-Allow-Origin"/, vulnType: "CORS_MISCONFIGURATION", cwe: "CWE-942", severity: "高危" },
-    { pattern: /request\.getHeader\s*\(\s*"origin"/, vulnType: "CORS_MISCONFIGURATION", cwe: "CWE-942", severity: "高危" },
-    // 动态Origin反射：将请求Origin直接回写到响应头（最常见CORS漏洞模式）
-    { pattern: /setHeader\s*\(\s*"Access-Control-Allow-Origin"\s*,\s*origin/i, vulnType: "CORS_MISCONFIGURATION", cwe: "CWE-942", severity: "高危" },
-    { pattern: /addHeader\s*\(\s*"Access-Control-Allow-Origin"\s*,\s*origin/i, vulnType: "CORS_MISCONFIGURATION", cwe: "CWE-942", severity: "高危" },
-    // Spring CORS全局配置：allowedOrigins("*") 或 allowCredentials(true)+allowedOrigins("*")
-    { pattern: /allowedOrigins\s*\(\s*"\*"\s*\)/, vulnType: "CORS_MISCONFIGURATION", cwe: "CWE-942", severity: "高危" },
-    { pattern: /addCorsMappings\s*\(/, vulnType: "CORS_MISCONFIGURATION", cwe: "CWE-942", severity: "中危" },
-    // === CSRF 检测 ===
-    { pattern: /session\.getAttribute\s*\(\s*"csrfToken"/, vulnType: "CSRF_PROTECTION", cwe: "CWE-352", severity: "info" },
-    // 状态变更操作缺少CSRF令牌验证
-    { pattern: /@PostMapping\s*\(/, vulnType: "CSRF_MISSING", cwe: "CWE-352", severity: "高危" },
-    { pattern: /@RequestMapping\s*\(.*method\s*=\s*RequestMethod\.POST/i, vulnType: "CSRF_MISSING", cwe: "CWE-352", severity: "高危" },
-    { pattern: /StandardEvaluationContext\s*\(/, vulnType: "SPEL_INJECTION", cwe: "CWE-94", severity: "严重" },
-    { pattern: /URL\s+u\s*=\s*new\s+URL\s*\(/, vulnType: "SSRF", cwe: "CWE-918", severity: "严重" },
-    { pattern: /URLConnection\s+conn\s*=\s*u\.openConnection/, vulnType: "SSRF", cwe: "CWE-918", severity: "严重" },
-    { pattern: /response\.getWriter\(\)\.print\s*\(/, vulnType: "XSS", cwe: "CWE-79", severity: "高危" },
-    { pattern: /response\.getWriter\(\)\.write\s*\(/, vulnType: "XSS", cwe: "CWE-79", severity: "高危" },
-    { pattern: /response\.setContentType\s*\(\s*"text\/html"/, vulnType: "XSS", cwe: "CWE-79", severity: "高危" },
-    // 无转义输出到HTML的XSS模式
-    { pattern: /out\.println\s*\(.*request\.getParameter/i, vulnType: "XSS_REFLECTED", cwe: "CWE-79", severity: "高危" },
-    { pattern: /out\.write\s*\(.*request\.getParameter/i, vulnType: "XSS_REFLECTED", cwe: "CWE-79", severity: "高危" },
-    { pattern: /ModelAndView\s*\(\s*".*".*request\.getParameter/i, vulnType: "XSS_STORED", cwe: "CWE-79", severity: "中危" },
-    // === Swagger/调试端点暴露 ===
-    { pattern: /@EnableSwagger2/, vulnType: "SWAGGER_EXPOSURE", cwe: "CWE-200", severity: "低危" },
-    { pattern: /@EnableOpenApi/, vulnType: "SWAGGER_EXPOSURE", cwe: "CWE-200", severity: "低危" },
-    { pattern: /new\s+Docket\s*\(/, vulnType: "SWAGGER_EXPOSURE", cwe: "CWE-200", severity: "低危" },
-    { pattern: /swagger-ui/i, vulnType: "SWAGGER_EXPOSURE", cwe: "CWE-200", severity: "info" },
-    { pattern: /Thread\.sleep\s*\(/, vulnType: "RACE_CONDITION", cwe: "CWE-362", severity: "高危" },
-    { pattern: /AtomicReference\.get\s*\(/, vulnType: "RACE_CONDITION", cwe: "CWE-362", severity: "中危" },
-    { pattern: /userMoney\.get\s*\(/, vulnType: "RACE_CONDITION", cwe: "CWE-362", severity: "中危" },
-    { pattern: /Integer\.parseInt\s*\(.*\*/, vulnType: "INTEGER_OVERFLOW", cwe: "CWE-190", severity: "高危" },
-    { pattern: /Double\.parseDouble\s*\(.*\*/, vulnType: "INTEGER_OVERFLOW", cwe: "CWE-190", severity: "高危" },
-    { pattern: /return\s+"vul\/ssti\/"/, vulnType: "SSTI", cwe: "CWE-94", severity: "高危" },
-    { pattern: /model\.addAttribute\s*\(\s*"templateContent"/, vulnType: "SSTI", cwe: "CWE-94", severity: "高危" },
-    // === Java框架特定SQL注入检测（来自java-audit-skills） ===
-    { pattern: /\$\{[\w.]+\}/, vulnType: "SQL_INJECTION_MYBATIS", cwe: "CWE-89", severity: "严重" },
-    { pattern: /\.getOrderBy\s*\(\s*\)/, vulnType: "SQL_INJECTION_ORDERBY", cwe: "CWE-89", severity: "严重" },
-    { pattern: /\.getSortField\s*\(\s*\)/, vulnType: "SQL_INJECTION_ORDERBY", cwe: "CWE-89", severity: "严重" },
-    { pattern: /\.getGroupBy\s*\(\s*\)/, vulnType: "SQL_INJECTION_GROUPBY", cwe: "CWE-89", severity: "高危" },
-    { pattern: /sql.*append\s*\(\s*.*orderBy/i, vulnType: "SQL_INJECTION_ORDERBY", cwe: "CWE-89", severity: "严重" },
-    { pattern: /sql.*append\s*\(\s*.*sort/i, vulnType: "SQL_INJECTION_ORDERBY", cwe: "CWE-89", severity: "严重" },
-    { pattern: /Session\.createQuery\s*\(\s*.*\+/, vulnType: "SQL_INJECTION_HQL", cwe: "CWE-89", severity: "严重" },
-    { pattern: /createSQLQuery\s*\(\s*.*\+/, vulnType: "SQL_INJECTION_HQL", cwe: "CWE-89", severity: "严重" },
-    // === Java鉴权绕过检测（来自java-audit-skills） ===
-    { pattern: /getRequestURI\s*\(\s*\).*endsWith/, vulnType: "AUTH_BYPASS_URI", cwe: "CWE-287", severity: "严重" },
-    { pattern: /getRequestURI\s*\(\s*\).*startsWith/, vulnType: "AUTH_BYPASS_URI", cwe: "CWE-287", severity: "高危" },
-    { pattern: /getRequestURI\s*\(\s*\).*contains/, vulnType: "AUTH_BYPASS_URI", cwe: "CWE-287", severity: "高危" },
-    { pattern: /getRequestURL\s*\(\s*\).*toString/, vulnType: "AUTH_BYPASS_URI", cwe: "CWE-287", severity: "高危" },
-    { pattern: /\.endsWith\s*\(\s*"\.(js|css|png|jpg|html|ico)"/, vulnType: "AUTH_BYPASS_SUFFIX", cwe: "CWE-287", severity: "严重" },
-    { pattern: /request\.getServletPath\s*\(\s*\)/, vulnType: "AUTH_SERVLETPATH_SAFE", cwe: "CWE-NONE", severity: "低危" },
-    // === Shiro/Spring Security已知漏洞检测 ===
-    { pattern: /shiro-spring.*1\.[0-4]\./, vulnType: "COMPONENT_VULNERABILITY", cwe: "CWE-937", severity: "严重" },
-    { pattern: /spring-security.*5\.[0-6]\./, vulnType: "COMPONENT_VULNERABILITY", cwe: "CWE-937", severity: "高危" },
-    { pattern: /antMatchers\s*\(\s*"[^"]*"\s*\)/, vulnType: "AUTH_BYPASS_SPRING", cwe: "CWE-287", severity: "高危" },
-    { pattern: /csrf\s*\(\s*\)\s*\.disable\s*\(\s*\)/, vulnType: "AUTH_CSRF_DISABLED", cwe: "CWE-352", severity: "高危" },
-    // === Struts2特定检测 ===
-    { pattern: /struts2-core.*2\.[0-5]\./, vulnType: "COMPONENT_VULNERABILITY", cwe: "CWE-937", severity: "严重" },
-    { pattern: /name\s*=\s*"\*_\*"/, vulnType: "STRUTS_WILDCARD", cwe: "CWE-937", severity: "中危" },
-    // === 文件上传/读取补充 ===
-    { pattern: /\.transferTo\s*\(/, vulnType: "FILE_UPLOAD", cwe: "CWE-434", severity: "高危" },
-    { pattern: /MultipartFile.*getOriginalFilename/, vulnType: "FILE_UPLOAD", cwe: "CWE-434", severity: "高危" },
-    { pattern: /ServletFileUpload.*parseRequest/, vulnType: "FILE_UPLOAD", cwe: "CWE-434", severity: "高危" },
-    { pattern: /Files\.readAllLines\s*\(/, vulnType: "FILE_READ", cwe: "CWE-22", severity: "高危" },
-    { pattern: /BufferedReader.*new\s+File/, vulnType: "FILE_READ", cwe: "CWE-22", severity: "高危" },
-    // === XXE解析器补充 ===
-    { pattern: /SAXBuilder\s*\(/, vulnType: "XXE", cwe: "CWE-611", severity: "高危" },
-    { pattern: /SAXReader\s*\(/, vulnType: "XXE", cwe: "CWE-611", severity: "高危" },
-    { pattern: /XMLInputFactory\.newInstance\s*\(/, vulnType: "XXE", cwe: "CWE-611", severity: "高危" },
-    { pattern: /TransformerFactory\.newInstance\s*\(/, vulnType: "XXE", cwe: "CWE-611", severity: "高危" },
-    // === Fastjson/Log4j危险版本 ===
-    { pattern: /fastjson.*1\.2\.(0|[1-6][0-9]|7[0-9]|80)/, vulnType: "COMPONENT_VULNERABILITY", cwe: "CWE-502", severity: "严重" },
-    { pattern: /log4j-core.*2\.(0|1[0-6])\./, vulnType: "COMPONENT_VULNERABILITY", cwe: "CWE-917", severity: "严重" },
-    // === SpEL注入 ===
-    { pattern: /parseExpression\s*\(/, vulnType: "SPEL_INJECTION", cwe: "CWE-94", severity: "严重" },
-    // === 手工审计对比补充 (2026-05-25) ===
-    // 硬编码凭证（含 pass/secret/token/apiKey 变量）
-    { pattern: /\b(?:pass|secret|token|apiKey|password)\s*=\s*"[^"]{2,32}"/, vulnType: "HARD_CODE_PASSWORD", cwe: "CWE-259", severity: "严重" },
-    // JNDI注入
-    { pattern: /InitialContext\s*\(\s*\)/, vulnType: "JNDI_INJECTION", cwe: "CWE-74", severity: "严重" },
-    { pattern: /\.lookup\s*\(\s*\w/, vulnType: "JNDI_INJECTION", cwe: "CWE-74", severity: "严重" },
-    // CSRF关闭 (Spring Security)
-    { pattern: /csrf\s*\(\s*\)\s*\.\s*disable\s*\(\s*\)/, vulnType: "CSRF_DISABLED", cwe: "CWE-352", severity: "高危" },
-    // 模板引擎注入
-    { pattern: /templateEngine\s*\.\s*process\s*\(/, vulnType: "SSTI", cwe: "CWE-94", severity: "严重" },
-    { pattern: /ProcessBuilder\s*\(\s*.*\+/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
-    // 文件上传无校验
-    { pattern: /transferTo\s*\(\s*new\s+File/, vulnType: "FILE_UPLOAD", cwe: "CWE-434", severity: "高危" },
-    { pattern: /MultipartFile\s+getOriginalFilename/, vulnType: "FILE_UPLOAD", cwe: "CWE-434", severity: "中危" },
-    // 安全过滤器黑名单绕过
-    { pattern: /\bblack\s*=.*\bcontains\b/, vulnType: "BLACKLIST_VALIDATION", cwe: "CWE-693", severity: "中危" },
-    // 信息泄露（System.getProperty打印）
-    { pattern: /System\.getProperty\s*\(\s*"[^"]+version/i, vulnType: "INFO_LEAK", cwe: "CWE-200", severity: "中危" },
-    // XSS - Model直接回显用户输入
-    { pattern: /model\s*\.\s*addAttribute\s*\(\s*"[^"]*"\s*,\s*(?:req|request)/, vulnType: "XSS", cwe: "CWE-79", severity: "高危" },
-    // 开放重定向 - 用户输入进入redirect
-    { pattern: /redirect:\s*\+\s*(?:url|target|redirect_uri|returnUrl)/, vulnType: "OPEN_REDIRECT", cwe: "CWE-601", severity: "高危" },
-    // === 漏报修复补充 (2026-05-31) ===
-    { pattern: /prepareStatement\s*\(\s*\w+\s*\)/, vulnType: "SQL_INJECTION", cwe: "CWE-89", severity: "高危" },
-    { pattern: /String\s+sql\s*=\s*"[^"]*"\s*\+\s*\w+/, vulnType: "SQL_INJECTION", cwe: "CWE-89", severity: "严重" },
-    { pattern: /return\s+e\.getMessage\s*\(\s*\)/, vulnType: "INFORMATION_DISCLOSURE", cwe: "CWE-209", severity: "中危" },
-    { pattern: /return\s+e\.toString\s*\(\s*\)/, vulnType: "INFORMATION_DISCLOSURE", cwe: "CWE-209", severity: "中危" },
-    { pattern: /return\s+e\.getLocalizedMessage\s*\(\s*\)/, vulnType: "INFORMATION_DISCLOSURE", cwe: "CWE-209", severity: "中危" },
-    { pattern: /assert\s+\w+\s*!=\s*null/, vulnType: "IMPROPER_EXCEPTION_HANDLING", cwe: "CWE-703", severity: "低危" },
-    { pattern: /assert\s+\w+\s*==\s*null/, vulnType: "IMPROPER_EXCEPTION_HANDLING", cwe: "CWE-703", severity: "低危" },
-  ],
-  python: [
-    { pattern: /os\.system\s*\(/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
-    { pattern: /subprocess\.\w+\s*\(.*shell\s*=\s*True/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
-    { pattern: /subprocess\.Popen\s*\(/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
-    { pattern: /\bexec\s*\(/, vulnType: "CODE_INJECTION", cwe: "CWE-94", severity: "严重" },
-    { pattern: /\beval\s*\(/, vulnType: "CODE_INJECTION", cwe: "CWE-94", severity: "严重" },
-    { pattern: /pickle\.load/, vulnType: "DESERIALIZATION", cwe: "CWE-502", severity: "严重" },
-    { pattern: /yaml\.load\s*\(/, vulnType: "DESERIALIZATION", cwe: "CWE-502", severity: "严重" },
-    { pattern: /urllib\.request\.urlopen\s*\(/, vulnType: "SSRF", cwe: "CWE-918", severity: "严重" },
-    { pattern: /password\s*=\s*"/, vulnType: "HARD_CODE_PASSWORD", cwe: "CWE-259", severity: "严重" },
-    { pattern: /hashlib\.md5/, vulnType: "WEAK_HASH", cwe: "CWE-328", severity: "高危" },
-    { pattern: /hashlib\.sha1/, vulnType: "WEAK_HASH", cwe: "CWE-328", severity: "高危" },
-    { pattern: /random\.rand/, vulnType: "PREDICTABLE_RANDOM", cwe: "CWE-338", severity: "高危" },
-    { pattern: /logging\.info.*password/, vulnType: "INFO_LEAK", cwe: "CWE-532", severity: "中危" },
-    { pattern: /is_admin\s*=\s*user_input/, vulnType: "AUTH_BYPASS", cwe: "CWE-287", severity: "严重" },
-    { pattern: /while True:/, vulnType: "INFINITE_LOOP", cwe: "CWE-835", severity: "高危" },
-    { pattern: /except:\s*pass/, vulnType: "IMPROPER_EXCEPTION_HANDLING", cwe: "CWE-703", severity: "高危" },
-    { pattern: /execute\(.*f"/, vulnType: "SQL_INJECTION", cwe: "CWE-89", severity: "严重" },
-    { pattern: /open\(.*filename/, vulnType: "PATH_TRAVERSAL", cwe: "CWE-22", severity: "高危" },
-    { pattern: /format\s*\(\s*(?:user|input|request|data|param)/, vulnType: "FORMAT_STRING_VULNERABILITY", cwe: "CWE-134", severity: "高危" },
-    { pattern: /\.\s*format\s*\(\s*(?:user|input|request|data|param)/, vulnType: "FORMAT_STRING_VULNERABILITY", cwe: "CWE-134", severity: "高危" },
-    { pattern: /open\s*\(\s*(?:user|input|request|data|param|filename|filepath|path)/, vulnType: "ARBITRARY_FILE_READ", cwe: "CWE-22", severity: "高危" },
-    { pattern: /os\.path\.join\s*\([^)]*(?:user|input|request|filename)/, vulnType: "PATH_TRAVERSAL", cwe: "CWE-22", severity: "高危" },
-    { pattern: /subprocess\.\w+\s*\(.*\+/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
-    { pattern: /os\.system\s*\([^)]*\+/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
-    { pattern: /secret\s*=\s*"/, vulnType: "HARDCODED_CREDENTIALS", cwe: "CWE-798", severity: "严重" },
-    { pattern: /api_key\s*=\s*"/, vulnType: "HARDCODED_CREDENTIALS", cwe: "CWE-798", severity: "严重" }
-  ],
-  cpp: [
-    { pattern: /system\s*\(\s*[^)]*\+/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
-    { pattern: /popen\s*\(/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
-    { pattern: /strcpy\s*\(/, vulnType: "BUFFER_OVERFLOW", cwe: "CWE-120", severity: "严重" },
-    { pattern: /gets\s*\(/, vulnType: "BUFFER_OVERFLOW", cwe: "CWE-120", severity: "严重" },
-    { pattern: /scanf\s*\(/, vulnType: "BUFFER_OVERFLOW", cwe: "CWE-120", severity: "严重" },
-    { pattern: /printf\s*\(\s*\w+\s*\)/, vulnType: "FORMAT_STRING", cwe: "CWE-134", severity: "高危" },
-    { pattern: /malloc\s*\(\s*\w+\s*\*\s*\d+/, vulnType: "INTEGER_OVERFLOW", cwe: "CWE-190", severity: "高危" },
-    { pattern: /password\s*=\s*"[^"]{3,}"/, vulnType: "HARD_CODE_PASSWORD", cwe: "CWE-259", severity: "严重" },
-    { pattern: /DES_set_key/, vulnType: "WEAK_CRYPTO", cwe: "CWE-327", severity: "高危" },
-    { pattern: /SHA1\s*\(/, vulnType: "WEAK_HASH", cwe: "CWE-328", severity: "高危" },
-    { pattern: /rand\s*\(\s*\)/, vulnType: "PREDICTABLE_RANDOM", cwe: "CWE-338", severity: "高危" },
-    { pattern: /LoadLibrary\s*\(/, vulnType: "PROCESS_CONTROL", cwe: "CWE-114", severity: "高危" },
-    { pattern: /dlopen\s*\(/, vulnType: "PROCESS_CONTROL", cwe: "CWE-114", severity: "高危" },
-    { pattern: /strcmp\s*\(\s*\w+\s*,\s*"[^"]{3,}"\s*\)/, vulnType: "HARDCODED_CREDENTIALS", cwe: "CWE-798", severity: "严重" },
-    { pattern: /fopen\s*\(\s*(?:user|input|request|filename|filepath|path)/, vulnType: "ARBITRARY_FILE_READ", cwe: "CWE-22", severity: "高危" }
-  ],
-  csharp: [
-    { pattern: /Process\.Start\s*\(/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
-    { pattern: /SqlCommand.*\+/, vulnType: "SQL_INJECTION", cwe: "CWE-89", severity: "严重" },
-    { pattern: /ORDER BY.*\+/, vulnType: "SQL_INJECTION", cwe: "CWE-89", severity: "严重" },
-    { pattern: /XPath.*\+/, vulnType: "XPATH_INJECTION", cwe: "CWE-643", severity: "高危" },
-    { pattern: /password\s*=\s*"[^"]{3,}"/, vulnType: "HARD_CODE_PASSWORD", cwe: "CWE-259", severity: "严重" },
-    { pattern: /DES\.Create\s*\(\)/, vulnType: "WEAK_CRYPTO", cwe: "CWE-327", severity: "高危" },
-    { pattern: /SHA1\.Create\s*\(\)/, vulnType: "WEAK_HASH", cwe: "CWE-328", severity: "高危" },
-    { pattern: /Random\s*=\s*new\s+Random\s*\(\s*\)/, vulnType: "PREDICTABLE_RANDOM", cwe: "CWE-338", severity: "高危" },
-    { pattern: /Assembly\.LoadFrom\s*\(/, vulnType: "PROCESS_CONTROL", cwe: "CWE-114", severity: "高危" },
-    { pattern: /Trace\.WriteLine.*password/, vulnType: "INFO_LEAK", cwe: "CWE-532", severity: "中危" },
-    { pattern: /session\[.*\]\s*=\s*username/, vulnType: "SESSION_FIXATION", cwe: "CWE-384", severity: "高危" },
-    { pattern: /Cookie.*=.*=/, vulnType: "COOKIE_MANIPULATION", cwe: "CWE-565", severity: "高危" },
-    { pattern: /resp\.Write\s*\(/, vulnType: "XSS", cwe: "CWE-79", severity: "高危" }
-  ],
-  javascript: [
-    { pattern: /eval\s*\(/, vulnType: "CODE_INJECTION", cwe: "CWE-94", severity: "严重" },
-    { pattern: /Function\s*\(/, vulnType: "CODE_INJECTION", cwe: "CWE-94", severity: "严重" },
-    { pattern: /innerHTML\s*=/, vulnType: "XSS", cwe: "CWE-79", severity: "高危" },
-    { pattern: /document\.write\s*\(/, vulnType: "XSS", cwe: "CWE-79", severity: "高危" },
-    { pattern: /require\s*\(\s*child_process\s*\)/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "高危" },
-    { pattern: /exec\s*\(/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "高危" },
-    { pattern: /spawn\s*\(/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "高危" }
-  ],
-  typescript: [
-    { pattern: /eval\s*\(/, vulnType: "CODE_INJECTION", cwe: "CWE-94", severity: "严重" },
-    { pattern: /innerHTML\s*=/, vulnType: "XSS", cwe: "CWE-79", severity: "高危" },
-    { pattern: /document\.write\s*\(/, vulnType: "XSS", cwe: "CWE-79", severity: "高危" },
-    { pattern: /require\s*\(\s*child_process\s*\)/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "高危" },
-    { pattern: /exec\s*\(/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "高危" },
-    { pattern: /spawn\s*\(/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "高危" }
-  ],
-  go: [
-    { pattern: /exec\.Command\s*\(/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
-    { pattern: /os\.Exec\s*\(/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
-    { pattern: /crypto\/md5/, vulnType: "WEAK_HASH", cwe: "CWE-328", severity: "高危" },
-    { pattern: /crypto\/sha1/, vulnType: "WEAK_HASH", cwe: "CWE-328", severity: "高危" },
-    { pattern: /math\/rand/, vulnType: "PREDICTABLE_RANDOM", cwe: "CWE-338", severity: "高危" }
-  ],
-  php: [
-    { pattern: /exec\s*\(/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
-    { pattern: /system\s*\(/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
-    { pattern: /passthru\s*\(/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
-    { pattern: /eval\s*\(/, vulnType: "CODE_INJECTION", cwe: "CWE-94", severity: "严重" },
-    { pattern: /mysql_query\s*\(/, vulnType: "SQL_INJECTION", cwe: "CWE-89", severity: "严重" },
-    { pattern: /mysqli_query\s*\(/, vulnType: "SQL_INJECTION", cwe: "CWE-89", severity: "严重" },
-    { pattern: /\$sql\s*=/, vulnType: "SQL_INJECTION", cwe: "CWE-89", severity: "严重" },
-    { pattern: /include\s*\(/, vulnType: "PATH_TRAVERSAL", cwe: "CWE-22", severity: "高危" },
-    { pattern: /require\s*\(/, vulnType: "PATH_TRAVERSAL", cwe: "CWE-22", severity: "高危" },
-    { pattern: /md5\s*\(/, vulnType: "WEAK_HASH", cwe: "CWE-328", severity: "高危" },
-    { pattern: /sha1\s*\(/, vulnType: "WEAK_HASH", cwe: "CWE-328", severity: "高危" },
-    { pattern: /rand\s*\(/, vulnType: "PREDICTABLE_RANDOM", cwe: "CWE-338", severity: "高危" },
-    { pattern: /echo\s*\$.*password/, vulnType: "INFO_LEAK", cwe: "CWE-532", severity: "中危" }
-  ],
-  ruby: [
-    { pattern: /system\s*\(/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
-    { pattern: /exec\s*\(/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
-    { pattern: /eval\s*\(/, vulnType: "CODE_INJECTION", cwe: "CWE-94", severity: "严重" },
-    { pattern: /open\s*\(/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
-    { pattern: /Digest::MD5/, vulnType: "WEAK_HASH", cwe: "CWE-328", severity: "高危" },
-    { pattern: /Digest::SHA1/, vulnType: "WEAK_HASH", cwe: "CWE-328", severity: "高危" },
-    { pattern: /rand\s*\(/, vulnType: "PREDICTABLE_RANDOM", cwe: "CWE-338", severity: "高危" }
-  ],
-  rust: [
-    { pattern: /std::process::Command::new/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
-    { pattern: /Command::new/, vulnType: "COMMAND_INJECTION", cwe: "CWE-78", severity: "严重" },
-    { pattern: /md5\s*\(/, vulnType: "WEAK_HASH", cwe: "CWE-328", severity: "高危" },
-    { pattern: /sha1\s*\(/, vulnType: "WEAK_HASH", cwe: "CWE-328", severity: "高危" },
-    { pattern: /rand\s*\(/, vulnType: "PREDICTABLE_RANDOM", cwe: "CWE-338", severity: "高危" }
-  ]
-};
+const QUICK_SCAN_PATTERNS = {};
 
 const GBT_MAPPING = {
   "COMMAND_INJECTION": {
@@ -537,6 +250,147 @@ const GBT_MAPPING = {
   "PLAINTEXT_TRANSMISSION": {
     "java": "GB/T39412-6.2.2.1 敏感信息暴露",
     "default": "GB/T39412-6.2.2.1 敏感信息暴露"
+  },
+  "UNRESTRICTED_FILE_UPLOAD": {
+    "java": "GB/T34944-6.2.3.9 不当限制文件上传；GB/T39412-6.1.1.1 输入验证不足",
+    "python": "GB/T39412-6.1.1.1 输入验证不足",
+    "cpp": "GB/T34943-6.2.3.9 不当限制文件上传；GB/T39412-6.1.1.1 输入验证不足",
+    "csharp": "GB/T34946-6.2.3.9 不当限制文件上传；GB/T39412-6.1.1.1 输入验证不足",
+    "default": "GB/T39412-6.1.1.1 输入验证不足"
+  },
+  "MISSING_ACCESS_CONTROL": {
+    "java": "GB/T34944-6.2.6.1 缺少访问控制；GB/T39412-6.3.3.1 不安全的直接对象引用",
+    "python": "GB/T39412-6.3.3.1 不安全的直接对象引用",
+    "cpp": "GB/T39412-6.3.3.1 不安全的直接对象引用",
+    "csharp": "GB/T34946-6.2.6.1 缺少访问控制；GB/T39412-6.3.3.1 不安全的直接对象引用",
+    "default": "GB/T39412-6.3.3.1 不安全的直接对象引用"
+  },
+  "NO_RATE_LIMIT": {
+    "java": "GB/T39412-6.3.1.3 登录失败处理不当",
+    "python": "GB/T39412-6.3.1.3 登录失败处理不当",
+    "default": "GB/T39412-6.3.1.3 登录失败处理不当"
+  },
+  "HARDCODED_CREDENTIALS": {
+    "java": "GB/T34944-6.2.6.3 口令硬编码；GB/T39412-6.2.1.3 使用安全相关的硬编码",
+    "python": "GB/T39412-6.2.1.3 使用安全相关的硬编码",
+    "cpp": "GB/T34943-6.2.7.3 口令硬编码；GB/T39412-6.2.1.3 使用安全相关的硬编码",
+    "csharp": "GB/T34946-6.2.6.3 口令硬编码；GB/T39412-6.2.1.3 使用安全相关的硬编码",
+    "default": "GB/T39412-6.2.1.3 使用安全相关的硬编码"
+  },
+  "RSA_WEAK_PADDING": {
+    "java": "GB/T34944-6.2.6.7 使用已破解或危险的加密算法；GB/T39412-6.2.1.1 密码安全不符合国密管理规定",
+    "python": "GB/T39412-6.2.1.1 密码安全不符合国密管理规定",
+    "default": "GB/T39412-6.2.1.1 密码安全不符合国密管理规定"
+  },
+  "INSECURE_COOKIE_AUTH": {
+    "java": "GB/T34944-6.2.6.5 Cookie中的敏感信息明文存储",
+    "python": "GB/T39412-6.2.2.1 敏感信息暴露",
+    "default": "GB/T39412-6.2.2.1 敏感信息暴露"
+  },
+  "JNDI_INJECTION": {
+    "java": "GB/T34944-6.2.3.5 代码注入；GB/T39412-7.3.6 暴露危险的方法或函数",
+    "default": "GB/T39412-7.3.6 暴露危险的方法或函数"
+  },
+  "XSS_REFLECTED": {
+    "java": "GB/T39412-6.1.2.1 跨站脚本(XSS)攻击",
+    "python": "GB/T39412-6.1.2.1 跨站脚本(XSS)攻击",
+    "default": "GB/T39412-6.1.2.1 跨站脚本(XSS)攻击"
+  },
+  "XSS_STORED": {
+    "java": "GB/T39412-6.1.2.1 跨站脚本(XSS)攻击",
+    "python": "GB/T39412-6.1.2.1 跨站脚本(XSS)攻击",
+    "default": "GB/T39412-6.1.2.1 跨站脚本(XSS)攻击"
+  },
+  "SQL_INJECTION_MYBATIS": {
+    "java": "GB/T34944-6.2.3.4 SQL注入；GB/T39412-8.3.2 SQL注入",
+    "default": "GB/T39412-8.3.2 SQL注入"
+  },
+  "SQL_INJECTION_ORDERBY": {
+    "java": "GB/T34944-6.2.3.4 SQL注入；GB/T39412-8.3.2 SQL注入",
+    "default": "GB/T39412-8.3.2 SQL注入"
+  },
+  "SQL_INJECTION_GROUPBY": {
+    "java": "GB/T34944-6.2.3.4 SQL注入；GB/T39412-8.3.2 SQL注入",
+    "default": "GB/T39412-8.3.2 SQL注入"
+  },
+  "SQL_INJECTION_HQL": {
+    "java": "GB/T34944-6.2.3.4 SQL注入；GB/T39412-8.3.2 SQL注入",
+    "default": "GB/T39412-8.3.2 SQL注入"
+  },
+  "AUTH_BYPASS_URI": {
+    "java": "GB/T34944-6.2.6.4 依赖referer字段进行身份鉴别；GB/T39412-6.3.1.2 身份鉴别被绕过",
+    "default": "GB/T39412-6.3.1.2 身份鉴别被绕过"
+  },
+  "AUTH_BYPASS_SUFFIX": {
+    "java": "GB/T34944-6.2.6.4 依赖referer字段进行身份鉴别；GB/T39412-6.3.1.2 身份鉴别被绕过",
+    "default": "GB/T39412-6.3.1.2 身份鉴别被绕过"
+  },
+  "AUTH_BYPASS_SPRING": {
+    "java": "GB/T34944-6.2.6.4 依赖referer字段进行身份鉴别；GB/T39412-6.3.1.2 身份鉴别被绕过",
+    "default": "GB/T39412-6.3.1.2 身份鉴别被绕过"
+  },
+  "AUTH_CSRF_DISABLED": {
+    "java": "GB/T39412-6.3.3.2 跨站请求伪造",
+    "default": "GB/T39412-6.3.3.2 跨站请求伪造"
+  },
+  "CSRF_DISABLED": {
+    "java": "GB/T39412-6.3.3.2 跨站请求伪造",
+    "default": "GB/T39412-6.3.3.2 跨站请求伪造"
+  },
+  "CSRF_PROTECTION": {
+    "java": "GB/T39412-6.3.3.2 跨站请求伪造",
+    "default": "GB/T39412-6.3.3.2 跨站请求伪造"
+  },
+  "CSRF_MISSING": {
+    "java": "GB/T39412-6.3.3.2 跨站请求伪造",
+    "default": "GB/T39412-6.3.3.2 跨站请求伪造"
+  },
+  "COMPONENT_VULNERABILITY": {
+    "java": "GB/T39412-6.1.1.5 使用已知脆弱组件",
+    "python": "GB/T39412-6.1.1.5 使用已知脆弱组件",
+    "default": "GB/T39412-6.1.1.5 使用已知脆弱组件"
+  },
+  "SWAGGER_EXPOSURE": {
+    "java": "GB/T39412-6.2.2.1 敏感信息暴露",
+    "default": "GB/T39412-6.2.2.1 敏感信息暴露"
+  },
+  "STRUTS_WILDCARD": {
+    "java": "GB/T39412-6.1.1.5 使用已知脆弱组件",
+    "default": "GB/T39412-6.1.1.5 使用已知脆弱组件"
+  },
+  "BLACKLIST_VALIDATION": {
+    "java": "GB/T39412-6.1.1.1 输入验证不足",
+    "default": "GB/T39412-6.1.1.1 输入验证不足"
+  },
+  "RACE_CONDITION": {
+    "java": "GB/T39412-7.2.3 共享资源的并发安全",
+    "default": "GB/T39412-7.2.3 共享资源的并发安全"
+  },
+  "EXCEPTION_INFO_LEAK": {
+    "java": "GB/T34944-6.2.3.7 信息通过错误消息泄露",
+    "python": "GB/T39412-6.2.2.1 敏感信息暴露",
+    "default": "GB/T39412-6.2.2.1 敏感信息暴露"
+  },
+  "ASSERT_MISUSE": {
+    "java": "GB/T39412-7.4.1 异常处理不当",
+    "default": "GB/T39412-7.4.1 异常处理不当"
+  },
+  "FILE_UPLOAD": {
+    "java": "GB/T34944-6.2.3.9 不当限制文件上传；GB/T39412-6.1.1.1 输入验证不足",
+    "default": "GB/T39412-6.1.1.1 输入验证不足"
+  },
+  "FILE_READ": {
+    "java": "GB/T34944-6.2.3.1 相对路径遍历；GB/T34944-6.2.3.2 绝对路径遍历",
+    "default": "GB/T39412-6.1.1.1 输入验证不足"
+  },
+  "WEAK_RANDOM": {
+    "java": "GB/T34944-6.2.6.10 不充分的随机数；GB/T39412-6.2.1.2 随机数安全",
+    "default": "GB/T39412-6.2.1.2 随机数安全"
+  },
+  "XXE": {
+    "java": "GB/T39412-6.1.1.1 输入验证不足",
+    "python": "GB/T39412-6.1.1.1 输入验证不足",
+    "default": "GB/T39412-6.1.1.1 输入验证不足"
   }
 };
 
@@ -851,7 +705,39 @@ export class QuickScanService {
       "DOUBLE_FREE": { reachability: 2, impact: 2, complexity: 2 },
       "USE_AFTER_FREE": { reachability: 2, impact: 3, complexity: 2 },
       "TEMP_FILE_EXPOSURE": { reachability: 2, impact: 2, complexity: 2 },
-      "MEMORY_LEAK": { reachability: 2, impact: 2, complexity: 2 }
+      "MEMORY_LEAK": { reachability: 2, impact: 2, complexity: 2 },
+      "UNRESTRICTED_FILE_UPLOAD": { reachability: 3, impact: 3, complexity: 2 },
+      "MISSING_ACCESS_CONTROL": { reachability: 3, impact: 3, complexity: 2 },
+      "NO_RATE_LIMIT": { reachability: 2, impact: 2, complexity: 1 },
+      "HARDCODED_CREDENTIALS": { reachability: 3, impact: 2, complexity: 3 },
+      "RSA_WEAK_PADDING": { reachability: 2, impact: 2, complexity: 1 },
+      "INSECURE_COOKIE_AUTH": { reachability: 2, impact: 2, complexity: 2 },
+      "JNDI_INJECTION": { reachability: 3, impact: 3, complexity: 3 },
+      "XSS_REFLECTED": { reachability: 3, impact: 2, complexity: 2 },
+      "XSS_STORED": { reachability: 3, impact: 2, complexity: 2 },
+      "SQL_INJECTION_MYBATIS": { reachability: 3, impact: 3, complexity: 3 },
+      "SQL_INJECTION_ORDERBY": { reachability: 3, impact: 3, complexity: 3 },
+      "SQL_INJECTION_GROUPBY": { reachability: 3, impact: 2, complexity: 3 },
+      "SQL_INJECTION_HQL": { reachability: 3, impact: 3, complexity: 3 },
+      "AUTH_BYPASS_URI": { reachability: 3, impact: 3, complexity: 2 },
+      "AUTH_BYPASS_SUFFIX": { reachability: 3, impact: 3, complexity: 2 },
+      "AUTH_BYPASS_SPRING": { reachability: 3, impact: 3, complexity: 2 },
+      "AUTH_CSRF_DISABLED": { reachability: 3, impact: 2, complexity: 2 },
+      "CSRF_DISABLED": { reachability: 3, impact: 2, complexity: 2 },
+      "CSRF_PROTECTION": { reachability: 3, impact: 2, complexity: 2 },
+      "CSRF_MISSING": { reachability: 3, impact: 2, complexity: 2 },
+      "COMPONENT_VULNERABILITY": { reachability: 3, impact: 3, complexity: 1 },
+      "SWAGGER_EXPOSURE": { reachability: 2, impact: 1, complexity: 1 },
+      "STRUTS_WILDCARD": { reachability: 3, impact: 3, complexity: 1 },
+      "BLACKLIST_VALIDATION": { reachability: 3, impact: 2, complexity: 2 },
+      "RACE_CONDITION": { reachability: 2, impact: 2, complexity: 2 },
+      "EXCEPTION_INFO_LEAK": { reachability: 2, impact: 1, complexity: 1 },
+      "ASSERT_MISUSE": { reachability: 2, impact: 1, complexity: 1 },
+      "FILE_UPLOAD": { reachability: 3, impact: 2, complexity: 2 },
+      "FILE_READ": { reachability: 3, impact: 2, complexity: 2 },
+      "WEAK_RANDOM": { reachability: 2, impact: 2, complexity: 2 },
+      "XXE": { reachability: 3, impact: 3, complexity: 2 },
+      "UNCONTROLLED_MEMORY": { reachability: 2, impact: 2, complexity: 2 }
     };
 
     const config = cvssConfig[vulnType] || { reachability: 2, impact: 2, complexity: 2 };
@@ -934,8 +820,10 @@ export class QuickScanService {
     console.log(`[快速扫描] 正在扫描文件: ${relativePath}`);
     
     const language = this.detectLanguage(filePath);
-    if (language === "unknown" || !this.patterns[language]) {
-      console.log(`[快速扫描] 跳过文件 (未知语言): ${relativePath}`);
+    const engine = await this._ensureEngine();
+    const hasRules = (this.patterns[language] && this.patterns[language].length > 0) || (engine && this._engineReady && engine.getTaintSinks(language).length > 0);
+    if (language === "unknown" || !hasRules) {
+      console.log(`[快速扫描] 跳过文件 (未知语言或无规则): ${relativePath}`);
       return [];
     }
 
@@ -944,7 +832,6 @@ export class QuickScanService {
       const lines = content.split("\n");
       console.log(`[快速扫描] 读取文件成功: ${relativePath} (${lines.length} 行)`);
 
-      const engine = await this._ensureEngine();
       let rawMatches;
 
       if (engine && this._engineReady) {
@@ -1319,7 +1206,39 @@ export class QuickScanService {
       "SESSION_FIXATION": 5.9,
       "COOKIE_MANIPULATION": 5.3,
       "IMPROPER_EXCEPTION_HANDLING": 5.3,
-      "INFINITE_LOOP": 5.3
+      "INFINITE_LOOP": 5.3,
+      "UNRESTRICTED_FILE_UPLOAD": 8.6,
+      "MISSING_ACCESS_CONTROL": 8.6,
+      "NO_RATE_LIMIT": 5.3,
+      "HARDCODED_CREDENTIALS": 7.5,
+      "RSA_WEAK_PADDING": 5.9,
+      "INSECURE_COOKIE_AUTH": 5.3,
+      "JNDI_INJECTION": 9.8,
+      "XSS_REFLECTED": 6.1,
+      "XSS_STORED": 6.1,
+      "SQL_INJECTION_MYBATIS": 9.8,
+      "SQL_INJECTION_ORDERBY": 9.8,
+      "SQL_INJECTION_GROUPBY": 9.8,
+      "SQL_INJECTION_HQL": 9.8,
+      "AUTH_BYPASS_URI": 9.8,
+      "AUTH_BYPASS_SUFFIX": 9.8,
+      "AUTH_BYPASS_SPRING": 9.8,
+      "AUTH_CSRF_DISABLED": 8.0,
+      "CSRF_DISABLED": 8.0,
+      "CSRF_PROTECTION": 8.0,
+      "CSRF_MISSING": 8.0,
+      "COMPONENT_VULNERABILITY": 9.8,
+      "SWAGGER_EXPOSURE": 5.3,
+      "STRUTS_WILDCARD": 9.8,
+      "BLACKLIST_VALIDATION": 7.5,
+      "RACE_CONDITION": 5.3,
+      "EXCEPTION_INFO_LEAK": 5.3,
+      "ASSERT_MISUSE": 5.3,
+      "FILE_UPLOAD": 8.6,
+      "FILE_READ": 7.5,
+      "WEAK_RANDOM": 7.5,
+      "XXE": 8.6,
+      "UNCONTROLLED_MEMORY": 7.5
     };
 
     const severityMultiplier = {

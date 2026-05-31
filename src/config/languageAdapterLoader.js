@@ -1,8 +1,3 @@
-/**
- * 语言安全控制适配器加载器
- * 从 config/language_adapters/*.yaml 读取语言特定的安全控制模式
- * 用于增强 contextAwareFilter 和 securityHintProfile
- */
 import { readFileSync, readdirSync } from "node:fs";
 import path from "path";
 import yaml from "js-yaml";
@@ -47,47 +42,51 @@ export function getLanguageAdapters() {
   return _adapters;
 }
 
-/**
- * 获取指定语言的安全控制检测模式
- * 返回 { authentication, authorization, input_validation, parameterized_query, ... }
- */
+function getAdapter(language) {
+  const adapters = getLanguageAdapters();
+  return adapters[language.toLowerCase()];
+}
+
 export function getControlPatterns(language) {
-  const adapters = getLanguageAdapters();
-  const adapter = adapters[language.toLowerCase()];
-  return adapter?.control_patterns || {};
+  return getAdapter(language)?.control_patterns || {};
 }
 
-/**
- * 获取指定语言的危险模式列表
- * 返回 { command_exec, sql_injection_risk, deserialization, ... }
- */
 export function getDangerousPatterns(language) {
-  const adapters = getLanguageAdapters();
-  const adapter = adapters[language.toLowerCase()];
-  return adapter?.dangerous_patterns || {};
+  return getAdapter(language)?.dangerous_patterns || {};
 }
 
-/**
- * 获取框架特定配置（如 Spring Boot config files 位置）
- */
 export function getFrameworkConfig(language) {
-  const adapters = getLanguageAdapters();
-  const adapter = adapters[language.toLowerCase()];
-  return adapter?.framework_configs || {};
+  return getAdapter(language)?.framework_configs || {};
 }
 
-/**
- * 构建安全控制上下文文本，用于增强 LLM 提示词
- */
+export function getUriParsingPatterns(language) {
+  return getAdapter(language)?.uri_parsing || {};
+}
+
+export function getAuthBypassTechPatterns(language) {
+  return getAdapter(language)?.auth_bypass_tech_detection || {};
+}
+
+export function getBypassPayloads(language) {
+  return getAdapter(language)?.bypass_payloads || {};
+}
+
+export function getRouteAnnotations(language) {
+  return getAdapter(language)?.route_annotations || {};
+}
+
+function flattenPatterns(catPatterns) {
+  if (Array.isArray(catPatterns)) return catPatterns;
+  return Object.values(catPatterns).flat();
+}
+
 export function buildSecurityControlContext(language) {
   const patterns = getControlPatterns(language);
   if (Object.keys(patterns).length === 0) return "";
 
   const sections = [];
   for (const [category, catPatterns] of Object.entries(patterns)) {
-    const names = Array.isArray(catPatterns)
-      ? catPatterns.join(", ")
-      : Object.values(catPatterns).flat().join(", ");
+    const names = flattenPatterns(catPatterns).join(", ");
     if (names) {
       sections.push(`  ${category}: ${names}`);
     }
@@ -96,6 +95,155 @@ export function buildSecurityControlContext(language) {
   return sections.length > 0
     ? `\n【${language} 安全控制模式识别】\n${sections.join("\n")}`
     : "";
+}
+
+export function buildDangerousPatternsContext(language) {
+  const patterns = getDangerousPatterns(language);
+  if (Object.keys(patterns).length === 0) return "";
+
+  const sections = [];
+  for (const [category, pats] of Object.entries(patterns)) {
+    if (Array.isArray(pats) && pats.length > 0) {
+      sections.push(`  ${category}:\n    ${pats.join("\n    ")}`);
+    }
+  }
+
+  return sections.length > 0
+    ? `\n【${language} 危险API/模式识别】（重点审查目标）\n${sections.join("\n")}`
+    : "";
+}
+
+export function buildUriParsingContext(language) {
+  const uriParsing = getUriParsingPatterns(language);
+  if (Object.keys(uriParsing).length === 0) return "";
+
+  const sections = [];
+  if (uriParsing.dangerous_uri_sources?.length) {
+    sections.push(`  危险URI获取方式（不处理分号/编码/路径穿越）:\n    ${uriParsing.dangerous_uri_sources.join("\n    ")}`);
+  }
+  if (uriParsing.safe_uri_sources?.length) {
+    sections.push(`  安全URI获取方式（已做归一化处理）:\n    ${uriParsing.safe_uri_sources.join("\n    ")}`);
+  }
+  if (uriParsing.bypass_indicators?.length) {
+    sections.push(`  绕过指示器（存在这些模式说明可能有绕过风险）:\n    ${uriParsing.bypass_indicators.join("\n    ")}`);
+  }
+
+  return sections.length > 0
+    ? `\n【${language} URI解析与鉴权绕过检测】\n${sections.join("\n")}`
+    : "";
+}
+
+export function buildAuthBypassTechContext(language) {
+  const tech = getAuthBypassTechPatterns(language);
+  if (Object.keys(tech).length === 0) return "";
+
+  const sections = [];
+  if (tech.shiro_cve?.length) {
+    sections.push(`  Shiro已知CVE版本/漏洞:\n    ${tech.shiro_cve.join("\n    ")}`);
+  }
+  if (tech.spring_security_misconfig?.length) {
+    sections.push(`  Spring Security错误配置:\n    ${tech.spring_security_misconfig.join("\n    ")}`);
+  }
+  if (tech.spring_mvc_suffix?.length) {
+    sections.push(`  Spring MVC后缀匹配绕过:\n    ${tech.spring_mvc_suffix.join("\n    ")}`);
+  }
+  if (tech.path_matching_issues?.length) {
+    sections.push(`  路径匹配问题:\n    ${tech.path_matching_issues.join("\n    ")}`);
+  }
+
+  return sections.length > 0
+    ? `\n【${language} 鉴权绕过技术栈检测】\n${sections.join("\n")}`
+    : "";
+}
+
+export function buildBypassPayloadsContext(language) {
+  const payloads = getBypassPayloads(language);
+  if (Object.keys(payloads).length === 0) return "";
+
+  const sections = [];
+  if (payloads.semicolon?.length) {
+    sections.push(`  分号绕过: ${payloads.semicolon.join(", ")}`);
+  }
+  if (payloads.path_traversal?.length) {
+    sections.push(`  路径穿越: ${payloads.path_traversal.join(", ")}`);
+  }
+  if (payloads.double_slash?.length) {
+    sections.push(`  双斜杠: ${payloads.double_slash.join(", ")}`);
+  }
+  if (payloads.encoding?.length) {
+    sections.push(`  编码绕过: ${payloads.encoding.join(", ")}`);
+  }
+
+  return sections.length > 0
+    ? `\n【${language} 常见鉴权绕过Payload】\n${sections.join("\n")}`
+    : "";
+}
+
+export function buildRouteAnnotationsContext(language) {
+  const routes = getRouteAnnotations(language);
+  if (Object.keys(routes).length === 0) return "";
+
+  const sections = [];
+  for (const [framework, annotations] of Object.entries(routes)) {
+    if (Array.isArray(annotations) && annotations.length > 0) {
+      sections.push(`  ${framework}: ${annotations.join(", ")}`);
+    }
+  }
+
+  return sections.length > 0
+    ? `\n【${language} Web框架路由注解识别】（标记端点后检查是否有鉴权注解）\n${sections.join("\n")}`
+    : "";
+}
+
+export function buildFrameworkConfigContext(language) {
+  const configs = getFrameworkConfig(language);
+  if (Object.keys(configs).length === 0) return "";
+
+  const sections = [];
+  for (const [framework, cfg] of Object.entries(configs)) {
+    const parts = [];
+    if (cfg.config_files?.length) {
+      parts.push(`配置文件: ${cfg.config_files.join(", ")}`);
+    }
+    if (cfg.security_location) {
+      parts.push(`安全配置位置: ${cfg.security_location}`);
+    }
+    if (cfg.controller_location) {
+      parts.push(`控制器位置: ${cfg.controller_location}`);
+    }
+    if (cfg.action_location) {
+      parts.push(`Action位置: ${cfg.action_location}`);
+    }
+    if (cfg.mapper_location) {
+      parts.push(`Mapper位置: ${cfg.mapper_location}`);
+    }
+    if (cfg.entity_location) {
+      parts.push(`Entity位置: ${cfg.entity_location}`);
+    }
+    if (cfg.config_class_pattern) {
+      parts.push(`配置类模式: ${cfg.config_class_pattern}`);
+    }
+    if (parts.length > 0) {
+      sections.push(`  ${framework}:\n    ${parts.join("\n    ")}`);
+    }
+  }
+
+  return sections.length > 0
+    ? `\n【${language} 框架安全配置定位】\n${sections.join("\n")}`
+    : "";
+}
+
+export function buildFullLanguageContext(language) {
+  const parts = [
+    buildSecurityControlContext(language),
+    buildDangerousPatternsContext(language),
+    buildUriParsingContext(language),
+    buildAuthBypassTechContext(language),
+    buildBypassPayloadsContext(language),
+    buildRouteAnnotationsContext(language),
+    buildFrameworkConfigContext(language),
+  ];
+  return parts.filter(Boolean).join("\n");
 }
 
 export function resetLanguageAdapters() {

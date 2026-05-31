@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "path";
 import { withRetryWithFallback } from "../core/index.js";
 import { ragService } from "../services/ragService.js";
-import { buildSecurityControlContext } from "./languageAdapterLoader.js";
+import { buildFullLanguageContext } from "./languageAdapterLoader.js";
 
 export const REVIEW_PRIORITY_LAYERS = `
 【审查规则优先级分层 - 必须严格遵守】
@@ -893,7 +893,7 @@ async function loadSecurityDomainGuides(vulnerabilityTypes = []) {
   return sections.join('\n');
 }
 
-export async function buildSystemPrompt(selectedSkills, auditKnowledge = {}, languages = []) {
+export async function buildSystemPrompt(selectedSkills, auditKnowledge = {}, languages = [], modelMaxTokens = 65536) {
   const gbtSkill = selectedSkills.find(skill => skill.id === "gbt-code-audit");
   const isGbtAudit = gbtSkill !== undefined;
 
@@ -1012,21 +1012,22 @@ export async function buildSystemPrompt(selectedSkills, auditKnowledge = {}, lan
       }
     }
 
-    // 添加语言安全控制模式识别（来自 YAML 适配器）
     if (languages && languages.length > 0) {
-      const controlContexts = [];
+      const langContexts = [];
       for (const lang of languages) {
-        const ctx = buildSecurityControlContext(lang);
-        if (ctx && !controlContexts.includes(ctx)) {
-          controlContexts.push(ctx);
+        const ctx = buildFullLanguageContext(lang);
+        if (ctx && !langContexts.includes(ctx)) {
+          langContexts.push(ctx);
         }
       }
-      if (controlContexts.length > 0) {
+      if (langContexts.length > 0) {
         prompt.push(
           "",
-          "【安全控制模式识别】（辅助判定，非漏洞证据）：",
-          "注意：以下安全控制模式仅用于辅助判断代码是否存在防护措施，不是漏洞的直接证据。",
-          ...controlContexts
+          "【语言安全适配器上下文】（辅助判定，增强审查准确性）：",
+          "以下包含安全控制模式、危险API、URI解析绕过、鉴权绕过技术、路由注解、框架配置等信息。",
+          "安全控制模式仅用于辅助判断代码是否存在防护措施，不是漏洞的直接证据。",
+          "危险API和绕过技术是重点审查目标，发现相关模式应深入分析。",
+          ...langContexts
         );
       }
     }
@@ -1127,7 +1128,7 @@ export async function buildSystemPrompt(selectedSkills, auditKnowledge = {}, lan
   const fullPrompt = prompt.join("\n");
   const { estimateTokens } = await import("../utils/contextManager.js");
   const totalTokens = estimateTokens ? estimateTokens(fullPrompt) : fullPrompt.length / 2;
-  const MAX_SYSTEM_TOKENS = 30000;
+  const MAX_SYSTEM_TOKENS = Math.min(80000, Math.max(30000, Math.floor(modelMaxTokens * 0.35)));
 
   if (totalTokens > MAX_SYSTEM_TOKENS) {
     console.warn(`[LLM提示词] System Prompt 过大 (${totalTokens} tokens)，执行渐进裁剪`);

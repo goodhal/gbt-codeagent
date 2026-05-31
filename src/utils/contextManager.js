@@ -8,26 +8,10 @@ try {
   console.warn('[上下文管理器] tiktoken 加载失败，使用启发式估算');
 }
 
-const MODEL_MAX_TOKENS = {
-  'gpt-4-32k': 32768,
-  'gpt-4': 8192,
-  'gpt-3.5-turbo-16k': 16384,
-  'gpt-3.5-turbo': 4096,
-  'qwen': 65536,
-  'deepseek-chat': 131072,
-  'deepseek-v4': 131072,
-  'deepseek-r1': 131072,
-  'deepseek': 131072,
-  'claude': 200000
-};
+const DEFAULT_MAX_TOKENS = 128000;
 
-function getModelMaxTokens(model = 'gpt-3.5-turbo') {
-  for (const [key, value] of Object.entries(MODEL_MAX_TOKENS)) {
-    if (model.toLowerCase().includes(key.toLowerCase())) {
-      return value;
-    }
-  }
-  return 65536;
+function getModelMaxTokens(model = '') {
+  return DEFAULT_MAX_TOKENS;
 }
 
 async function countTokensTiktoken(text, model = 'gpt-3.5-turbo') {
@@ -83,15 +67,26 @@ async function estimateMessagesTokensAsync(messages, model) {
 }
 
 const ContextConfig = {
-  MAX_TOTAL_TOKENS: 100000,
-  MAX_PROMPT_TOKENS: 40000,
-  MAX_COMPLETION_TOKENS: 4096,
   SAFETY_MARGIN: 0.85,
   MIN_RECENT_MESSAGES: 10,
   COMPRESSION_THRESHOLD: 0.9,
   SEMANTIC_CHUNK_SIZE: 500,
   SEMANTIC_CHUNK_OVERLAP: 50
 };
+
+function getContextConfig(modelMaxTokens) {
+  const maxTokens = modelMaxTokens || 65536;
+  return {
+    MAX_TOTAL_TOKENS: maxTokens,
+    MAX_PROMPT_TOKENS: Math.floor(maxTokens * 0.75),
+    MAX_COMPLETION_TOKENS: Math.min(16384, Math.max(4096, Math.floor(maxTokens * 0.08))),
+    SAFETY_MARGIN: ContextConfig.SAFETY_MARGIN,
+    MIN_RECENT_MESSAGES: ContextConfig.MIN_RECENT_MESSAGES,
+    COMPRESSION_THRESHOLD: ContextConfig.COMPRESSION_THRESHOLD,
+    SEMANTIC_CHUNK_SIZE: ContextConfig.SEMANTIC_CHUNK_SIZE,
+    SEMANTIC_CHUNK_OVERLAP: ContextConfig.SEMANTIC_CHUNK_OVERLAP,
+  };
+}
 
 class IncrementalSummary {
   constructor() {
@@ -426,14 +421,21 @@ class StreamCompressor {
 }
 
 class PromptCompressor {
-  constructor(config = ContextConfig) {
-    this.config = config;
+  constructor(config = null) {
+    this.config = config || ContextConfig;
     this.incrementalSummary = new IncrementalSummary();
+    this._modelMaxTokens = null;
+  }
+
+  setModelMaxTokens(modelMaxTokens) {
+    this._modelMaxTokens = modelMaxTokens;
+    this.config = getContextConfig(modelMaxTokens);
   }
 
   shouldCompress(messages) {
     const totalTokens = estimateMessagesTokens(messages);
-    return totalTokens > this.config.MAX_TOTAL_TOKENS * this.config.COMPRESSION_THRESHOLD;
+    const maxTotal = this.config.MAX_TOTAL_TOKENS || (this._modelMaxTokens || 65536);
+    return totalTokens > maxTotal * this.config.COMPRESSION_THRESHOLD;
   }
 
   compress(messages) {
@@ -696,6 +698,7 @@ export {
   countTokensTiktoken,
   getModelMaxTokens,
   ContextConfig,
+  getContextConfig,
   IncrementalSummary,
   SemanticChunker,
   StreamCompressor,

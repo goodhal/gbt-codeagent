@@ -348,7 +348,7 @@ function renderFindings(findings, emptyMessage, verdictMap) {
 
             const extraInfo = isGbtFinding ? `
               <p><strong>漏洞类型：</strong>${escapeHtml(finding.vulnType || "UNKNOWN")}</p>
-              <p><strong>CWE：</strong>${escapeHtml(finding.cwe || "CWE-000")}</p>
+              <p><strong>CWE：</strong>${escapeHtml(finding.cwe || "未分类")}</p>
               <p><strong>国标映射：</strong>${escapeHtml(finding.gbtMapping || "GB/T39412-2020 通用基线")}</p>
               <p><strong>OWASP 映射：</strong>${escapeHtml(owaspDisplay)}</p>
               <p><strong>CVSS 评分：</strong>${escapeHtml(String(finding.cvssScore || 0.0))}</p>

@@ -27,7 +27,7 @@ import { callLLM } from "./llmFactory.js";
 import { AuditCandidateFilter } from "./auditCandidateFilter.js";
 import { AuditFailureTracker, TokenPreChecker, AgentOutputValidator } from "./auditEnhancer.js";
 
-import { loadAuditParams, getMaxBatches, getMaxFilesPerBatch, getMaxCharsPerBatch, getMaxParallelRequests, getFetchTimeoutMs } from "../config/auditParamsConfig.js";
+import { loadAuditParams, getMaxBatches, getMaxFilesPerBatch, getMaxCharsPerBatch, getMaxParallelRequests, getFetchTimeoutMs, getEffectiveBatchParams, getCompletionTokens } from "../config/auditParamsConfig.js";
 import { smartFileFilter } from "./smartFileFilter.js";
 
 const llmCircuitBreaker = new CircuitBreaker("llm-service", {
@@ -61,7 +61,8 @@ export class DefensiveLlmReviewer {
     }
 
     const sourceRoot = path.join(process.cwd(), "workspace", "downloads", project.id);
-    const files = await collectFilesWithContent(sourceRoot);
+    const modelMaxTokens = getModelMaxTokens(llmConfig.model);
+    const files = await collectFilesWithContent(sourceRoot, modelMaxTokens);
     auditFailureTracker.reset();
     if (!files.length) {
       return {
@@ -144,7 +145,9 @@ export class DefensiveLlmReviewer {
     const vulnerabilityTypes = [...new Set(heuristicFindings.map(f => f.vulnType).filter(Boolean))];
     const selectedSkillIds = selectedSkills.map(s => s.id);
     const auditKnowledge = await loadAuditKnowledge({ languages, vulnerabilityTypes, selectedSkillIds });
-    const systemPrompt = await buildSystemPrompt(selectedSkills, auditKnowledge, languages);
+    llmOptimizer.setModelMaxTokens(modelMaxTokens);
+    promptCompressor.setModelMaxTokens(modelMaxTokens);
+    const systemPrompt = await buildSystemPrompt(selectedSkills, auditKnowledge, languages, modelMaxTokens);
     const enhancedPrompt = createEnhancedPrompt({
       includeContextAnalysis: true,
       includeBusinessLogic: true,
@@ -153,7 +156,6 @@ export class DefensiveLlmReviewer {
     });
     const fullSystemPrompt = systemPrompt + '\n\n' + enhancedPrompt;
 
-    const modelMaxTokens = getModelMaxTokens(llmConfig.model);
     const effectiveMaxTokens = Math.floor(modelMaxTokens * 0.85);
     let finalSystemPrompt = fullSystemPrompt;
     let systemPromptTokens = estimateTokens(fullSystemPrompt);
@@ -167,7 +169,7 @@ export class DefensiveLlmReviewer {
     const availableTokensPerBatch = Math.max(4000, effectiveMaxTokens - systemPromptTokens - userPromptTemplateOverhead);
     console.log(`[LLM审计] Token预算 - 模型上限: ${modelMaxTokens}, 有效上限: ${effectiveMaxTokens}, System: ${systemPromptTokens}, 每批可用: ${availableTokensPerBatch}`);
 
-    const batches = buildBatches(prioritizedFiles, availableTokensPerBatch);
+    const batches = buildBatches(prioritizedFiles, availableTokensPerBatch, modelMaxTokens);
     const findings = [];
     const warnings = [];
     let reviewedFiles = 0;
@@ -281,7 +283,8 @@ export class DefensiveLlmReviewer {
     }
 
     const sourceRoot = path.join(process.cwd(), "workspace", "downloads", project.id);
-    const files = await collectFilesWithContent(sourceRoot);
+    const modelMaxTokens = getModelMaxTokens(llmConfig.model);
+    const files = await collectFilesWithContent(sourceRoot, modelMaxTokens);
     auditFailureTracker.reset();
     if (!files.length) {
       return {
@@ -297,9 +300,10 @@ export class DefensiveLlmReviewer {
     // 对于独立审计，我们处理所有文件，而不仅仅是排名靠前的文件
     const languages = [...new Set(files.map(f => f.language).filter(Boolean))];
     const auditKnowledge = await loadAuditKnowledge({ languages, vulnerabilityTypes: [], selectedSkillIds: selectedSkills.map(s => s.id) });
-    const systemPrompt = await buildSystemPrompt(selectedSkills, auditKnowledge, languages);
+    llmOptimizer.setModelMaxTokens(modelMaxTokens);
+    promptCompressor.setModelMaxTokens(modelMaxTokens);
+    const systemPrompt = await buildSystemPrompt(selectedSkills, auditKnowledge, languages, modelMaxTokens);
 
-    const modelMaxTokens = getModelMaxTokens(llmConfig.model);
     const effectiveMaxTokens = Math.floor(modelMaxTokens * 0.85);
     let finalSystemPrompt = systemPrompt;
     let systemPromptTokens = estimateTokens(systemPrompt);
@@ -313,7 +317,7 @@ export class DefensiveLlmReviewer {
     const availableTokensPerBatch = Math.max(4000, effectiveMaxTokens - systemPromptTokens - userPromptTemplateOverhead);
     console.log(`[LLM审计] Token预算 - 模型上限: ${modelMaxTokens}, 有效上限: ${effectiveMaxTokens}, System: ${systemPromptTokens}, 每批可用: ${availableTokensPerBatch}`);
 
-    const batches = buildBatches(files, availableTokensPerBatch);
+    const batches = buildBatches(files, availableTokensPerBatch, modelMaxTokens);
     const findings = [];
     const warnings = [];
     let auditedFiles = 0;
@@ -646,13 +650,14 @@ async function executeToolCall(toolCall, sourceRoot, batchFindings = null, readF
 async function requestWithTools({ llmConfig, messages, tools }) {
   const model = llmConfig.model || 'gpt-3.5-turbo';
   const clean = (s) => sanitizeContent(typeof s === 'string' ? s : JSON.stringify(s));
+  const completionTokens = getCompletionTokens(getModelMaxTokens(model));
 
   console.log(`[LLM审计] 工具模式请求 - 模型: ${model}, 消息数: ${messages.length}`);
   
   const body = {
     model,
     temperature: 0,
-    max_tokens: 4096,
+    max_tokens: completionTokens,
     messages: messages.map(m => {
       const msg = { role: m.role, content: m.content ? clean(m.content) : null };
       if (m.tool_calls) msg.tool_calls = m.tool_calls;
@@ -760,6 +765,7 @@ async function requestStructuredReview({ llmConfig, systemPrompt, userPrompt }) 
   const compatibility = llmConfig.compatibility || llmConfig.defaults?.compatibility || "openai";
   const model = llmConfig.model || 'gpt-3.5-turbo';
   const maxTokens = getModelMaxTokens(model);
+  const completionTokens = getCompletionTokens(maxTokens);
 
   const systemTokens = estimateTokens(systemPrompt);
   const userTokens = estimateTokens(userPrompt);
@@ -797,7 +803,7 @@ async function requestStructuredReview({ llmConfig, systemPrompt, userPrompt }) 
         },
         body: JSON.stringify({
           model: llmConfig.model,
-          max_tokens: 4096,
+          max_tokens: completionTokens,
           temperature: 0,
           system: optimizedSystem,
           messages: [{ role: "user", content: optimizedUser }]
@@ -873,7 +879,7 @@ async function requestStructuredReview({ llmConfig, systemPrompt, userPrompt }) 
       body: JSON.stringify({
         model: llmConfig.model,
         temperature: 0,
-        max_tokens: 4096,
+        max_tokens: completionTokens,
         messages: [
           { role: "system", content: optimizedSystem },
           { role: "user", content: optimizedUser }
@@ -943,6 +949,7 @@ async function requestStructuredReviewStream({ llmConfig, systemPrompt, userProm
   const compatibility = llmConfig.compatibility || llmConfig.defaults?.compatibility || "openai";
   const model = llmConfig.model || 'gpt-3.5-turbo';
   const maxTokens = getModelMaxTokens(model);
+  const completionTokens = getCompletionTokens(maxTokens);
 
   let optimizedSystem = systemPrompt;
   let optimizedUser = userPrompt;
@@ -980,7 +987,7 @@ async function requestStructuredReviewStream({ llmConfig, systemPrompt, userProm
       },
       body: JSON.stringify({
         model: llmConfig.model,
-        max_tokens: 4096,
+        max_tokens: completionTokens,
         temperature: 0,
         stream: true,
         system: optimizedSystem,
@@ -1072,7 +1079,7 @@ async function requestStructuredReviewStream({ llmConfig, systemPrompt, userProm
     body: JSON.stringify({
       model: llmConfig.model,
       temperature: 0,
-      max_tokens: 4096,
+      max_tokens: completionTokens,
       stream: true,
       messages: [
         { role: "system", content: optimizedSystem },
@@ -1112,7 +1119,7 @@ async function requestStructuredReviewStream({ llmConfig, systemPrompt, userProm
   return fullText;
 }
 
-async function collectFilesWithContent(root) {
+async function collectFilesWithContent(root, modelMaxTokens = 65536) {
   try {
     const output = [];
     await walk(root, root, output);
@@ -1147,11 +1154,14 @@ async function walk(root, currentPath, output) {
     const rawContent = await fs.readFile(target, "utf8");
     const relativePath = path.relative(root, target).replaceAll("\\", "/");
 
-    if (rawContent.length > 15000) {
+    const splitThreshold = Math.min(80000, Math.max(15000, Math.floor((modelMaxTokens || 65536) * 0.15)));
+    const chunkSize = Math.min(50000, Math.max(8000, Math.floor((modelMaxTokens || 65536) * 0.25)));
+
+    if (rawContent.length > splitThreshold) {
       try {
         const { CodeSplitter } = await import("./splitter.js");
-        const splitter = new CodeSplitter({ maxChunkSize: 8000, overlap: 200 });
-        const chunks = splitter.splitFileSemantic(rawContent, relativePath, language, 8000);
+        const splitter = new CodeSplitter({ maxChunkSize: chunkSize, overlap: 400 });
+        const chunks = splitter.splitFileSemantic(rawContent, relativePath, language, chunkSize);
         for (const chunk of chunks) {
           output.push({
             fullPath: target,
@@ -1223,9 +1233,7 @@ function rankFiles(files, heuristicFindings, selectedSkills) {
     .sort((a, b) => b.score - a.score);
 }
 
-function buildBatches(files, availableTokensPerBatch = Infinity) {
-  // 按优先级排序：T1(controller/filter) > T2(service/util) > T3(entity/dto)
-  // 同Tier内按风险评分降序，确保高信号文件始终在前几批
+function buildBatches(files, availableTokensPerBatch = Infinity, modelMaxTokens = 65536) {
   const sorted = [...files].sort((a, b) => {
     const pathA = a.relativePath || a.fullPath || '';
     const pathB = b.relativePath || b.fullPath || '';
@@ -1233,15 +1241,15 @@ function buildBatches(files, availableTokensPerBatch = Infinity) {
     const tierA = tierOrder[smartFileFilter.getTier(pathA)] ?? 1;
     const tierB = tierOrder[smartFileFilter.getTier(pathB)] ?? 1;
     if (tierA !== tierB) return tierA - tierB;
-    // 同Tier：文件短（精准）的优先
     return (a.content?.length || 0) - (b.content?.length || 0);
   });
 
+  const effectiveParams = getEffectiveBatchParams(modelMaxTokens);
   const batches = [];
   let currentBatch = [];
   let currentTokens = 0;
-  const maxFiles = getMaxFilesPerBatch();
-  const maxChars = Math.min(getMaxCharsPerBatch(), availableTokensPerBatch * 4);
+  const maxFiles = effectiveParams.maxFilesPerBatch;
+  const maxChars = Math.min(effectiveParams.maxCharsPerBatch, availableTokensPerBatch * 4);
   let currentChars = 0;
 
   for (const file of sorted) {
@@ -1550,7 +1558,7 @@ function normalizeFindings(findings, selectedSkills, knownFilePaths = []) {
 
       if (isGbtAudit && finding.skillId === "gbt-code-audit") {
         normalized.vulnType = safeString(finding.vulnType, "UNKNOWN");
-        normalized.cwe = safeString(finding.cwe, "CWE-000");
+        normalized.cwe = safeString(finding.cwe, "");
         normalized.gbtMapping = safeString(finding.gbtMapping, "GB/T39412-2020 通用基线");
         normalized.cvssScore = clampCvssScore(finding.cvssScore);
         const locPath = normalized.location || '';
@@ -1577,22 +1585,46 @@ function normalizeFindings(findings, selectedSkills, knownFilePaths = []) {
         normalized.owasp = owaspIds.length > 0 ? owaspIds.join(", ") : "无";
         if (normalized.cwe === "CWE-000" || !normalized.cwe) {
           const CWE_MAP = {
-            'SQL_INJECTION': 'CWE-89', 'COMMAND_INJECTION': 'CWE-78', 'CODE_INJECTION': 'CWE-94',
-            'XSS': 'CWE-79', 'PATH_TRAVERSAL': 'CWE-22', 'SSRF': 'CWE-918',
-            'DESERIALIZATION': 'CWE-502', 'HARDCODED_CREDENTIALS': 'CWE-798', 'WEAK_CRYPTO': 'CWE-327',
-            'INFORMATION_DISCLOSURE': 'CWE-200', 'AUTH_BYPASS': 'CWE-287', 'CSRF_MISSING': 'CWE-352',
-            'BUFFER_OVERFLOW': 'CWE-120', 'FORMAT_STRING': 'CWE-134', 'INTEGER_OVERFLOW': 'CWE-190',
-            'SESSION_FIXATION': 'CWE-384', 'UNRESTRICTED_FILE_UPLOAD': 'CWE-434',
-            'PLAINTEXT_PASSWORD_STORAGE': 'CWE-256', 'PLAINTEXT_PASSWORD_TRANSMISSION': 'CWE-319',
-            'XXE_INJECTION': 'CWE-611', 'LDAP_INJECTION': 'CWE-90', 'XPATH_INJECTION': 'CWE-643',
-            'PREDICTABLE_RANDOM': 'CWE-330', 'HARD_CODE_PASSWORD': 'CWE-798',
-            'COOKIE_MANIPULATION': 'CWE-613', 'PROCESS_CONTROL': 'CWE-114',
+            'SQL_INJECTION': 'CWE-89', 'SQL_INJECTION_MYBATIS': 'CWE-89',
+            'SQL_INJECTION_ORDERBY': 'CWE-89', 'SQL_INJECTION_GROUPBY': 'CWE-89',
+            'SQL_INJECTION_HQL': 'CWE-89',
+            'COMMAND_INJECTION': 'CWE-78', 'CODE_INJECTION': 'CWE-94',
+            'SPEL_INJECTION': 'CWE-94', 'SSTI': 'CWE-94', 'JNDI_INJECTION': 'CWE-917',
+            'XSS': 'CWE-79', 'XSS_REFLECTED': 'CWE-79', 'XSS_STORED': 'CWE-79',
+            'PATH_TRAVERSAL': 'CWE-22', 'ARBITRARY_FILE_READ': 'CWE-22',
+            'FILE_READ': 'CWE-22', 'FILE_UPLOAD': 'CWE-434',
+            'SSRF': 'CWE-918', 'XXE': 'CWE-611', 'XXE_INJECTION': 'CWE-611',
+            'DESERIALIZATION': 'CWE-502', 'HARDCODED_CREDENTIALS': 'CWE-798',
+            'HARD_CODE_PASSWORD': 'CWE-798', 'PLAINTEXT_PASSWORD': 'CWE-256',
+            'WEAK_CRYPTO': 'CWE-327', 'WEAK_HASH': 'CWE-328', 'RSA_WEAK_PADDING': 'CWE-780',
+            'PREDICTABLE_RANDOM': 'CWE-338', 'WEAK_RANDOM': 'CWE-338',
+            'HASH_WITHOUT_SALT': 'CWE-759',
+            'INFORMATION_DISCLOSURE': 'CWE-200', 'INFO_LEAK': 'CWE-200',
+            'EXCEPTION_INFO_LEAK': 'CWE-209', 'ASSERT_MISUSE': 'CWE-617',
+            'AUTH_BYPASS': 'CWE-287', 'AUTH_BYPASS_URI': 'CWE-287',
+            'AUTH_BYPASS_SUFFIX': 'CWE-287', 'AUTH_BYPASS_SPRING': 'CWE-287',
+            'AUTH_CSRF_DISABLED': 'CWE-352', 'AUTH_INFO_EXPOSURE': 'CWE-204',
+            'REFERER_AUTH_BYPASS': 'CWE-293', 'IDOR': 'CWE-639',
             'MISSING_ACCESS_CONTROL': 'CWE-862', 'BROKEN_ACCESS_CONTROL': 'CWE-862',
-            'WEAK_PASSWORD_POLICY': 'CWE-521', 'INFO_LEAK': 'CWE-200',
-            'PLAINTEXT_TRANSMISSION': 'CWE-319', 'WEAK_RANDOM': 'CWE-330',
+            'CSRF_MISSING': 'CWE-352', 'CSRF_DISABLED': 'CWE-352', 'CSRF_PROTECTION': 'CWE-352',
+            'SESSION_FIXATION': 'CWE-384', 'COOKIE_MANIPULATION': 'CWE-613',
+            'INSECURE_COOKIE_AUTH': 'CWE-614',
+            'BUFFER_OVERFLOW': 'CWE-120', 'FORMAT_STRING': 'CWE-134',
+            'FORMAT_STRING_VULNERABILITY': 'CWE-134', 'INTEGER_OVERFLOW': 'CWE-190',
+            'UNCONTROLLED_MEMORY': 'CWE-788', 'PROCESS_CONTROL': 'CWE-114',
+            'UNRESTRICTED_FILE_UPLOAD': 'CWE-434', 'INSECURE_FILE_VALIDATION': 'CWE-434',
+            'PLAINTEXT_PASSWORD_STORAGE': 'CWE-256', 'PLAINTEXT_PASSWORD_TRANSMISSION': 'CWE-319',
+            'PLAINTEXT_TRANSMISSION': 'CWE-319',
+            'LDAP_INJECTION': 'CWE-90', 'XPATH_INJECTION': 'CWE-643',
+            'WEAK_PASSWORD_POLICY': 'CWE-521', 'NO_RATE_LIMIT': 'CWE-307',
+            'IMPROPER_EXCEPTION_HANDLING': 'CWE-703', 'INFINITE_LOOP': 'CWE-835',
+            'LOG_INJECTION': 'CWE-117', 'OPEN_REDIRECT': 'CWE-601',
+            'CORS_MISCONFIGURATION': 'CWE-942', 'RACE_CONDITION': 'CWE-362',
+            'BLACKLIST_VALIDATION': 'CWE-184', 'SWAGGER_EXPOSURE': 'CWE-200',
+            'STRUTS_WILDCARD': 'CWE-917', 'COMPONENT_VULNERABILITY': 'CWE-1104',
             'UNCHECKED_ALLOCATION': 'CWE-252',
           };
-          normalized.cwe = CWE_MAP[vulnType] || 'CWE-000';
+          normalized.cwe = CWE_MAP[vulnType] || normalized.cwe || '';
         }
         if (normalized.cvssScore === 0 || !normalized.cvssScore) {
           const sevToCvss = { critical: 9.5, high: 7.5, medium: 5.0, low: 2.5, info: 0.1 };

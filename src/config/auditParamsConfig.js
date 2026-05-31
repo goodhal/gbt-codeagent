@@ -21,6 +21,8 @@ const DEFAULTS = {
   checkpointInterval: 2,
 };
 
+const BASE_CONTEXT_TOKENS = 128000;
+
 let _auditParams = null;
 
 function loadRawConfig() {
@@ -91,6 +93,21 @@ export function getCodeIndexMinFiles() {
 
 export function getCheckpointInterval() {
   return getAuditParams().checkpointInterval;
+}
+
+export function getEffectiveBatchParams(modelMaxTokens) {
+  const base = getAuditParams();
+  const scale = (modelMaxTokens || BASE_CONTEXT_TOKENS) / BASE_CONTEXT_TOKENS;
+  const scaledFiles = Math.min(20, Math.max(base.maxFilesPerBatch, Math.floor(base.maxFilesPerBatch * scale)));
+  const scaledChars = Math.min(300000, Math.max(base.maxCharsPerBatch, Math.floor(base.maxCharsPerBatch * scale)));
+  return {
+    maxFilesPerBatch: scaledFiles,
+    maxCharsPerBatch: scaledChars,
+  };
+}
+
+export function getCompletionTokens(modelMaxTokens) {
+  return Math.min(16384, Math.max(4096, Math.floor((modelMaxTokens || 65536) * 0.08)));
 }
 
 // 监听配置文件变更，热更新缓存

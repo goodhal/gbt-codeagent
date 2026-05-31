@@ -32,6 +32,10 @@ export class LLMOptimizer {
     };
   }
 
+  setModelMaxTokens(modelMaxTokens) {
+    this.tokenBudget.maxTokens = modelMaxTokens || 120000;
+  }
+
   _initFalsePositivePatterns() {
     return {
       testPatterns: [
@@ -432,4 +436,4 @@ export class LLMOptimizer {
       stats: this.getAuditStats()
     };
   }
-}
+}

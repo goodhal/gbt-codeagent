@@ -1,7 +1,3 @@
-/**
- * 性能监控模块（精简版）
- * 用于请求记录和性能指标收集
- */
 import { performance } from "node:perf_hooks";
 
 const requestStats = {
@@ -35,9 +31,3 @@ export function getPerformanceMetrics() {
     memoryUsage: process.memoryUsage(),
   };
 }
-
-// 保留未使用的导出以避免 import 断裂
-export function getCache() { return null; }
-export function setCache() {}
-export function withCache(fn) { return fn(); }
-export function measurePerformance(fn) { return fn(); }

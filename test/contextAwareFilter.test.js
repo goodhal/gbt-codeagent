@@ -1,79 +1,96 @@
-/**
- * 上下文感知过滤器单元测试
- */
 import { expect } from 'chai';
-import { isStringLiteralArg, hasGuardPattern, isTestOrMockFile, evaluateGuardContext } from '../src/services/contextAwareFilter.js';
+import { enhanceFindingsWithContext } from '../src/services/contextAwareFilter.js';
 
-describe('isStringLiteralArg', () => {
-  it('detects string literal', () => {
-    expect(isStringLiteralArg('"SELECT * FROM users"')).to.be.true;
-  });
-  it('detects method call with string literal', () => {
-    expect(isStringLiteralArg('  fn("hello")  ')).to.be.true;
-  });
-  it('rejects variable reference', () => {
-    expect(isStringLiteralArg('query(sql)')).to.be.false;
-  });
-  it('rejects empty string', () => {
-    expect(isStringLiteralArg('')).to.be.false;
-  });
-});
-
-describe('hasGuardPattern', () => {
-  it('finds SQL_INJECTION guard: PreparedStatement', () => {
-    const window = 'PreparedStatement pstmt = conn.prepareStatement(sql)';
-    expect(hasGuardPattern(window, 'SQL_INJECTION')).to.be.true;
-  });
-  it('finds XSS guard: textContent', () => {
-    const window = 'el.textContent = userInput';
-    expect(hasGuardPattern(window, 'XSS')).to.be.true;
-  });
-  it('returns false for unknown vuln type', () => {
-    expect(hasGuardPattern('some code', 'UNKNOWN_TYPE')).to.be.false;
-  });
-  it('returns false when no guard present', () => {
-    expect(hasGuardPattern('db.query(sql)', 'SQL_INJECTION')).to.be.false;
-  });
-});
-
-describe('isTestOrMockFile', () => {
-  it('identifies test directory', () => {
-    expect(isTestOrMockFile('src/test/java/UserService.java')).to.be.true;
-  });
-  it('identifies mock directory', () => {
-    expect(isTestOrMockFile('src/mock/auth.js')).to.be.true;
-  });
-  it('identifies .test. file', () => {
-    expect(isTestOrMockFile('utils.test.js')).to.be.true;
-  });
-  it('identifies .spec. file', () => {
-    expect(isTestOrMockFile('user.spec.ts')).to.be.true;
-  });
-  it('passes normal source file', () => {
-    expect(isTestOrMockFile('src/controllers/auth.js')).to.be.false;
-  });
-  it('handles null', () => {
-    expect(isTestOrMockFile(null)).to.be.false;
-  });
-});
-
-describe('evaluateGuardContext', () => {
-  it('high confidence for normal code', () => {
-    const lines = ['db.query(userInput)'];
-    const result = evaluateGuardContext(lines, 0, 'SQL_INJECTION');
-    expect(result.confidence).to.equal(1.0);
+describe('enhanceFindingsWithContext', () => {
+  it('returns findings unchanged when no file path', async () => {
+    const findings = [{ severity: 'high', vulnType: 'SQL_INJECTION' }];
+    const result = await enhanceFindingsWithContext(findings, '/nonexistent');
+    expect(result).to.have.length(1);
+    expect(result[0].severity).to.equal('high');
   });
 
-  it('low confidence for string literal arg', () => {
-    const lines = ['  query("SELECT * FROM users")  '];
-    const result = evaluateGuardContext(lines, 0, 'SQL_INJECTION');
-    expect(result.confidence).to.equal(0.2);
-    expect(result.notes).to.include('probably_false_positive_string_arg');
+  it('returns findings unchanged when line number is 0', async () => {
+    const findings = [{ severity: 'high', location: 'foo.js', line: 0, vulnType: 'SQL_INJECTION' }];
+    const result = await enhanceFindingsWithContext(findings, '/nonexistent');
+    expect(result).to.have.length(1);
   });
 
-  it('low confidence when guard pattern detected', () => {
-    const lines = ['PreparedStatement pstmt = conn.prepareStatement(sql); db.query(pstmt)'];
-    const result = evaluateGuardContext(lines, 0, 'SQL_INJECTION');
-    expect(result.hasGuardPattern).to.be.true;
+  it('reduces confidence for test files', async () => {
+    const findings = [{ severity: 'high', location: 'src/test/foo.java', line: 10, vulnType: 'SQL_INJECTION' }];
+    const result = await enhanceFindingsWithContext(findings, '/nonexistent');
+    expect(result[0].confidence).to.be.lessThan(0.5);
+    expect(result[0].guardContext.isTestFile).to.be.true;
+  });
+
+  it('reduces confidence for mock files', async () => {
+    const findings = [{ severity: 'high', location: 'src/mock/auth.js', line: 5, vulnType: 'XSS' }];
+    const result = await enhanceFindingsWithContext(findings, '/nonexistent');
+    expect(result[0].confidence).to.be.lessThan(0.5);
+  });
+
+  it('reduces confidence for spec files', async () => {
+    const findings = [{ severity: 'high', location: 'user.spec.ts', line: 5, vulnType: 'XSS' }];
+    const result = await enhanceFindingsWithContext(findings, '/nonexistent');
+    expect(result[0].confidence).to.be.lessThan(0.5);
+  });
+
+  it('detects guard pattern in real file', async () => {
+    const fs = await import('node:fs/promises');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ctx-test-'));
+    const fileName = 'UserService.java';
+    const content = `import java.sql.*;
+public class UserService {
+  public User findUser(String name) {
+    PreparedStatement stmt = conn.prepareStatement("SELECT * FROM users WHERE name = ?");
+    stmt.setString(1, name);
+    return stmt.executeQuery();
+  }
+}`;
+    await fs.writeFile(path.join(tmpDir, fileName), content);
+    const findings = [{ severity: 'high', location: fileName, line: 4, vulnType: 'SQL_INJECTION', confidence: 0.9 }];
+    const result = await enhanceFindingsWithContext(findings, tmpDir);
+    expect(result[0].confidence).to.be.lessThan(0.9);
+    expect(result[0].guardContext.hasGuardPattern).to.be.true;
+    await fs.rm(tmpDir, { recursive: true });
+  });
+
+  it('keeps high confidence for unguarded code', async () => {
+    const fs = await import('node:fs/promises');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ctx-test-'));
+    const fileName = 'Unsafe.java';
+    const content = `public class Unsafe {
+  public void run(String input) {
+    Runtime.getRuntime().exec(input);
+  }
+}`;
+    await fs.writeFile(path.join(tmpDir, fileName), content);
+    const findings = [{ severity: 'high', location: fileName, line: 3, vulnType: 'COMMAND_INJECTION', confidence: 0.9 }];
+    const result = await enhanceFindingsWithContext(findings, tmpDir);
+    expect(result[0].confidence).to.equal(0.9);
+    expect(result[0].guardContext.hasGuardPattern).to.be.false;
+    await fs.rm(tmpDir, { recursive: true });
+  });
+
+  it('reduces confidence for string literal arguments', async () => {
+    const fs = await import('node:fs/promises');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ctx-test-'));
+    const fileName = 'Safe.java';
+    const content = `public class Safe {
+  public void run() {
+    "SELECT * FROM users"
+  }
+}`;
+    await fs.writeFile(path.join(tmpDir, fileName), content);
+    const findings = [{ severity: 'high', location: fileName, line: 3, vulnType: 'SQL_INJECTION', confidence: 0.9 }];
+    const result = await enhanceFindingsWithContext(findings, tmpDir);
+    expect(result[0].confidence).to.be.lessThan(0.9);
+    expect(result[0].guardContext.hasStringLiteralArg).to.be.true;
+    await fs.rm(tmpDir, { recursive: true });
   });
 });

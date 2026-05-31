@@ -21,7 +21,6 @@ const RetryConfig = {
     '504'
   ],
   retryableStatusCodes: [429, 500, 502, 503, 504],
-  backoffStrategy: 'exponential',
   onRetry: null,
   onFail: null,
   maxTotalDelay: null
@@ -50,23 +49,7 @@ function isRetryable(error, config = RetryConfig) {
 }
 
 function calculateDelay(attempt, config = RetryConfig) {
-  let delay;
-
-  switch (config.backoffStrategy) {
-    case 'linear':
-      delay = config.baseDelay * (attempt + 1);
-      break;
-    case 'exponential':
-    default:
-      delay = config.baseDelay * Math.pow(config.exponentialBase, attempt);
-      break;
-    case 'fibonacci':
-      delay = config.baseDelay * fibonacci(attempt + 1);
-      break;
-    case 'constant':
-      delay = config.baseDelay;
-      break;
-  }
+  let delay = config.baseDelay * Math.pow(config.exponentialBase, attempt);
 
   delay = Math.min(delay, config.maxDelay);
 
@@ -76,11 +59,6 @@ function calculateDelay(attempt, config = RetryConfig) {
   }
 
   return Math.max(0, delay);
-}
-
-function fibonacci(n) {
-  if (n <= 1) return n;
-  return fibonacci(n - 1) + fibonacci(n - 2);
 }
 
 async function withRetry(fn, config = RetryConfig) {
@@ -141,20 +119,9 @@ async function withRetryWithFallback(fn, fallbackFn, config = RetryConfig) {
   }
 }
 
-function createRetryDecorator(config = RetryConfig) {
-  return function(target, propertyKey, descriptor) {
-    const originalMethod = descriptor.value;
-    descriptor.value = async function(...args) {
-      return await withRetry(() => originalMethod.apply(this, args), config);
-    };
-    return descriptor;
-  };
-}
-
 export { 
   withRetry, 
   withRetryWithFallback,
-  createRetryDecorator,
   isRetryable, 
   calculateDelay, 
   RetryConfig 

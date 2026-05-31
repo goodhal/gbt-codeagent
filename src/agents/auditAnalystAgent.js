@@ -334,7 +334,6 @@ export class AuditAnalystAgent {
       const totalSteps = Math.ceil(projects.length / getMaxParallelProjects());
 
       auditState.updateProgress(currentStep, totalSteps, `处理项目组 ${currentStep}/${totalSteps}`);
-      auditState.recordResourceUsage();
 
       // 处理项目组
       const groupResults = await Promise.all(
@@ -1417,9 +1416,147 @@ function createFinding(finding) {
 }
 
 function prioritizeFindings(findings) {
-  return deduplicateAndSort(findings, { preserveSources: true })
+  const FALSE_POSITIVE_PATTERNS = [
+    /no direct vulnerability/i,
+    /no executable code/i,
+    /reviewed and passed/i,
+    /no vulnerability found/i,
+    /no security issue/i,
+    /safe implementation/i,
+  ];
+
+  const filtered = findings.filter(f => {
+    const title = f.title || '';
+    return !FALSE_POSITIVE_PATTERNS.some(p => p.test(title));
+  });
+
+  const deduped = deduplicateAndSort(filtered, { preserveSources: true });
+
+  const crossSourceDeduped = crossSourceDeduplicate(deduped);
+
+  return crossSourceDeduped
     .map(f => enrichFindingFields(f))
     .filter((finding) => finding.confidence >= 0.4);
+}
+
+function crossSourceDeduplicate(findings) {
+  const LLM_SOURCES = new Set(['llm', 'gapfill']);
+  const HEURISTIC_SOURCES = new Set(['quick_scan', 'taint', 'rule', 'pattern', 'heuristic']);
+  const LINE_PROXIMITY = 5;
+
+  function getFileBasename(rawPath) {
+    const file = (rawPath || '').split(':')[0].trim();
+    if (!file) return '';
+    const parts = file.split('/');
+    return (parts[parts.length - 1] || '').toLowerCase();
+  }
+
+  function getLine(f) {
+    return f.line || parseInt((f.location || '').split(':')[1], 10) || 0;
+  }
+
+  function normalizeVulnType(vt) {
+    const MAP = {
+      'SQL_INJECTION_MYBATIS': 'SQL_INJECTION', 'SQL_INJECTION_HQL': 'SQL_INJECTION',
+      'SQL_INJECTION_ORDERBY': 'SQL_INJECTION', 'SQL_INJECTION_GROUPBY': 'SQL_INJECTION',
+      'SQL_INJECTION_MITIGATION_BYPASS': 'SQL_INJECTION',
+      'XXE': 'XXE_INJECTION',
+      'XSS_REFLECTED': 'XSS', 'XSS_STORED': 'XSS',
+      'SWAGGER_EXPOSURE': 'INFORMATION_DISCLOSURE',
+      'SENSITIVE_INFO_EXPOSURE': 'INFORMATION_DISCLOSURE',
+      'INFORMATION_LEAKAGE': 'INFORMATION_DISCLOSURE',
+      'HARDCODED_SECRET': 'HARDCODED_CREDENTIALS', 'HARDCODED_SECRETS': 'HARDCODED_CREDENTIALS',
+      'HARD_CODE_PASSWORD': 'HARDCODED_CREDENTIALS',
+      'PLAINTEXT_PASSWORD': 'HARD_CODE_PASSWORD',
+      'AUTH_BYPASS_URI': 'AUTH_BYPASS', 'AUTH_BYPASS_SPRING': 'AUTH_BYPASS',
+      'AUTH_BYPASS_SUFFIX': 'AUTH_BYPASS', 'REFERER_AUTH_BYPASS': 'AUTH_BYPASS',
+      'CSRF_DISABLED': 'CSRF', 'CSRF_PROTECTION': 'CSRF', 'CSRF_MISSING': 'CSRF',
+      'WEAK_RANDOM': 'PREDICTABLE_RANDOM',
+      'DESERIALIZATION_RCE': 'DESERIALIZATION', 'INSECURE_DESERIALIZATION': 'DESERIALIZATION',
+      'SPEL_INJECTION': 'CODE_INJECTION',
+      'BLACKLIST_VALIDATION': 'INSUFFICIENT_INPUT_VALIDATION',
+      'COMPONENT_VULNERABILITY': 'VULNERABLE_DEPENDENCY',
+      'PLAINTEXT_PASSWORD_STORAGE': 'WEAK_PASSWORD_STORAGE',
+      'PLAINTEXT_PASSWORD_TRANSMISSION': 'PLAINTEXT_TRANSMISSION',
+      'UNRESTRICTED_FILE_UPLOAD': 'FILE_UPLOAD',
+      'INSECURE_FILE_VALIDATION': 'FILE_UPLOAD',
+    };
+    return MAP[vt] || vt || '';
+  }
+
+  function makeFileVulnKey(f) {
+    const basename = getFileBasename(f.location || f.file || '');
+    const vt = normalizeVulnType(f.vulnType || f.type || '');
+    return `${basename}::${vt}`;
+  }
+
+  const llmFindings = findings.filter(f => LLM_SOURCES.has(f.source));
+  const heuristicFindings = findings.filter(f => HEURISTIC_SOURCES.has(f.source));
+  const otherFindings = findings.filter(f => !LLM_SOURCES.has(f.source) && !HEURISTIC_SOURCES.has(f.source));
+
+  const llmByFileVuln = new Map();
+  for (const f of llmFindings) {
+    const key = makeFileVulnKey(f);
+    if (!llmByFileVuln.has(key)) llmByFileVuln.set(key, []);
+    llmByFileVuln.get(key).push(f);
+  }
+
+  const keptHeuristic = [];
+  let mergedCount = 0;
+  for (const f of heuristicFindings) {
+    const key = makeFileVulnKey(f);
+    const llmCandidates = llmByFileVuln.get(key);
+    if (llmCandidates) {
+      const hLine = getLine(f);
+      const nearby = llmCandidates.find(lf => Math.abs(getLine(lf) - hLine) <= LINE_PROXIMITY);
+      if (nearby) {
+        mergedCount++;
+        if (!nearby.mergedFrom) nearby.mergedFrom = [];
+        nearby.mergedFrom.push({
+          source: f.source,
+          vulnType: f.vulnType || f.type,
+          location: f.location,
+          title: f.title,
+        });
+        continue;
+      }
+    }
+    keptHeuristic.push(f);
+  }
+
+  if (mergedCount > 0) {
+    console.log(`[去重] 跨来源合并: ${mergedCount} 条 heuristic 发现被 LLM 发现覆盖，保留 LLM 版本`);
+  }
+
+  const result = [...llmFindings, ...keptHeuristic, ...otherFindings];
+
+  const exactDupMap = new Map();
+  for (const f of result) {
+    const file = (f.location || f.file || '').split(':')[0].trim();
+    const line = getLine(f);
+    const vt = f.vulnType || f.type || '';
+    const exactKey = `${file}::${line}::${vt}`;
+    if (!exactDupMap.has(exactKey)) exactDupMap.set(exactKey, []);
+    exactDupMap.get(exactKey).push(f);
+  }
+
+  const finalResult = [];
+  let exactDupCount = 0;
+  for (const [, group] of exactDupMap) {
+    if (group.length > 1) {
+      exactDupCount += group.length - 1;
+      const best = group.find(f => LLM_SOURCES.has(f.source)) || group[0];
+      finalResult.push(best);
+    } else {
+      finalResult.push(group[0]);
+    }
+  }
+
+  if (exactDupCount > 0) {
+    console.log(`[去重] 精确重复消除: ${exactDupCount} 条完全重复发现被移除`);
+  }
+
+  return finalResult;
 }
 
 function enrichFindingFields(f) {

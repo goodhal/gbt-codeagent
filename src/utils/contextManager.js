@@ -700,8 +700,6 @@ export {
   ContextConfig,
   getContextConfig,
   IncrementalSummary,
-  SemanticChunker,
-  StreamCompressor,
   PromptCompressor,
   TokenTracker
 };

@@ -9,7 +9,6 @@ const CircuitBreakerConfig = {
   successThreshold: 3,
   recoveryTimeout: 30000,
   halfOpenMaxCalls: 3,
-  rollingWindowSize: 100,
   minSamples: 10,
   onStateChange: null,
   onRejection: null,
@@ -26,14 +25,8 @@ class CircuitStats {
     this.consecutiveSuccesses = 0;
     this.lastFailureTime = null;
     this.lastSuccessTime = null;
-    this.totalLatency = 0;
-    this.minLatency = Infinity;
-    this.maxLatency = 0;
-    this.callTimestamps = [];
     this.rollingFailures = [];
     this.rollingSuccesses = [];
-    this.stateTransitions = [];
-    this.errorTypes = new Map();
   }
 
   get failureRate() {
@@ -45,50 +38,29 @@ class CircuitStats {
     return total > 0 ? this.rollingFailures.length / total : 0;
   }
 
-  get avgLatency() {
-    return this.totalCalls > 0 ? this.totalLatency / this.totalCalls : 0;
-  }
-
-  recordSuccess(latency = 0) {
+  recordSuccess() {
     this.totalCalls++;
     this.successfulCalls++;
     this.consecutiveSuccesses++;
     this.consecutiveFailures = 0;
     this.lastSuccessTime = Date.now();
-    this._updateLatency(latency);
     this._updateRollingWindow('success');
   }
 
-  recordFailure(latency = 0, errorType = 'unknown') {
+  recordFailure(errorType = 'unknown') {
     this.totalCalls++;
     this.failedCalls++;
     this.consecutiveFailures++;
     this.consecutiveSuccesses = 0;
     this.lastFailureTime = Date.now();
-    this._updateLatency(latency);
     this._updateRollingWindow('failure');
-    this.errorTypes.set(errorType, (this.errorTypes.get(errorType) || 0) + 1);
   }
 
   recordRejection() {
     this.rejectedCalls++;
   }
 
-  recordStateTransition(fromState, toState) {
-    this.stateTransitions.push({
-      from: fromState,
-      to: toState,
-      timestamp: Date.now()
-    });
-  }
-
-  _updateLatency(latency) {
-    this.totalLatency += latency;
-    this.minLatency = Math.min(this.minLatency, latency);
-    this.maxLatency = Math.max(this.maxLatency, latency);
-  }
-
-  _updateRollingWindow(resultType, windowSize = 100) {
+  _updateRollingWindow(resultType) {
     const timestamp = Date.now();
     if (resultType === 'failure') {
       this.rollingFailures.push(timestamp);
@@ -107,25 +79,8 @@ class CircuitStats {
     this.failedCalls = 0;
     this.consecutiveFailures = 0;
     this.consecutiveSuccesses = 0;
-    this.totalLatency = 0;
-    this.minLatency = Infinity;
-    this.maxLatency = 0;
     this.rollingFailures = [];
     this.rollingSuccesses = [];
-    this.errorTypes.clear();
-  }
-
-  getRecentHistory(minutes = 5) {
-    const cutoff = Date.now() - minutes * 60 * 1000;
-    const recentFailures = this.rollingFailures.filter(t => t > cutoff);
-    const recentSuccesses = this.rollingSuccesses.filter(t => t > cutoff);
-    return {
-      recentFailures: recentFailures.length,
-      recentSuccesses: recentSuccesses.length,
-      recentFailureRate: recentFailures.length + recentSuccesses.length > 0
-        ? recentFailures.length / (recentFailures.length + recentSuccesses.length)
-        : 0
-    };
   }
 }
 
@@ -137,7 +92,6 @@ class CircuitBreaker {
     this.stats = new CircuitStats();
     this._halfOpenCalls = 0;
     this._lastStateChange = Date.now();
-    this._lock = false;
     this._pendingRequests = 0;
   }
 
@@ -158,7 +112,6 @@ class CircuitBreaker {
 
   async call(fn, options = {}) {
     const state = this.currentState;
-    const startTime = Date.now();
 
     if (state === CircuitState.OPEN) {
       this.stats.recordRejection();
@@ -183,13 +136,11 @@ class CircuitBreaker {
 
     try {
       const result = await fn();
-      const latency = Date.now() - startTime;
-      this._onSuccess(latency);
+      this._onSuccess();
       return result;
     } catch (error) {
-      const latency = Date.now() - startTime;
       const errorType = this._extractErrorType(error);
-      this._onFailure(latency, errorType);
+      this._onFailure(errorType);
       throw error;
     } finally {
       this._pendingRequests--;
@@ -214,7 +165,6 @@ class CircuitBreaker {
 
     this.state = newState;
     this._lastStateChange = Date.now();
-    this.stats.recordStateTransition(oldState, newState);
 
     console.log(`[熔断器] ${this.name} 从 ${oldState} 转为 ${newState}`);
 
@@ -223,8 +173,8 @@ class CircuitBreaker {
     }
   }
 
-  _onSuccess(latency) {
-    this.stats.recordSuccess(latency);
+  _onSuccess() {
+    this.stats.recordSuccess();
 
     if (this.state === CircuitState.HALF_OPEN) {
       if (this.stats.consecutiveSuccesses >= this.config.successThreshold) {
@@ -235,8 +185,8 @@ class CircuitBreaker {
     this._lastStateChange = Date.now();
   }
 
-  _onFailure(latency, errorType) {
-    this.stats.recordFailure(latency, errorType);
+  _onFailure(errorType) {
+    this.stats.recordFailure(errorType);
 
     const shouldOpen = this._shouldOpenCircuit();
 
@@ -271,12 +221,6 @@ class CircuitBreaker {
     return 'unknown';
   }
 
-  forceOpen() {
-    if (this.state !== CircuitState.OPEN) {
-      this._transitionToState(CircuitState.OPEN);
-    }
-  }
-
   forceClose() {
     if (this.state !== CircuitState.CLOSED) {
       this._transitionToState(CircuitState.CLOSED);
@@ -285,58 +229,11 @@ class CircuitBreaker {
     }
   }
 
-  getStatus() {
-    const recentHistory = this.stats.getRecentHistory(5);
-    return {
-      name: this.name,
-      state: this.currentState,
-      lastStateChange: this._lastStateChange,
-      pendingRequests: this._pendingRequests,
-      stats: {
-        totalCalls: this.stats.totalCalls,
-        successfulCalls: this.stats.successfulCalls,
-        failedCalls: this.stats.failedCalls,
-        rejectedCalls: this.stats.rejectedCalls,
-        failureRate: this.stats.failureRate.toFixed(2),
-        rollingFailureRate: this.stats.rollingFailureRate.toFixed(2),
-        consecutiveFailures: this.stats.consecutiveFailures,
-        consecutiveSuccesses: this.stats.consecutiveSuccesses,
-        avgLatency: this.stats.avgLatency.toFixed(2),
-        minLatency: this.stats.minLatency,
-        maxLatency: this.stats.maxLatency,
-        lastFailureTime: this.stats.lastFailureTime,
-        lastSuccessTime: this.stats.lastSuccessTime,
-        errorTypes: Object.fromEntries(this.stats.errorTypes),
-        ...recentHistory
-      },
-      config: this.config,
-      stateTransitions: this.stats.stateTransitions.slice(-10)
-    };
-  }
-
   reset() {
     this._transitionToState(CircuitState.CLOSED);
     this.stats.reset();
     this._halfOpenCalls = 0;
     console.log(`[熔断器] ${this.name} 已重置`);
-  }
-
-  getHealthScore() {
-    const status = this.getStatus();
-    const { state, stats } = status;
-
-    let score = 100;
-
-    if (state === CircuitState.OPEN) {
-      score -= 50;
-    } else if (state === CircuitState.HALF_OPEN) {
-      score -= 25;
-    }
-
-    score -= stats.failureRate * 30;
-    score -= stats.rollingFailureRate * 20;
-
-    return Math.max(0, Math.min(100, score));
   }
 }
 
@@ -348,4 +245,4 @@ class CircuitOpenError extends Error {
   }
 }
 
-export { CircuitBreaker, CircuitOpenError, CircuitState, CircuitStats, CircuitBreakerConfig };
+export { CircuitBreaker, CircuitOpenError, CircuitState, CircuitBreakerConfig };

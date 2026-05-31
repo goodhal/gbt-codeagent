@@ -75,27 +75,27 @@ function getGuardWindow(lines, lineIndex) {
   return lines.slice(start, end).join('\n');
 }
 
-export function isStringLiteralArg(lineContent) {
+function isStringLiteralArg(lineContent) {
   const trimmed = lineContent.trim();
   if (STRING_LITERAL_PATTERN.test(trimmed)) return true;
   if (METHOD_CALL_PATTERN.test(trimmed)) return true;
   return false;
 }
 
-export function hasGuardPattern(windowText, vulnType) {
+function hasGuardPattern(windowText, vulnType) {
   const patterns = GUARD_PATTERNS[vulnType];
   if (!patterns || patterns.length === 0) return false;
   return patterns.some(regex => regex.test(windowText));
 }
 
-export function isTestOrMockFile(filePath) {
+function isTestOrMockFile(filePath) {
   if (!filePath) return false;
   const lower = filePath.toLowerCase();
   return /[\\/](test|tests|__tests__|spec|mock|fixture|example|sample|demo|stub|placeholder|dummy)[\\/]/.test(lower)
     || /\.(test|spec|mock)\./.test(lower);
 }
 
-export function evaluateGuardContext(lines, lineIndex, vulnType) {
+function evaluateGuardContext(lines, lineIndex, vulnType) {
   const windowText = getGuardWindow(lines, lineIndex);
   const lineContent = lines[lineIndex]?.trim() || '';
 

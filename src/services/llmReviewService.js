@@ -63,6 +63,7 @@ export class DefensiveLlmReviewer {
     const sourceRoot = path.join(process.cwd(), "workspace", "downloads", project.id);
     const modelMaxTokens = getModelMaxTokens(llmConfig.model);
     const files = await collectFilesWithContent(sourceRoot, modelMaxTokens);
+    console.log(`[LLM审计] collectFilesWithContent: sourceRoot=${sourceRoot}, files=${files.length}`);
     auditFailureTracker.reset();
     if (!files.length) {
       return {
@@ -269,7 +270,7 @@ export class DefensiveLlmReviewer {
     if (llmCircuitBreaker.currentState !== 'closed') {
       llmCircuitBreaker.forceClose();
     }
-    console.log(`[LLM审计] auditProject 开始 - 项目: ${project.name}, 提供商: ${llmConfig.providerId}, 模型: ${llmConfig.model}`);
+    console.log(`[LLM审计] auditProject 开始 - 项目: ${project.name} (id=${project.id}), 提供商: ${llmConfig.providerId}, 模型: ${llmConfig.model}`);
     console.log(`[LLM审计] 代码知识图谱上下文: ${codeGraphContext ? '已提供' : '未提供'}`);
     if (!llmConfig?.apiKey) {
       return {
@@ -1122,14 +1123,15 @@ async function requestStructuredReviewStream({ llmConfig, systemPrompt, userProm
 async function collectFilesWithContent(root, modelMaxTokens = 65536) {
   try {
     const output = [];
-    await walk(root, root, output);
+    await walk(root, root, output, modelMaxTokens);
     return output;
-  } catch {
+  } catch (err) {
+    console.error(`[LLM审计] collectFilesWithContent 失败: ${err.message}, root=${root}`);
     return [];
   }
 }
 
-async function walk(root, currentPath, output) {
+async function walk(root, currentPath, output, modelMaxTokens) {
   const entries = await fs.readdir(currentPath, { withFileTypes: true });
   const pendingDirs = [];
   const pendingFiles = [];
@@ -1185,7 +1187,7 @@ async function walk(root, currentPath, output) {
   await Promise.all(fileReads);
 
   for (const dir of pendingDirs) {
-    await walk(root, dir, output);
+    await walk(root, dir, output, modelMaxTokens);
   }
 }
 

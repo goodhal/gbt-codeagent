@@ -85,4 +85,4 @@ export function scoreBySource(findings, gateConfig = {}) {
   };
 }
 
-export { SEVERITY_LEVEL, DEFAULT_GATE_CONFIG, mapSeverity, calcScore, evaluateGate };
+

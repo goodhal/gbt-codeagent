@@ -97,22 +97,7 @@ function getPromptSync(key) {
   return cachedPrompts[key];
 }
 
-async function getAnalysisStrategy() {
-  return getPrompt('analysisStrategy');
-}
-
-async function getFinalAnswerGuidance() {
-  return getPrompt('finalAnswerGuidance');
-}
-
-async function loadReActPrompts() {
-  return loadPromptDocument();
-}
-
 export {
   buildReActInitialPrompt,
-  buildReActSystemPrompt,
-  getAnalysisStrategy,
-  getFinalAnswerGuidance,
-  loadReActPrompts
+  buildReActSystemPrompt
 };

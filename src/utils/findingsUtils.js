@@ -94,7 +94,7 @@ export function deduplicateFindings(findings, options = {}) {
         const rawFile = finding.location || finding.file || '';
         const basename = getFileBasename(rawFile);
         const rawLine = finding.line || parseInt((finding.location || '').split(':')[1], 10) || 0;
-        const lineBucket = Math.floor(rawLine / 3) * 3;
+        const lineBucket = Math.floor(rawLine / 5) * 5;
         const sourceKey = preserveSources ? (finding.source || 'unknown') : '';
         key = `${finding.vulnType || finding.type}::${basename}::${lineBucket}::${sourceKey}`;
         break;

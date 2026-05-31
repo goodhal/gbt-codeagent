@@ -18,13 +18,9 @@ class AuditState {
     this.agentId = this._generateAgentId();
     this.agentName = "GB/T Code Agent";
     this.agentType = "code-audit";
-    this.parentId = null;
 
     this.task = "";
     this.taskContext = {};
-    this.inheritedContext = {};
-
-    this.knowledgeModules = [];
 
     this.status = AgentStatus.CREATED;
     this.iteration = 0;
@@ -45,7 +41,6 @@ class AuditState {
     this.finishedAt = null;
 
     this.waitingForInput = false;
-    this.waitingStartTime = null;
     this.waitingReason = "";
     this.waitingTimeoutSeconds = 600;
 
@@ -56,11 +51,6 @@ class AuditState {
 
     this.stopRequested = false;
     this.maxIterationsWarningSent = false;
-
-    this.heartbeatInterval = 30000;
-    this.lastHeartbeat = null;
-    this.heartbeatCount = 0;
-    this.healthStatus = "healthy";
 
     this.progress = {
       currentStep: 0,
@@ -75,12 +65,6 @@ class AuditState {
       maxIterationTime: 0,
       totalProcessingTime: 0
     };
-
-    this.resourceUsage = {
-      memoryUsage: [],
-      cpuUsage: [],
-      peakMemory: 0
-    };
   }
 
   _generateAgentId() {
@@ -91,7 +75,6 @@ class AuditState {
     this.status = AgentStatus.RUNNING;
     this.startedAt = new Date().toISOString();
     this._updateTimestamp();
-    this.recordHeartbeat();
   }
 
   incrementIteration(startTime = null) {
@@ -113,20 +96,6 @@ class AuditState {
     }
   }
 
-  recordHeartbeat() {
-    this.lastHeartbeat = new Date().toISOString();
-    this.heartbeatCount++;
-    this._updateTimestamp();
-  }
-
-  setHealthStatus(status, message = "") {
-    this.healthStatus = status;
-    if (message) {
-      this.addObservation(`Health status changed to ${status}: ${message}`, "health");
-    }
-    this._updateTimestamp();
-  }
-
   updateProgress(currentStep, totalSteps, stepName = "") {
     this.progress = {
       currentStep,
@@ -145,32 +114,6 @@ class AuditState {
     return Math.round(remainingSteps * this.performance.avgIterationTime / 1000);
   }
 
-  recordResourceUsage() {
-    if (typeof process !== 'undefined' && process.memoryUsage) {
-      const memUsage = process.memoryUsage();
-      const memoryMB = (memUsage.heapUsed / 1024 / 1024).toFixed(2);
-      this.resourceUsage.memoryUsage.push({
-        timestamp: new Date().toISOString(),
-        heapUsed: memUsage.heapUsed,
-        heapTotal: memUsage.heapTotal,
-        external: memUsage.external
-      });
-      this.resourceUsage.peakMemory = Math.max(
-        this.resourceUsage.peakMemory,
-        memUsage.heapUsed
-      );
-    }
-    this._updateTimestamp();
-  }
-
-  isHeartbeatExpired(timeoutSeconds = 120) {
-    if (!this.lastHeartbeat) return false;
-    const now = new Date();
-    const lastHeartbeat = new Date(this.lastHeartbeat);
-    const diffSeconds = (now - lastHeartbeat) / 1000;
-    return diffSeconds > timeoutSeconds;
-  }
-
   getDuration() {
     if (!this.startedAt) return 0;
     const endTime = this.finishedAt ? new Date(this.finishedAt) : new Date();
@@ -186,8 +129,6 @@ class AuditState {
       findingsCount: this.findings.length,
       errorsCount: this.errors.length,
       duration: this.getDuration(),
-      healthStatus: this.healthStatus,
-      lastHeartbeat: this.lastHeartbeat,
       progress: this.progress,
       performance: {
         avgIterationTime: this.performance.avgIterationTime,
@@ -283,11 +224,8 @@ class AuditState {
       agentId: this.agentId,
       agentName: this.agentName,
       agentType: this.agentType,
-      parentId: this.parentId,
       task: this.task,
       taskContext: this.taskContext,
-      inheritedContext: this.inheritedContext,
-      knowledgeModules: this.knowledgeModules,
       status: this.status,
       iteration: this.iteration,
       maxIterations: this.maxIterations,
@@ -309,13 +247,8 @@ class AuditState {
       toolCalls: this.toolCalls,
       stopRequested: this.stopRequested,
       maxIterationsWarningSent: this.maxIterationsWarningSent,
-      heartbeatInterval: this.heartbeatInterval,
-      lastHeartbeat: this.lastHeartbeat,
-      heartbeatCount: this.heartbeatCount,
-      healthStatus: this.healthStatus,
       progress: this.progress,
-      performance: this.performance,
-      resourceUsage: this.resourceUsage
+      performance: this.performance
     };
   }
 

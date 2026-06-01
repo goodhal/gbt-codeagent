@@ -619,7 +619,6 @@ ${gapFiles.map(f => {
                 const gapFindings = (parsed.findings || []).filter(f => f.title && f.location);
 
                 if (gapFindings.length > 0) {
-                  // 去重合并
                   const existingKeys = new Set(
                     validatedResults.flatMap(r => r.findings || []).map(f =>
                       `${(f.location || '')}|${(f.title || '').substring(0,40)}`
@@ -627,20 +626,21 @@ ${gapFiles.map(f => {
                   );
                   const newFindings = gapFindings.filter(f =>
                     !existingKeys.has(`${(f.location || '')}|${(f.title || '').substring(0,40)}`)
-                  ).map(f => ({
-                    ...f,
-                    source: 'llm',
-                    skillId: 'gbt-code-audit',
-                    verdict: 'confirmed',
-                    evidence: f.evidence || '模型复核认为这里存在值得继续人工确认的实现迹象。',
-                    impact: f.impact || '该实现如果在真实部署中成立，可能扩大管理面、数据面或配置暴露面。',
-                    remediation: f.remediation || '建议结合服务端收口、权限校验和配置默认值治理进行修复。',
-                    safeValidation: f.safeValidation || '建议在本地或测试环境里补充代码走读与单元测试来确认边界。',
-                    cvssScore: f.cvssScore || 0,
-                    language: f.language || (f.location ? (() => { const ext = f.location.split('.').pop().split(':')[0].toLowerCase(); return { py: 'python', java: 'java', js: 'javascript', cs: 'csharp', cpp: 'cpp', go: 'go', php: 'php' }[ext] || 'unknown'; })() : 'unknown'),
-                    owasp: f.owasp || '无',
-                    gbtMapping: f.gbtMapping || '无',
-                  }));
+                  ).map(f => {
+                    const enriched = enrichFindingFields({
+                      ...f,
+                      source: 'llm',
+                      skillId: 'gbt-code-audit',
+                      verdict: 'confirmed',
+                      evidence: f.evidence || '模型复核认为这里存在值得继续人工确认的实现迹象。',
+                      impact: f.impact || '该实现如果在真实部署中成立，可能扩大管理面、数据面或配置暴露面。',
+                      remediation: f.remediation || '建议结合服务端收口、权限校验和配置默认值治理进行修复。',
+                      safeValidation: f.safeValidation || '建议在本地或测试环境里补充代码走读与单元测试来确认边界。',
+                      cvssScore: f.cvssScore || 0,
+                      language: f.language || (f.location ? (() => { const ext = f.location.split('.').pop().split(':')[0].toLowerCase(); return { py: 'python', java: 'java', js: 'javascript', cs: 'csharp', cpp: 'cpp', go: 'go', php: 'php' }[ext] || 'unknown'; })() : 'unknown'),
+                    });
+                    return enriched;
+                  });
 
                   if (newFindings.length > 0) {
                     gapfillResult = {
@@ -1768,6 +1768,16 @@ function enrichFindingFields(f) {
     'HARD_CODE_PASSWORD': 'HARDCODED_CREDENTIALS',
     'PLAINTEXT_PASSWORD_STORAGE': 'WEAK_PASSWORD_STORAGE',
     'PLAINTEXT_PASSWORD_TRANSMISSION': 'PLAINTEXT_TRANSMISSION',
+    'UPLOAD_UNRESTRICTED': 'UNRESTRICTED_FILE_UPLOAD',
+    'AUTH_MISSING': 'MISSING_ACCESS_CONTROL',
+    'INSUFFICIENT_AUTHORIZATION': 'MISSING_ACCESS_CONTROL',
+    'CSRF_MISSING_PROTECTION': 'CSRF_MISSING',
+    'SENSITIVE_DATA_EXPOSURE': 'INFORMATION_DISCLOSURE',
+    'INFO_EXPOSURE': 'INFORMATION_DISCLOSURE',
+    'INFO_DISCLOSURE': 'INFORMATION_DISCLOSURE',
+    'HTTP_HEADER_INJECTION': 'HTTP_RESPONSE_SPLITTING',
+    'REDOS': 'REGEX_DENIAL_OF_SERVICE',
+    'VULNERABLE_DEPENDENCY': 'COMPONENT_VULNERABILITY',
   };
   const rawVulnType = f.vulnType || f.type || '';
   const normalizedVulnType = VULN_TYPE_NORMALIZE[rawVulnType] || rawVulnType;
@@ -1827,6 +1837,18 @@ function enrichFindingFields(f) {
     'CORS_MISCONFIGURATION': 'CWE-942', 'RACE_CONDITION': 'CWE-362',
     'BLACKLIST_VALIDATION': 'CWE-184', 'SWAGGER_EXPOSURE': 'CWE-200',
     'STRUTS_WILDCARD': 'CWE-917', 'COMPONENT_VULNERABILITY': 'CWE-1104',
+    'UPLOAD_UNRESTRICTED': 'CWE-434',
+    'AUTH_MISSING': 'CWE-862',
+    'INSUFFICIENT_AUTHORIZATION': 'CWE-862',
+    'CSRF_MISSING_PROTECTION': 'CWE-352',
+    'SENSITIVE_DATA_EXPOSURE': 'CWE-200',
+    'INFO_EXPOSURE': 'CWE-200',
+    'INFO_DISCLOSURE': 'CWE-200',
+    'HTTP_HEADER_INJECTION': 'CWE-113',
+    'REDOS': 'CWE-1333',
+    'REGEX_DENIAL_OF_SERVICE': 'CWE-1333',
+    'VULNERABLE_DEPENDENCY': 'CWE-1104',
+    'XXE_INJECTION': 'CWE-611',
   };
   const OWASP_MAP = {
     'SQL_INJECTION': 'A03:2021', 'SQL_INJECTION_MYBATIS': 'A03:2021',
@@ -1880,11 +1902,23 @@ function enrichFindingFields(f) {
     'CORS_MISCONFIGURATION': 'A05:2021', 'RACE_CONDITION': 'A05:2021',
     'BLACKLIST_VALIDATION': 'A03:2021', 'SWAGGER_EXPOSURE': 'A05:2021',
     'STRUTS_WILDCARD': 'A05:2021', 'COMPONENT_VULNERABILITY': 'A06:2021',
+    'UPLOAD_UNRESTRICTED': 'A04:2021',
+    'AUTH_MISSING': 'A01:2021',
+    'INSUFFICIENT_AUTHORIZATION': 'A01:2021',
+    'CSRF_MISSING_PROTECTION': 'A01:2021',
+    'SENSITIVE_DATA_EXPOSURE': 'A01:2021',
+    'INFO_EXPOSURE': 'A01:2021',
+    'INFO_DISCLOSURE': 'A01:2021',
+    'HTTP_HEADER_INJECTION': 'A03:2021',
+    'REDOS': 'A05:2021',
+    'REGEX_DENIAL_OF_SERVICE': 'A05:2021',
+    'VULNERABLE_DEPENDENCY': 'A06:2021',
+    'XXE_INJECTION': 'A03:2021',
   };
-  if (!f.cwe || f.cwe === 'CWE-000' || f.cwe === 'unknown' || f.cwe === 'undefined') {
+  if (!f.cwe || f.cwe === 'CWE-000' || f.cwe === 'unknown' || f.cwe === 'undefined' || f.cwe === '') {
     f.cwe = CWE_MAP[vulnType] || f.cwe || '';
   }
-  if (!f.owasp || f.owasp === '' || f.owasp === 'unknown' || f.owasp === 'undefined') {
+  if (!f.owasp || f.owasp === '' || f.owasp === 'unknown' || f.owasp === 'undefined' || f.owasp === '无') {
     f.owasp = OWASP_MAP[vulnType] || '';
   }
   if (!f.language || f.language === 'unknown' || f.language === 'undefined') {
@@ -1895,6 +1929,52 @@ function enrichFindingFields(f) {
       f.language = extLangMap[ext] || f.language || 'unknown';
     }
   }
+
+  // GB/T 映射
+  if (!f.gbtMapping || f.gbtMapping === '' || f.gbtMapping === 'unknown' || f.gbtMapping === 'undefined' || f.gbtMapping === '无') {
+    const GBT_MAPPING = {
+      'COMMAND_INJECTION': { java: 'GB/T34944-6.2.3.3 命令注入；GB/T39412-6.1.1.6 命令行注入', python: 'GB/T39412-6.1.1.6 命令行注入', cpp: 'GB/T34943-6.2.3.3 命令注入；GB/T39412-6.1.1.6 命令行注入', csharp: 'GB/T34946-6.2.3.3 命令注入；GB/T39412-6.1.1.6 命令行注入', default: 'GB/T39412-6.1.1.6 命令行注入' },
+      'SQL_INJECTION': { java: 'GB/T34944-6.2.3.4 SQL注入；GB/T39412-8.3.2 SQL注入', python: 'GB/T39412-8.3.2 SQL注入', cpp: 'GB/T34943-6.2.3.4 SQL注入；GB/T39412-8.3.2 SQL注入', csharp: 'GB/T39412-8.3.2 SQL注入', default: 'GB/T39412-8.3.2 SQL注入' },
+      'CODE_INJECTION': { java: 'GB/T34944-6.2.3.5 代码注入；GB/T39412-7.3.6 暴露危险的方法或函数', python: 'GB/T39412-7.3.6 暴露危险的方法或函数', cpp: 'GB/T3943-6.2.3.5 进程控制；GB/T39412-7.3.6 暴露危险的方法或函数', csharp: 'GB/T39446-6.2.3.5 代码注入；GB/T39412-7.3.6 暴露危险的方法或函数', default: 'GB/T39412-7.3.6 暴露危险的方法或函数' },
+      'SPEL_INJECTION': { java: 'GB/T34944-6.2.3.5 代码注入；GB/T39412-7.3.6 暴露危险的方法或函数', default: 'GB/T39412-7.3.6 暴露危险的方法或函数' },
+      'SSTI': { java: 'GB/T34944-6.2.3.5 代码注入；GB/T39412-7.3.6 暴露危险的方法或函数', python: 'GB/T39412-7.3.6 暴露危险的方法或函数', default: 'GB/T39412-7.3.6 暴露危险的方法或函数' },
+      'PATH_TRAVERSAL': { java: 'GB/T34944-6.2.3.1 相对路径遍历；GB/T34944-6.2.3.2 绝对路径遍历', python: 'GB/T39412-6.1.1.1 输入验证不足', cpp: 'GB/T3943-6.2.3.1 相对路径遍历；GB/T3943-6.2.3.2 绝对路径遍历', csharp: 'GB/T3946-6.2.3.1 相对路径遍历；GB/T3946-6.2.3.2 绝对路径遍历', default: 'GB/T39412-6.1.1.1 输入验证不足' },
+      'HARDCODED_CREDENTIALS': { java: 'GB/T34944-6.2.6.3 口令硬编码；GB/T39412-6.2.1.3 使用安全相关的硬编码', python: 'GB/T39412-6.2.1.3 使用安全相关的硬编码', cpp: 'GB/T3943-6.2.7.3 口令硬编码；GB/T39412-6.2.1.3 使用安全相关的硬编码', csharp: 'GB/T3946-6.2.6.3 口令硬编码；GB/T39412-6.2.1.3 使用安全相关的硬编码', default: 'GB/T39412-6.2.1.3 使用安全相关的硬编码' },
+      'WEAK_CRYPTO': { java: 'GB/T34944-6.2.6.7 使用已破解或危险的加密算法；GB/T39412-6.2.1.1 密码安全不符合国密管理规定', python: 'GB/T39412-6.2.1.1 密码安全不符合国密管理规定', cpp: 'GB/T3943-6.2.7.5 使用已破解或危险的加密算法；GB/T39412-6.2.1.1 密码安全不符合国密管理规定', csharp: 'GB/T3946-6.2.6.7 使用已破解或危险的加密算法；GB/T39412-6.2.1.1 密码安全不符合国密管理规定', default: 'GB/T39412-6.2.1.1 密码安全不符合国密管理规定' },
+      'DESERIALIZATION': { java: 'GB/T39412-7.1.5 存储不可序列化的对象到磁盘', python: 'GB/T39412-7.1.5 存储不可序列化的对象到磁盘', cpp: 'GB/T39412-7.1.5 存储不可序列化的对象到磁盘', csharp: 'GB/T39412-7.1.5 存储不可序列化的对象到磁盘', default: 'GB/T39412-7.1.5 存储不可序列化的对象到磁盘' },
+      'SSRF': { java: 'GB/T39412-6.1.1.1 输入验证不足', python: 'GB/T39412-6.1.1.1 输入验证不足', cpp: 'GB/T39412-6.1.1.1 输入验证不足', csharp: 'GB/T39412-6.1.1.1 输入验证不足', default: 'GB/T39412-6.1.1.1 输入验证不足' },
+      'XXE_INJECTION': { java: 'GB/T39412-6.1.1.1 输入验证不足', python: 'GB/T39412-6.1.1.1 输入验证不足', default: 'GB/T39412-6.1.1.1 输入验证不足' },
+      'AUTH_BYPASS': { java: 'GB/T34944-6.2.6.4 依赖referer字段进行身份鉴别；GB/T39412-6.3.1.2 身份鉴别被绕过', python: 'GB/T39412-6.3.1.2 身份鉴别被绕过', cpp: 'GB/T39412-6.3.1.2 身份鉴别被绕过', csharp: 'GB/T3946-6.2.6.4 依赖Referer字段进行身份鉴别；GB/T39412-6.3.1.2 身份鉴别被绕过', default: 'GB/T39412-6.3.1.2 身份鉴别被绕过' },
+      'INFO_LEAK': { java: 'GB/T34944-6.2.3.7 信息通过错误消息泄露；GB/T34944-6.2.3.8 信息通过服务器日志文件泄露', python: 'GB/T39412-6.2.2.1 敏感信息暴露', cpp: 'GB/T3943-6.2.3.9 信息通过错误消息泄露；GB/T3943-6.2.3.10 信息通过服务器日志文件泄露', csharp: 'GB/T3946-6.2.3.7 信息通过错误消息泄露；GB/T3946-6.2.3.8 信息通过服务器日志文件泄露', default: 'GB/T39412-6.2.2.1 敏感信息暴露' },
+      'INFORMATION_DISCLOSURE': { java: 'GB/T34944-6.2.3.7 信息通过错误消息泄露', python: 'GB/T39412-6.2.2.1 敏感信息暴露', cpp: 'GB/T3943-6.2.3.9 信息通过错误消息泄露', csharp: 'GB/T3946-6.2.3.7 信息通过错误消息泄露', default: 'GB/T39412-6.2.2.1 敏感信息暴露' },
+      'LOG_INJECTION': { java: 'GB/T39412-6.4.1 对输出日志中特殊元素处理', default: 'GB/T39412-6.4.1 对输出日志中特殊元素处理' },
+      'XSS': { java: 'GB/T39412-6.1.2.1 跨站脚本(XSS)攻击', python: 'GB/T39412-6.1.2.1 跨站脚本(XSS)攻击', cpp: 'GB/T39412-6.1.2.1 跨站脚本(XSS)攻击', csharp: 'GB/T39412-6.1.2.1 跨站脚本(XSS)攻击', javascript: 'GB/T39412-6.1.2.1 跨站脚本(XSS)攻击', default: 'GB/T39412-6.1.2.1 跨站脚本(XSS)攻击' },
+      'UNRESTRICTED_FILE_UPLOAD': { java: 'GB/T34944-6.2.3.9 不当限制文件上传；GB/T39412-6.1.1.1 输入验证不足', python: 'GB/T39412-6.1.1.1 输入验证不足', cpp: 'GB/T3943-6.2.3.9 不当限制文件上传；GB/T39412-6.1.1.1 输入验证不足', csharp: 'GB/T3946-6.2.3.9 不当限制文件上传；GB/T39412-6.1.1.1 输入验证不足', default: 'GB/T39412-6.1.1.1 输入验证不足' },
+      'MISSING_ACCESS_CONTROL': { java: 'GB/T34944-6.2.6.1 缺少访问控制；GB/T39412-6.3.3.1 不安全的直接对象引用', python: 'GB/T39412-6.3.3.1 不安全的直接对象引用', cpp: 'GB/T39412-6.3.3.1 不安全的直接对象引用', csharp: 'GB/T3946-6.2.6.1 缺少访问控制；GB/T39412-6.3.3.1 不安全的直接对象引用', default: 'GB/T39412-6.3.3.1 不安全的直接对象引用' },
+      'CSRF_MISSING': { java: 'GB/T39412-6.3.3.2 跨站请求伪造', python: 'GB/T39412-6.3.3.2 跨站请求伪造', default: 'GB/T39412-6.3.3.2 跨站请求伪造' },
+      'JNDI_INJECTION': { java: 'GB/T34944-6.2.3.5 代码注入；GB/T39412-7.3.6 暴露危险的方法或函数', default: 'GB/T39412-7.3.6 暴露危险的方法或函数' },
+      'VULNERABLE_DEPENDENCY': { java: 'GB/T39412-6.2.1.3 使用安全相关的硬编码', default: 'GB/T39412-6.2.1.3 使用安全相关的硬编码' },
+      'UPLOAD_UNRESTRICTED': { java: 'GB/T34944-6.2.3.9 不当限制文件上传；GB/T39412-6.1.1.1 输入验证不足', default: 'GB/T39412-6.1.1.1 输入验证不足' },
+      'AUTH_MISSING': { java: 'GB/T34944-6.2.6.1 缺少访问控制；GB/T39412-6.3.3.1 不安全的直接对象引用', default: 'GB/T39412-6.3.3.1 不安全的直接对象引用' },
+      'CSRF_MISSING_PROTECTION': { java: 'GB/T39412-6.3.3.2 跨站请求伪造', default: 'GB/T39412-6.3.3.2 跨站请求伪造' },
+      'SENSITIVE_DATA_EXPOSURE': { java: 'GB/T34944-6.2.3.7 信息通过错误消息泄露', default: 'GB/T39412-6.2.2.1 敏感信息暴露' },
+      'DEFAULT': 'GB/T39412-2020 通用基线'
+    };
+    const lang = f.language || 'unknown';
+    const typeMapping = GBT_MAPPING[vulnType];
+    if (typeMapping && typeof typeMapping === 'object') {
+      f.gbtMapping = typeMapping[lang] || typeMapping['default'] || 'GB/T39412-2020 通用基线';
+    } else {
+      f.gbtMapping = 'GB/T39412-2020 通用基线';
+    }
+  }
+
+  // CVSS 评分
+  if (!f.cvssScore || f.cvssScore === 0) {
+    const severityToCvss = { critical: 9.5, high: 7.5, medium: 5.0, low: 2.5, info: 0.1 };
+    f.cvssScore = severityToCvss[f.severity] || 5.0;
+  }
+
   return f;
 }
 

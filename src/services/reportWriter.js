@@ -3,6 +3,23 @@ import path from "node:path";
 import { OWASP_NAMES } from "../config/owaspMapping.js";
 import { validationChecklist } from "./validationChecklist.js";
 
+function formatBeijingTime(isoString) {
+  if (!isoString) return "";
+  const date = new Date(isoString);
+  if (isNaN(date.getTime())) return isoString;
+  
+  return date.toLocaleString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).replace(/\//g, '-');
+}
+
 export async function writeAuditHtmlReport({ reportsDir, task, selectedProjects, auditResult, architectureAnalysis }) {
   await fs.mkdir(reportsDir, { recursive: true });
   const fileName = `audit-report-${task.id}.html`;
@@ -163,7 +180,7 @@ function buildHtml({ task, selectedProjects, auditResult, architectureAnalysis }
       </div>
       <div class="grid">
         <div class="metric"><strong>查询 / 导入</strong><br/>${escapeHtml(task.sourceType === "local" ? "local repository import" : task.query)}</div>
-        <div class="metric"><strong>生成时间</strong><br/>${escapeHtml(auditResult.reviewedAt || "")}</div>
+        <div class="metric"><strong>生成时间</strong><br/>${escapeHtml(formatBeijingTime(auditResult.reviewedAt))}</div>
         <div class="metric"><strong>记忆模式</strong><br/>${escapeHtml(task.useMemory ? "memory" : "incognito")}</div>
         <div class="metric"><strong>任务阶段</strong><br/>${escapeHtml(task.phase || "")}</div>
       </div>

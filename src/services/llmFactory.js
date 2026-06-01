@@ -427,7 +427,7 @@ class LLMFactory {
   }
 }
 
-function fetchWithTimeout(url, options, timeoutMs = 120000) {
+function fetchWithTimeout(url, options, timeoutMs = 180000) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   return fetch(url, { ...options, signal: controller.signal })

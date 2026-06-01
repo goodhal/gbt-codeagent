@@ -31,9 +31,9 @@ import { loadAuditParams, getMaxBatches, getMaxFilesPerBatch, getMaxCharsPerBatc
 import { smartFileFilter } from "./smartFileFilter.js";
 
 const llmCircuitBreaker = new CircuitBreaker("llm-service", {
-  failureThreshold: 3,
+  failureThreshold: 5,
   successThreshold: 2,
-  recoveryTimeout: 30000
+  recoveryTimeout: 60000
 });
 
 const incrementalSummary = new IncrementalSummary();
@@ -680,7 +680,8 @@ async function requestWithTools({ llmConfig, messages, tools }) {
         Authorization: `Bearer ${llmConfig.apiKey}`
       },
       body: JSON.stringify(body)
-    }
+    },
+    getFetchTimeoutMs()
   );
 
   if (!response.ok) {
@@ -809,7 +810,7 @@ async function requestStructuredReview({ llmConfig, systemPrompt, userPrompt }) 
           system: optimizedSystem,
           messages: [{ role: "user", content: optimizedUser }]
         })
-      });
+      }, getFetchTimeoutMs());
     } catch (fetchError) {
       if (fetchError.name === 'AbortError') {
         console.error(`[LLM审计] Anthropic API请求超时`);
@@ -846,7 +847,8 @@ async function requestStructuredReview({ llmConfig, systemPrompt, userPrompt }) 
               maxOutputTokens: 4096
             }
           })
-        }
+        },
+        getFetchTimeoutMs()
       );
     } catch (fetchError) {
       if (fetchError.name === 'AbortError') {
@@ -886,7 +888,7 @@ async function requestStructuredReview({ llmConfig, systemPrompt, userPrompt }) 
           { role: "user", content: optimizedUser }
         ]
       })
-    });
+    }, getFetchTimeoutMs());
   } catch (fetchError) {
     if (fetchError.name === 'AbortError') {
       console.error(`[LLM审计] API请求超时 - 超时时间: ${getFetchTimeoutMs()}ms`);
@@ -994,7 +996,7 @@ async function requestStructuredReviewStream({ llmConfig, systemPrompt, userProm
         system: optimizedSystem,
         messages: [{ role: "user", content: optimizedUser }]
       })
-    });
+    }, getFetchTimeoutMs());
 
     if (!response.ok) {
       const errBody = await response.text().catch(() => '');
@@ -1038,7 +1040,8 @@ async function requestStructuredReviewStream({ llmConfig, systemPrompt, userProm
           contents: [{ role: "user", parts: [{ text: optimizedUser }] }],
           generationConfig: { temperature: 0, maxOutputTokens: 4096 }
         })
-      }
+      },
+      getFetchTimeoutMs()
     );
 
     if (!response.ok) {
@@ -1087,7 +1090,7 @@ async function requestStructuredReviewStream({ llmConfig, systemPrompt, userProm
         { role: "user", content: optimizedUser }
       ]
     })
-  });
+  }, getFetchTimeoutMs());
 
   if (!response.ok) {
     const errBody = await response.text().catch(() => '');
@@ -1765,13 +1768,18 @@ async function runBatch({ project, selectedSkills, llmConfig, finalSystemPrompt,
     try {
       const result = await withReviewRetry(() => llmCircuitBreaker.callWithFallback(() =>
         runToolEnabledAudit({ llmConfig, systemPrompt: finalSystemPrompt, userPrompt, sourceRoot, findingsAccumulator: toolFindings, batchFiles }),
-        () => { throw new Error('LLM服务熔断'); }
+        () => ({ content: '', findings: [], unreadFiles: [] })
       ));
       responseText = result.content || '';
       if (result.findings && result.findings.length > 0) {
         console.log(`[LLM审计] write_finding 工具产出 ${result.findings.length} 个发现`);
       }
       unreadBatchFiles = result.unreadFiles || [];
+      if (!responseText && result.findings?.length === 0) {
+        console.warn(`[LLM审计] 批次 ${batchIndex + 1} LLM服务熔断或降级，跳过本批次`);
+        auditFailureTracker.recordFailure('LLM服务熔断/降级');
+        return { success: false, error: 'LLM服务熔断，本批次跳过', batchSize: batch.length };
+      }
     } catch (toolError) {
       console.warn(`[LLM审计] 工具模式失败 (${toolError.message})，回退到嵌入代码模式`);
       const fallbackPrompt = buildUserPrompt({ project, selectedSkills, heuristicFindings: batchHeuristicFindings, batch, incrementalPrompt: incPrompt }) + routeChecklist;

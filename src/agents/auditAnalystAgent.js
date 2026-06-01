@@ -19,7 +19,7 @@ import { javaRouteTracer } from "../analyzers/javaRouteTracer.js";
 import { componentVulnService } from "../services/componentVulnService.js";
 import { createCoverageTracker } from "../services/coverageService.js";
 
-import { getMaxParallelProjects, getCheckpointInterval, getCompletionTokens } from "../config/auditParamsConfig.js";
+import { getMaxParallelProjects, getCheckpointInterval, getCompletionTokens, getFetchTimeoutMs } from "../config/auditParamsConfig.js";
 import { getModelMaxTokens } from "../utils/contextManager.js";
 import { jsonrepair } from "jsonrepair";
 import { fetchWithTimeout } from "../services/llmFactory.js";
@@ -589,7 +589,7 @@ ${gapFiles.map(f => {
                     { role: "user", content: "请审查以上遗漏文件，仅输出JSON格式结果，不要其他文字。" }
                   ]
                 }),
-              });
+              }, getFetchTimeoutMs());
               if (!apiResponse.ok) throw new Error(`HTTP ${apiResponse.status}`);
               // 尝试 JSON 解析；失败则用文本提取
               let responseText = "";
@@ -662,6 +662,21 @@ ${gapFiles.map(f => {
         }
       } catch (error) {
         console.warn(`[审计分析] Gapfill跳过: ${error.message}`);
+      }
+    }
+
+    // ============ 漏洞类型 Gapfill ============
+    // 对快扫发现但 LLM 未覆盖的 (文件, 漏洞类型) 组合，做定向 LLM 复核确认
+    if (enableLlmAudit && llmConfig && validatedResults.length > 0) {
+      try {
+        const vulnTypeGapfill = buildVulnTypeGapMap(validatedResults);
+        if (vulnTypeGapfill.length > 0) {
+          console.log(`[审计分析] 检测到 ${vulnTypeGapfill.length} 个(文件,漏洞类型)组合 LLM 未覆盖，启动定向复核`);
+          const sourceRoot = path.join(process.cwd(), "workspace", "downloads", validatedResults[0].projectId);
+          await runVulnTypeGapfill({ validatedResults, vulnTypeGapfill, sourceRoot, llmConfig, taskId });
+        }
+      } catch (vtgError) {
+        console.warn(`[审计分析] 漏洞类型Gapfill失败: ${vtgError.message}`);
       }
     }
 
@@ -1557,6 +1572,171 @@ function crossSourceDeduplicate(findings) {
   }
 
   return finalResult;
+}
+
+function buildVulnTypeGapMap(validatedResults) {
+  const allFindings = validatedResults.flatMap(r => r.findings || []);
+  const llmFindings = allFindings.filter(f => f.source === 'llm' || f.source === 'gapfill');
+  const heuristicFindings = allFindings.filter(f =>
+    ['quick_scan', 'taint', 'rule', 'pattern', 'heuristic'].includes(f.source)
+  );
+
+  const VULN_TYPE_NORMALIZE = {
+    'SQL_INJECTION_MYBATIS': 'SQL_INJECTION', 'SQL_INJECTION_HQL': 'SQL_INJECTION',
+    'SQL_INJECTION_ORDERBY': 'SQL_INJECTION', 'SQL_INJECTION_GROUPBY': 'SQL_INJECTION',
+    'SPEL_INJECTION': 'CODE_INJECTION', 'XXE': 'XXE_INJECTION',
+    'HARD_CODE_PASSWORD': 'HARDCODED_CREDENTIALS', 'PLAINTEXT_PASSWORD': 'HARDCODED_CREDENTIALS',
+    'SWAGGER_EXPOSURE': 'INFORMATION_DISCLOSURE', 'INFORMATION_LEAKAGE': 'INFORMATION_DISCLOSURE',
+    'UNRESTRICTED_FILE_UPLOAD': 'UNRESTRICTED_UPLOAD', 'INSECURE_FILE_VALIDATION': 'UNRESTRICTED_UPLOAD',
+    'DESERIALIZATION_RCE': 'DESERIALIZATION', 'INSECURE_DESERIALIZATION': 'DESERIALIZATION',
+    'CSRF_DISABLED': 'CSRF', 'CSRF_PROTECTION': 'CSRF', 'CSRF_MISSING': 'CSRF',
+  };
+
+  function norm(vt) { return VULN_TYPE_NORMALIZE[vt] || vt || ''; }
+  function getFile(loc) { return (loc || '').split(':')[0]; }
+  function getLine(f) { return f.line || parseInt((f.location || '').split(':')[1], 10) || 0; }
+
+  const llmKeys = new Set();
+  llmFindings.forEach(f => {
+    llmKeys.add(getFile(f.location) + '::' + norm(f.vulnType));
+  });
+
+  const gapMap = new Map();
+  for (const f of heuristicFindings) {
+    const file = getFile(f.location);
+    const normType = norm(f.vulnType);
+    const key = file + '::' + normType;
+    if (!llmKeys.has(key)) {
+      if (!gapMap.has(key)) {
+        gapMap.set(key, { file, normVulnType: normType, rawVulnType: f.vulnType, heuristicFindings: [], maxSeverity: f.severity });
+      }
+      const entry = gapMap.get(key);
+      entry.heuristicFindings.push({
+        location: f.location,
+        line: getLine(f),
+        severity: f.severity,
+        title: f.title
+      });
+      const order = { critical: 4, high: 3, medium: 2, low: 1 };
+      if ((order[f.severity] || 0) > (order[entry.maxSeverity] || 0)) {
+        entry.maxSeverity = f.severity;
+      }
+    }
+  }
+
+  return [...gapMap.values()]
+    .filter(g => g.maxSeverity === 'critical' || g.maxSeverity === 'high')
+    .slice(0, 10);
+}
+
+async function runVulnTypeGapfill({ validatedResults, vulnTypeGapfill, sourceRoot, llmConfig, taskId }) {
+  const completionTokens = getCompletionTokens(getModelMaxTokens(llmConfig.model));
+
+  const fileGroups = new Map();
+  for (const gap of vulnTypeGapfill) {
+    if (!fileGroups.has(gap.file)) fileGroups.set(gap.file, []);
+    fileGroups.get(gap.file).push(gap);
+  }
+
+  let confirmedCount = 0;
+  let rejectedCount = 0;
+
+  for (const [file, gaps] of fileGroups) {
+    let content;
+    try {
+      const fullPath = path.join(sourceRoot, file);
+      content = await fs.readFile(fullPath, 'utf8');
+    } catch { continue; }
+    if (!content || content.length < 20) continue;
+
+    const gapTypesDesc = gaps.map(g =>
+      `- ${g.rawVulnType}(${g.maxSeverity}): 行${g.heuristicFindings.map(h => h.line).join(', ')}`
+    ).join('\n');
+
+    const lang = file.endsWith('.py') ? 'python' : file.endsWith('.js') ? 'javascript' : 'java';
+    const verifyPrompt = `你是代码安全审计专家。静态分析在以下文件中发现了漏洞，但LLM深度复核未报告同类问题。请逐一确认这些发现是否为真实漏洞。
+
+【待确认的漏洞类型】
+${gapTypesDesc}
+
+【源代码】
+\`\`\`${lang}
+${content}
+\`\`\`
+
+对每个漏洞类型，输出JSON：
+{"verifications":[{"vulnType":"CSRF","confirmed":true,"severity":"high","title":"简述","location":"文件:行号","evidence":"具体代码行"}]}
+confirmed为true表示确认为真实漏洞，false表示为误报。仅确认真实漏洞，不要添加新发现。`;
+
+    try {
+      const baseUrl = String(llmConfig.baseUrl || '').replace(/\/+$/, '');
+      const apiResponse = await fetchWithTimeout(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${llmConfig.apiKey}` },
+        body: JSON.stringify({
+          model: llmConfig.model,
+          temperature: 0,
+          max_tokens: completionTokens,
+          messages: [
+            { role: 'system', content: verifyPrompt },
+            { role: 'user', content: '请逐一确认以上漏洞类型。' }
+          ]
+        })
+      }, getFetchTimeoutMs());
+
+      if (!apiResponse.ok) continue;
+
+      let responseText = '';
+      try {
+        const data = JSON.parse(await apiResponse.text());
+        responseText = data.choices?.[0]?.message?.content || '';
+      } catch {
+        continue;
+      }
+
+      const jsonMatch = String(responseText).match(/\{[\s\S]*"verifications"[\s\S]*\}/);
+      if (!jsonMatch) continue;
+
+      let parsed;
+      try {
+        parsed = JSON.parse(jsonMatch[0]);
+      } catch {
+        try {
+          parsed = JSON.parse(jsonrepair(jsonMatch[0]));
+        } catch { continue; }
+      }
+
+      const verified = (parsed.verifications || []).filter(v => v.confirmed && v.vulnType);
+      for (const v of verified) {
+        const newFinding = {
+          vulnType: v.vulnType,
+          severity: v.severity || 'medium',
+          title: v.title || `${v.vulnType}漏洞`,
+          location: v.location || `${file}:0`,
+          evidence: v.evidence || '',
+          source: 'llm',
+          skillId: 'vuln-type-gapfill',
+          verdict: 'confirmed',
+          impact: '经定向复核确认的漏洞',
+          remediation: '',
+          safeValidation: '',
+          cvssScore: 0,
+          language: lang,
+          owasp: '无',
+          gbtMapping: '无',
+        };
+        validatedResults[0].findings.push(newFinding);
+        confirmedCount++;
+      }
+      rejectedCount += (parsed.verifications || []).filter(v => !v.confirmed).length;
+    } catch (llmError) {
+      console.warn(`[审计分析] 漏洞类型Gapfill LLM调用失败(${file}): ${llmError.message}`);
+    }
+  }
+
+  if (confirmedCount > 0 || rejectedCount > 0) {
+    console.log(`[审计分析] 漏洞类型Gapfill完成: 确认${confirmedCount}条, 误报排除${rejectedCount}条`);
+  }
 }
 
 function enrichFindingFields(f) {

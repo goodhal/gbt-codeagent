@@ -1,0 +1,21 @@
+javascript_framework_vulns:
+  description: JavaScript框架特定漏洞 - Express/Koa/NestJS
+  cwe: CWE-915
+  languages:
+    javascript:
+      riskPatterns:
+        - pattern: express\.static.*path\.join
+          description: Express静态文件服务路径穿越
+          severity: HIGH
+        - pattern: koa-body.*multipart
+          description: Koa文件上传配置不当
+          severity: HIGH
+        - pattern: nestjs.*passport.*JwtStrategy
+          description: JWT策略配置不当
+          severity: HIGH
+      safePatterns:
+        - pattern: express-rate-limit|helmet
+          description: 使用安全中间件
+        - pattern: class-validator|zod
+          description: 使用输入验证库
+      remediation: 使用helmet等安全中间件，正确配置JWT

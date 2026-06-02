@@ -1,0 +1,41 @@
+regex_dos:
+  description: 正则表达式拒绝服务 (ReDoS)
+  cwe: CWE-1333
+  languages:
+    python:
+      riskPatterns:
+        - pattern: \(\.[\*\+\]\)\+\(
+          description: 嵌套量词可能导致ReDoS
+        - pattern: \([^)]*[\*\+]\)\s*\([\*\+]
+          description: 灾难性回溯
+      safePatterns:
+        - pattern: re\.compile.*timeout
+          description: 使用超时
+        - pattern: regex\.compile
+          description: 使用regex库支持超时
+      severity: MEDIUM
+      remediation: 避免嵌套量词，使用超时机制
+    javascript:
+      riskPatterns:
+        - pattern: /\([^)]*[\*\+]\)\s*\([\*\+]/g
+          description: 灾难性回溯
+        - pattern: /\.[\*\+\]\{1,\d+\}/
+          description: 大数值量词
+      safePatterns:
+        - pattern: safe-regex
+          description: 使用safe-regex验证
+        - pattern: re2
+          description: 使用re2库
+      severity: MEDIUM
+      remediation: 使用安全的正则表达式库
+    java:
+      riskPatterns:
+        - pattern: Pattern\.compile\([^)]*[\*\+]\{2,
+          description: 嵌套量词
+        - pattern: Pattern\.compile\([^)]*\)\s*\.matcher.*[\*\+]
+          description: 可能导致回溯
+      safePatterns:
+        - pattern: Pattern\.compile.*COMMENTS
+          description: 使用编译标志
+      severity: MEDIUM
+      remediation: 避免灾难性回溯，使用测试工具验证

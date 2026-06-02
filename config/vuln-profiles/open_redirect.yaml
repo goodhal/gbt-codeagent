@@ -1,0 +1,60 @@
+open_redirect:
+  description: 开放重定向漏洞
+  cwe: CWE-601
+  languages:
+    python:
+      riskPatterns:
+        - pattern: redirect\s*\([^)]*\+
+          description: 重定向使用字符串拼接
+        - pattern: return\s+redirect\([^)]*request\.
+          description: 用户输入控制重定向目标
+      safePatterns:
+        - pattern: is_safe_url
+          description: URL安全验证
+        - pattern: url_for\s*\(
+          description: 使用url_for生成URL
+      severity: MEDIUM
+      remediation: 验证重定向URL，使用白名单机制
+    javascript:
+      riskPatterns:
+        - pattern: window\.location\s*=\s*[^;]*\+
+          description: 客户端重定向使用拼接
+        - pattern: window\.open\s*\([^)]*\+
+          description: window.open使用拼接
+        - pattern: window\.location\.href\s*=\s*[^;]*\+
+          description: location.href使用拼接
+      safePatterns:
+        - pattern: new URL\s*\([^)]*\)
+          description: URL解析验证
+        - pattern: URL\.origin
+          description: 检查URL来源
+      severity: MEDIUM
+      remediation: 验证重定向目标，使用白名单
+    php:
+      riskPatterns:
+        - pattern: "header\\s*\\(\\s*['\\\"]Location:"
+          description: 使用header重定向
+        - pattern: header\s*\(\s*\$_GET
+          description: 用户输入控制重定向
+        - pattern: header\s*\(\s*\$_POST
+          description: 用户输入控制重定向
+      safePatterns:
+        - pattern: filter_var.*FILTER_VALIDATE_URL
+          description: URL验证
+        - pattern: parse_url.*allowed_hosts
+          description: 白名单验证
+      severity: MEDIUM
+      remediation: 验证重定向URL，禁止外部URL
+    java:
+      riskPatterns:
+        - pattern: sendRedirect\s*\([^)]*\+
+          description: 重定向使用拼接
+        - pattern: redirect\s*\([^)]*\+
+          description: 重定向使用拼接
+      safePatterns:
+        - pattern: UriBuilder.*build.*isHierarchical
+          description: URL验证
+        - pattern: redirect.*mvcView
+          description: 使用视图名称
+      severity: MEDIUM
+      remediation: 验证重定向URL，使用白名单

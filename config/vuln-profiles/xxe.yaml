@@ -1,0 +1,95 @@
+xxe:
+  description: XML 外部实体注入 (XXE)
+  cwe: CWE-611
+  languages:
+    java:
+      riskPatterns:
+        - pattern: DocumentBuilderFactory\.newInstance\(\)
+          description: XML 文档工厂
+        - pattern: SAXParserFactory\.newInstance\(\)
+          description: SAX 解析器工厂
+        - pattern: XMLInputFactory\.newInstance\(\)
+          description: XML 输入工厂
+      safePatterns:
+        - pattern: XMLConstants\.FEATURE_SECURE_PROCESSING
+          description: 安全处理特性
+        - pattern: setFeature.*SECURE_PROCESSING.*true
+          description: 启用安全处理
+      severity: HIGH
+      remediation: 禁用外部实体，启用 SECURE_PROCESSING
+    python:
+      riskPatterns:
+        - pattern: etree\.parse\s*\(
+          description: lxml XML 解析
+        - pattern: ElementTree\.parse\s*\(
+          description: ElementTree 解析
+      safePatterns:
+        - pattern: no_network\s*=\s*True
+          description: 禁用网络
+      severity: HIGH
+      remediation: 禁用网络访问，验证 XML 内容
+    php:
+      riskPatterns:
+        - pattern: simplexml_load_string\s*\([^)]*\)
+          description: simplexml_load_string 解析
+        - pattern: simplexml_load_file\s*\([^)]*\)
+          description: simplexml_load_file 解析
+        - pattern: DOMDocument\.loadXML\s*\([^)]*\)
+          description: DOMDocument 解析
+      safePatterns:
+        - pattern: LIBXML_NOENT\s*=\s*0
+          description: 禁用外部实体
+        - pattern: LIBXML_NONET
+          description: 禁用网络访问
+      severity: HIGH
+      remediation: 使用 LIBXML_NOENT | LIBXML_NONET 禁用外部实体
+    javascript:
+      riskPatterns:
+        - pattern: DOMParser\s*\([^)]*\)\.parseFromString
+          description: DOMParser 解析 XML
+        - pattern: xmldom\.parse
+          description: xmldom 解析
+        - pattern: xml2js\.parseString
+          description: xml2js 解析
+        - pattern: xmlbuilder\.parse
+          description: xmlbuilder 解析
+      safePatterns:
+        - pattern: isXMLSafe\s*=\s*true
+          description: 安全配置
+        - pattern: dtdDisabled\s*=\s*true
+          description: 禁用 DTD
+      severity: HIGH
+      remediation: 禁用外部实体解析，使用安全的 XML 解析配置
+    go:
+      riskPatterns:
+        - pattern: xml\.NewDecoder\s*\([^)]*\)
+          description: XML 解码器
+      safePatterns:
+        - pattern: xml\.Decoder\.Strict\s*\(
+          description: 严格模式解码器
+      severity: HIGH
+      remediation: 避免解析不受信任的 XML
+    ruby:
+      riskPatterns:
+        - pattern: REXML\.Document\.new\s*\([^)]*\)
+          description: REXML 解析
+        - pattern: Hash\.from_xml\s*\([^)]*\)
+          description: from_xml 解析
+      safePatterns:
+        - pattern: REXML\.Security\.EntityExpansion\s*=\s*:literal
+          description: 限制实体扩展
+      severity: HIGH
+      remediation: 限制实体扩展数量
+    csharp:
+      riskPatterns:
+        - pattern: XmlDocument\.Load\s*\([^)]*\)
+          description: XmlDocument 加载
+        - pattern: XDocument\.Load\s*\([^)]*\)
+          description: XDocument 加载
+      safePatterns:
+        - pattern: XmlUrlResolver\s*=\s*nil
+          description: 禁用外部实体解析
+        - pattern: DtdProcessing\s*=\s*DtdProcessing\.Prohibit
+          description: 禁用 DTD 处理
+      severity: HIGH
+      remediation: 禁用 DtdProcessing，禁用 XmlUrlResolver

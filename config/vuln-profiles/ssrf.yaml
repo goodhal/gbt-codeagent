@@ -1,0 +1,114 @@
+ssrf:
+  description: 服务器端请求伪造 (SSRF)
+  cwe: CWE-918
+  languages:
+    python:
+      riskPatterns:
+        - pattern: requests\.(get|post)\s*\([^)]*\+\s*
+          description: 字符串拼接的请求 URL
+        - pattern: urllib\.(request\.)?urlopen\s*\([^)]*\+
+          description: 字符串拼接的 URL
+        - pattern: http\.client\.(HTTPConnection|HTTPSConnection)
+          description: HTTP 客户端请求
+      safePatterns:
+        - pattern: urlparse\s*\(
+          description: URL 解析验证
+        - pattern: startswith\s*\(\s*['\"]https?://
+          description: URL 协议验证
+      severity: HIGH
+      remediation: 验证和限制 URL 协议、主机名，使用 urlparse 解析检查
+    javascript:
+      riskPatterns:
+        - pattern: fetch\s*\([^)]*\+
+          description: 字符串拼接的 URL
+        - pattern: axios\s*\([^)]*\+
+          description: 字符串拼接的 URL
+      safePatterns:
+        - pattern: new URL\s*\(
+          description: 使用 URL 构造函数
+        - pattern: URLSearchParams
+          description: 使用 URLSearchParams
+      severity: HIGH
+      remediation: 使用 URL 构造函数验证，确保 URL 符合预期
+    php:
+      riskPatterns:
+        - pattern: file_get_contents\s*\([^)]*\$_(GET|POST|REQUEST)
+          description: 用户输入作为 URL
+        - pattern: curl_setopt\s*\([^)]*CURLOPT_URL[^)]*\+
+          description: 字符串拼接的 URL
+        - pattern: fopen\s*\([^)]*http
+          description: HTTP URL 请求
+      safePatterns:
+        - pattern: parse_url\s*\(
+          description: URL 解析验证
+        - pattern: filter_var.*FILTER_VALIDATE_URL
+          description: URL 过滤验证
+      severity: HIGH
+      remediation: 验证 URL 协议和主机名，使用 parse_url 或 filter_var
+    go:
+      riskPatterns:
+        - pattern: http\.Get\s*\([^)]*\+
+          description: 字符串拼接的 URL
+        - pattern: http\.Post\s*\([^)]*\+
+          description: 字符串拼接的 URL
+        - pattern: http\.Client.*Do\s*\([^)]*\+
+          description: 字符串拼接的 URL
+      safePatterns:
+        - pattern: url\.Parse\s*\(
+          description: URL 解析验证
+        - pattern: net\.IP.*Parse
+          description: IP 地址验证
+      severity: HIGH
+      remediation: 验证 URL 协议和主机名，避免字符串拼接
+    ruby:
+      riskPatterns:
+        - pattern: Net::HTTP\.start\s*\([^)]*\+
+          description: 字符串拼接的 URL
+        - pattern: open\s*\([^)]*\+
+          description: 字符串拼接的 URL
+        - pattern: RestClient\.get\s*\([^)]*\+
+          description: 字符串拼接的 URL
+      safePatterns:
+        - pattern: URI\.parse\s*\(
+          description: URI 解析验证
+        - pattern: Addressable\.URI\.parse
+          description: 使用 Addressable 解析
+      severity: HIGH
+      remediation: 使用 URI.parse 验证 URL
+    rust:
+      riskPatterns:
+        - pattern: reqwest::blocking::get\s*\([^)]*\+
+          description: 字符串拼接的 URL
+        - pattern: surf::get\s*\([^)]*\+
+          description: 字符串拼接的 URL
+      safePatterns:
+        - pattern: url::Url::parse\s*\(
+          description: URL 解析验证
+      severity: HIGH
+      remediation: 使用 Url::parse 验证 URL
+    cpp:
+      riskPatterns:
+        - pattern: curl_easy_setopt.*CURLOPT_URL.*\+
+          description: 字符串拼接的 URL
+        - pattern: libcurl.*http_get\s*\([^)]*\+
+          description: 字符串拼接的 URL
+      safePatterns:
+        - pattern: curl_easy_setopt.*CURLOPT_URL.*parse_url
+          description: URL 解析验证
+      severity: HIGH
+      remediation: 验证 URL，避免字符串拼接
+    csharp:
+      riskPatterns:
+        - pattern: WebClient\.DownloadString\s*\([^)]*\+
+          description: 字符串拼接的 URL
+        - pattern: HttpClient\.GetAsync\s*\([^)]*\+
+          description: 字符串拼接的 URL
+        - pattern: WebRequest\.Create\s*\([^)]*\+
+          description: 字符串拼接的 URL
+      safePatterns:
+        - pattern: Uri\.TryCreate\s*\(
+          description: 使用 Uri.TryCreate 验证
+        - pattern: new Uri\s*\(
+          description: 使用 Uri 构造函数
+      severity: HIGH
+      remediation: 使用 Uri.TryCreate 验证 URL

@@ -1,0 +1,114 @@
+command_injection:
+  description: 命令注入漏洞
+  cwe: CWE-78
+  gbt: GB/T34943-2017, GB/T34944-2017
+  languages:
+    python:
+      riskPatterns:
+        - pattern: os\.system\s*\(
+          description: os.system 调用
+        - pattern: os\.popen\s*\(
+          description: os.popen 调用
+        - pattern: subprocess\.(call|Popen|run)\s*\([^)]*shell\s*=\s*True
+          description: 启用 shell 的子进程调用
+      safePatterns:
+        - pattern: subprocess\.run\s*\([^,]+,\s*shell\s*=\s*False
+          description: 禁用 shell 的子进程
+        - pattern: shlex\.quote\s*\(
+          description: 使用 shlex.quote 转义
+      severity: CRITICAL
+      remediation: 避免使用 shell=True，使用 shlex.quote 转义用户输入
+    java:
+      riskPatterns:
+        - pattern: Runtime\.exec\s*\([^)]*\+[^)]*\)
+          description: Runtime.exec 字符串拼接
+        - pattern: ProcessBuilder\s*\([^)]*\+
+          description: ProcessBuilder 字符串参数
+      safePatterns:
+        - pattern: new String\[\].*\)
+          description: 数组形式参数
+      severity: CRITICAL
+      remediation: 使用数组形式传递命令参数，避免字符串拼接
+    javascript:
+      riskPatterns:
+        - pattern: child_process\.exec\s*\([^)]*\+
+          description: child_process.exec 字符串拼接
+        - pattern: exec\s*\(`.*\${
+          description: 模板字符串注入
+      safePatterns:
+        - pattern: execFile\s*\(
+          description: 使用 execFile 而非 exec
+        - pattern: spawn\s*\([^,]+,\s*\[
+          description: 数组形式参数
+      severity: CRITICAL
+      remediation: 避免使用 exec，采用 spawn/execFile 数组参数形式
+    php:
+      riskPatterns:
+        - pattern: system\s*\([^)]*\+\s*[^)]*\)
+          description: system() 字符串拼接
+        - pattern: exec\s*\([^)]*\+\s*[^)]*\)
+          description: exec() 字符串拼接
+        - pattern: shell_exec\s*\([^)]*\+\s*[^)]*\)
+          description: shell_exec() 字符串拼接
+        - pattern: passthru\s*\([^)]*\+\s*[^)]*\)
+          description: passthru() 字符串拼接
+        - pattern: popen\s*\([^)]*\+\s*[^)]*\)
+          description: popen() 字符串拼接
+      safePatterns:
+        - pattern: escapeshellarg\s*\(
+          description: 使用 escapeshellarg 转义
+        - pattern: escapeshellcmd\s*\(
+          description: 使用 escapeshellcmd 转义
+      severity: CRITICAL
+      remediation: 使用 escapeshellarg/escapeshellcmd 转义用户输入
+    go:
+      riskPatterns:
+        - pattern: exec\.Command\s*\([^)]*\+\s*[^)]*\)
+          description: exec.Command 字符串拼接
+      safePatterns:
+        - pattern: exec\.Command\s*\([^,]+,[^)]*\)
+          description: 数组形式参数
+      severity: CRITICAL
+      remediation: 使用数组形式传递命令参数，避免字符串拼接
+    ruby:
+      riskPatterns:
+        - pattern: system\s*\([^)]*\+
+          description: system() 字符串拼接
+        - pattern: "`.*#\\{"
+          description: 反引号字符串插值
+      safePatterns:
+        - pattern: system\s*\(.*,\s*\[
+          description: 数组形式参数
+      severity: CRITICAL
+      remediation: 使用数组形式参数，避免字符串拼接
+    rust:
+      riskPatterns:
+        - pattern: Command::new\s*\([^)]*\+\s*[^)]*\)
+          description: Command::new 字符串拼接
+      safePatterns:
+        - pattern: Command::new\s*\([^)]*\)\s*\.arg\s*\(
+          description: 使用 arg 方法
+      severity: CRITICAL
+      remediation: 使用 args 方法传递参数，避免字符串拼接
+    cpp:
+      riskPatterns:
+        - pattern: system\s*\([^)]*\+\s*[^)]*\)
+          description: system() 字符串拼接
+        - pattern: popen\s*\([^)]*\+\s*[^)]*\)
+          description: popen() 字符串拼接
+      safePatterns:
+        - pattern: execlp?\s*\([^,]+,\s*\[
+          description: 数组形式参数
+      severity: CRITICAL
+      remediation: 使用数组形式参数，避免字符串拼接
+    csharp:
+      riskPatterns:
+        - pattern: Process\.Start\s*\([^)]*\+\s*[^)]*\)
+          description: Process.Start 字符串拼接
+        - pattern: ProcessStartInfo\.Arguments\s*=\s*[^;]*\+
+          description: Arguments 属性字符串拼接
+      safePatterns:
+        - pattern: ProcessStartInfo\\.Arguments\\s*=\\s*\\"
+          description: 显式设置参数
+      severity: CRITICAL
+      remediation: 显式设置 Arguments，避免字符串拼接

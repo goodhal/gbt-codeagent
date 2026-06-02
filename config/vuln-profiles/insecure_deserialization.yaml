@@ -1,0 +1,35 @@
+insecure_deserialization:
+  description: 不安全反序列化增强检测
+  cwe: CWE-502
+  gbt: GB/T34944-6.1.1.7
+  languages:
+    python:
+      riskPatterns:
+        - pattern: cloudpickle\.loads\s*\(
+          description: cloudpickle反序列化
+        - pattern: dill\.loads\s*\(
+          description: dill反序列化
+        - pattern: shelve\.open\s*\(
+          description: shelve文件
+      safePatterns:
+        - pattern: json\.loads\s*\(
+          description: JSON反序列化
+        - pattern: msgpack\.unpackb\s*\(
+          description: msgpack（需验证）
+      severity: CRITICAL
+      remediation: 避免使用pickle等原生序列化，使用JSON
+    java:
+      riskPatterns:
+        - pattern: YAML\.load\s*\(
+          description: YAML反序列化
+        - pattern: XStream\.fromXML\s*\(
+          description: XStream反序列化
+        - pattern: Jackson.*enableDefaultTyping
+          description: Jackson默认类型
+      safePatterns:
+        - pattern: ObjectMapper\.configure.*FAIL_ON_UNKNOWN_PROPERTIES
+          description: Jackson安全配置
+        - pattern: JsonParser\.Feature\.STRICT_DUPLICATE_DETECTION
+          description: 严格重复检测
+      severity: CRITICAL
+      remediation: 禁用默认类型，使用安全配置

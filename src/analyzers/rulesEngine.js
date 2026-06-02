@@ -88,7 +88,18 @@ export class RulesEngine {
     }
 
     if (configPath) {
-      await this.loadFromFile(configPath);
+      // 检测是否为目录（拆分后的结构）
+      try {
+        const stat = await fs.stat(configPath);
+        if (stat.isDirectory()) {
+          await this.loadFromDirectory(configPath);
+        } else {
+          await this.loadFromFile(configPath);
+        }
+      } catch {
+        // 路径不存在或 stat 失败，尝试按文件加载
+        await this.loadFromFile(configPath);
+      }
     } else {
       this._createDefaultRules();
     }
@@ -101,6 +112,14 @@ export class RulesEngine {
     try {
       const content = await fs.readFile(filepath, 'utf-8');
       this.rules = yaml.parse(content);
+      
+      // 如果加载的是单文件（老的 detection_rules.yaml），可能包含完整结构
+      // 但仍然检查是否包含 version/supportedLanguages 等完整字段
+      if (this.rules && !this.rules.version) {
+        // 空文件或无规则
+        this._createDefaultRules();
+      }
+      
       this._buildIndex();
       
       if (this.rules.version) {
@@ -113,6 +132,151 @@ export class RulesEngine {
       this._createDefaultRules();
       return this.rules;
     }
+  }
+
+  /**
+   * 从目录加载拆分后的规则文件
+   * 目录结构：
+   *   config/
+   *     audit-config.yaml      — 基础配置
+   *     gbt-mappings.yaml     — GB/T 标准映射
+   *     rules/                 — 按语言拆分（sources/sinks/sanitizers）
+   *     vuln-profiles/        — 按漏洞类型拆分的检测规则
+   *     framework-rules/      — 框架特定规则
+   */
+  async loadFromDirectory(dirPath) {
+    this._createDefaultRules();
+    
+    // 1. 加载基础配置
+    const configPath = path.join(dirPath, 'audit-config.yaml');
+    try {
+      const configContent = await fs.readFile(configPath, 'utf-8');
+      const config = yaml.parse(configContent);
+      if (config) {
+        if (config.version) this.rules.version = config.version;
+        if (config.labelDescriptions) this.rules.labelDescriptions = config.labelDescriptions;
+        if (config.supportedLanguages) this.rules.supportedLanguages = config.supportedLanguages;
+        if (config.severityLevels) this.rules.severityLevels = config.severityLevels;
+        if (config.analysisOptions) this.rules.analysisOptions = config.analysisOptions;
+        if (config.audit) this.rules.audit = config.audit;
+      }
+    } catch (err) {
+      console.warn('[RulesEngine] No audit-config.yaml found, using defaults');
+    }
+    
+    // 2. 加载 GB/T 映射
+    const gbtPath = path.join(dirPath, 'gbt-mappings.yaml');
+    try {
+      const gbtContent = await fs.readFile(gbtPath, 'utf-8');
+      const gbtData = yaml.parse(gbtContent);
+      if (gbtData?.gbtMappings) {
+        this.rules.gbtMappings = gbtData.gbtMappings;
+      }
+    } catch (err) {
+      console.warn('[RulesEngine] No gbt-mappings.yaml found');
+    }
+    
+    // 3. 加载语言规则（taintTracking）
+    const rulesDir = path.join(dirPath, 'rules');
+    try {
+      const ruleFiles = await fs.readdir(rulesDir);
+      for (const file of ruleFiles) {
+        if (!file.endsWith('.yaml')) continue;
+        const filePath = path.join(rulesDir, file);
+        const content = await fs.readFile(filePath, 'utf-8');
+        const data = yaml.parse(content);
+        if (!data?.taintTracking) continue;
+        
+        const lang = data.language;
+        if (!lang) continue;
+        
+        const tt = data.taintTracking;
+        
+        if (tt.sources && tt.sources.length > 0) {
+          if (!this.rules.taintTracking.sources[lang]) {
+            this.rules.taintTracking.sources[lang] = [];
+          }
+          this.rules.taintTracking.sources[lang] = tt.sources;
+        }
+        
+        if (tt.sinks && tt.sinks.length > 0) {
+          if (!this.rules.taintTracking.sinks[lang]) {
+            this.rules.taintTracking.sinks[lang] = [];
+          }
+          this.rules.taintTracking.sinks[lang] = tt.sinks;
+        }
+        
+        if (tt.sanitizers && tt.sanitizers.length > 0) {
+          if (!this.rules.taintTracking.sanitizers[lang]) {
+            this.rules.taintTracking.sanitizers[lang] = [];
+          }
+          this.rules.taintTracking.sanitizers[lang] = tt.sanitizers;
+        }
+      }
+    } catch (err) {
+      console.warn('[RulesEngine] No rules/ directory found');
+    }
+    
+    // 4. 加载漏洞类型描述（detectionRules）
+    const vulnDir = path.join(dirPath, 'vuln-profiles');
+    try {
+      const vulnFiles = await fs.readdir(vulnDir);
+      for (const file of vulnFiles) {
+        if (!file.endsWith('.yaml')) continue;
+        const filePath = path.join(vulnDir, file);
+        const content = await fs.readFile(filePath, 'utf-8');
+        const data = yaml.parse(content);
+        if (!data) continue;
+        
+        for (const [key, value] of Object.entries(data)) {
+          if (key !== '$schema' && key !== 'gbtMappings') {
+            this.rules.detectionRules[key] = value;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[RulesEngine] No vuln-profiles/ directory found');
+    }
+    
+    // 5. 加载框架规则（frameworkRules）
+    const fwDir = path.join(dirPath, 'framework-rules');
+    try {
+      const fwFiles = await fs.readdir(fwDir);
+      for (const file of fwFiles) {
+        if (!file.endsWith('.yaml')) continue;
+        const filePath = path.join(fwDir, file);
+        const content = await fs.readFile(filePath, 'utf-8');
+        const data = yaml.parse(content);
+        if (!data) continue;
+        
+        for (const [key, value] of Object.entries(data)) {
+          this.rules.frameworkRules[key] = value;
+        }
+      }
+    } catch (err) {
+      console.warn('[RulesEngine] No framework-rules/ directory found');
+    }
+    
+    this._buildIndex();
+    console.log(`[RulesEngine] Loaded rules from directory: ${dirPath}`);
+    return this.rules;
+  }
+
+  /**
+   * 获取 GB/T 映射
+   */
+  getGbtMappings() {
+    return this.rules?.gbtMappings || {};
+  }
+
+  /**
+   * 获取指定漏洞类型和语言的 GB/T 编码
+   */
+  getGbtMapping(vulnType, language) {
+    const mappings = this.rules?.gbtMappings || {};
+    const typeMapping = mappings[vulnType];
+    if (!typeMapping) return null;
+    return typeMapping[language] || typeMapping['default'] || null;
   }
 
   _createDefaultRules() {

@@ -1,0 +1,165 @@
+$schema: ./rules-schema.yaml
+language: go
+taintTracking:
+  sources:
+    - name: User Input
+      patterns:
+        - os.Args
+        - fmt.Scan
+        - bufio.NewReader
+        - http.Request.Form
+        - http.Request.PostForm
+      category: user_input
+    - name: Network Input
+      patterns:
+        - http.Get
+        - http.Post
+        - http.Client
+      category: network_input
+  sinks:
+    - id: SEC-CMD-004
+      name: Command Execution
+      patterns:
+        - exec.Command
+        - os/exec
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+        owasp:
+          - A03:2021
+      doc_url: https://docs.gbt-codeagent.com/rules/command-injection
+    - id: SEC-SQL-004
+      name: SQL Execution
+      patterns:
+        - db.Query
+        - db.Exec
+        - sql.Query
+        - sql.Exec
+      category: sql_injection
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+        owasp:
+          - A03:2021
+      doc_url: https://docs.gbt-codeagent.com/rules/sql-injection
+    - id: SEC-CODE-004
+      name: Code Execution
+      patterns:
+        - reflect.ValueOf
+        - unsafe.Pointer
+      category: code_injection
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-94
+        owasp:
+          - A03:2021
+      doc_url: https://docs.gbt-codeagent.com/rules/code-injection
+    - id: SEC-FILE-003
+      name: File Operation
+      patterns:
+        - os.Open
+        - ioutil.ReadFile
+        - ioutil.WriteFile
+      category: file_operation
+      severity: MEDIUM
+      profiles:
+        - portability
+        - default
+      guidelines:
+        cwe:
+          - CWE-22
+      doc_url: https://docs.gbt-codeagent.com/rules/path-traversal
+    - id: QS-GO-811
+      name: COMMAND INJECTION
+      patterns:
+        - exec\.Command\s*\(
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+      _quickScan: true
+      _vulnType: COMMAND_INJECTION
+      _cwe: CWE-78
+      _chineseSeverity: 严重
+    - id: QS-GO-812
+      name: COMMAND INJECTION
+      patterns:
+        - os\.Exec\s*\(
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+      _quickScan: true
+      _vulnType: COMMAND_INJECTION
+      _cwe: CWE-78
+      _chineseSeverity: 严重
+    - id: QS-GO-813
+      name: WEAK HASH
+      patterns:
+        - crypto\/md5
+      category: weak_hash
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-328
+      _quickScan: true
+      _vulnType: WEAK_HASH
+      _cwe: CWE-328
+      _chineseSeverity: 高危
+    - id: QS-GO-814
+      name: WEAK HASH
+      patterns:
+        - crypto\/sha1
+      category: weak_hash
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-328
+      _quickScan: true
+      _vulnType: WEAK_HASH
+      _cwe: CWE-328
+      _chineseSeverity: 高危
+    - id: QS-GO-815
+      name: PREDICTABLE RANDOM
+      patterns:
+        - math\/rand
+      category: weak_random
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-338
+      _quickScan: true
+      _vulnType: PREDICTABLE_RANDOM
+      _cwe: CWE-338
+      _chineseSeverity: 高危
+  sanitizers: []

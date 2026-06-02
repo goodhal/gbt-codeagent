@@ -1,0 +1,33 @@
+java_uri_auth_bypass:
+  description: URI解析差异导致鉴权绕过 — getRequestURI() vs getServletPath()
+  cwe: CWE-287
+  languages:
+    java:
+      riskPatterns:
+        - pattern: getRequestURI\(\)
+          description: 使用getRequestURI获取路径，不处理分号/编码/路径穿越
+          severity: CRITICAL
+        - pattern: getRequestURL\(\)
+          description: 使用getRequestURL获取路径，不处理特殊字符
+          severity: HIGH
+        - pattern: endsWith.*"\.(js|css|png|jpg|html|ico)"
+          description: 后缀白名单 + getRequestURI → 可被 /admin;.js 绕过
+          severity: CRITICAL
+        - pattern: startsWith.*"/(public|static)"
+          description: 前缀白名单 + 无normalize → 可被 /public/../admin 绕过
+          severity: HIGH
+        - pattern: contains.*/(api|admin)/
+          description: contains路径匹配 + 无URL解码 → 可被编码绕过
+          severity: MEDIUM
+      safePatterns:
+        - pattern: getServletPath\(\)
+          description: 使用getServletPath，自动处理分号+编码+归一化
+        - pattern: UrlPathHelper\.getPathWithinApplication
+          description: Spring推荐的安全URI获取方式
+        - pattern: BEST_MATCHING_PATTERN_ATTRIBUTE
+          description: Spring MVC最安全的路径匹配方式
+      remediation: |
+        使用getServletPath()或UrlPathHelper替代getRequestURI()：
+        String path = request.getServletPath();
+        或: String path = new UrlPathHelper().getPathWithinApplication(request);
+        或在匹配前做归一化: uri.replaceAll(";.*", ""); URI.create(uri).normalize().getPath();

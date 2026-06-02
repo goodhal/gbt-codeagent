@@ -1,0 +1,106 @@
+deserialization:
+  description: 不安全反序列化
+  cwe: CWE-502
+  languages:
+    python:
+      riskPatterns:
+        - pattern: pickle\.loads?\s*\(
+          description: pickle 反序列化
+        - pattern: yaml\.load\s*\([^)]*\)
+          description: 不安全的 yaml.load
+        - pattern: marshal\.loads?\s*\(
+          description: marshal 反序列化
+      safePatterns:
+        - pattern: yaml\.safe_load\s*\(
+          description: 安全的 yaml.safe_load
+        - pattern: json\.loads\s*\(
+          description: JSON 反序列化
+      severity: HIGH
+      remediation: 使用 yaml.safe_load 替代 yaml.load，使用 JSON 而非 pickle
+    java:
+      riskPatterns:
+        - pattern: ObjectInputStream
+          description: Java 对象反序列化
+        - pattern: readObject\s*\(
+          description: 反序列化方法调用
+        - pattern: XMLDecoder\s*\(
+          description: XML 反序列化
+      safePatterns:
+        - pattern: ObjectInputStream.*validateObject
+          description: 带有验证的反序列化
+        - pattern: JSON\.parse
+          description: JSON 解析
+      severity: HIGH
+      remediation: 避免原生反序列化，使用 JSON 或配置验证
+    php:
+      riskPatterns:
+        - pattern: unserialize\s*\(
+          description: PHP unserialize 反序列化
+      safePatterns:
+        - pattern: json_decode\s*\(
+          description: 使用 JSON 解码
+      severity: HIGH
+      remediation: 避免使用 unserialize，使用 json_decode
+    go:
+      riskPatterns:
+        - pattern: encoding/gob\.NewDecoder
+          description: gob 反序列化
+        - pattern: golang/protobuf.*Unmarshal
+          description: protobuf 反序列化
+      safePatterns:
+        - pattern: json\.Unmarshal
+          description: JSON 反序列化
+      severity: HIGH
+      remediation: 使用 JSON 而非 gob 或 protobuf
+    ruby:
+      riskPatterns:
+        - pattern: Marshal\.load\s*\(
+          description: Marshal.load 反序列化
+        - pattern: YAML\.load\s*\([^)]*\)
+          description: YAML.load 反序列化
+        - pattern: Psych\.load\s*\(
+          description: Psych.load 反序列化
+      safePatterns:
+        - pattern: YAML\.safe_load\s*\(
+          description: 安全的 YAML.safe_load
+        - pattern: JSON\.parse
+          description: JSON 解析
+      severity: HIGH
+      remediation: 使用 YAML.safe_load，避免 Marshal.load
+    rust:
+      riskPatterns:
+        - pattern: bincode::deserialize
+          description: bincode 反序列化
+        - pattern: ron::from_str
+          description: RON 反序列化
+      safePatterns:
+        - pattern: serde_json::from_str
+          description: JSON 反序列化
+      severity: HIGH
+      remediation: 使用 serde_json 而非 bincode
+    cpp:
+      riskPatterns:
+        - pattern: "boost:: serialization::unserialize"
+          description: Boost 反序列化
+        - pattern: std::istream.*read.*reinterpret_cast
+          description: 原生指针反序列化
+      safePatterns:
+        - pattern: nlohmann::json::parse
+          description: JSON 解析
+      severity: HIGH
+      remediation: 使用 JSON 而非原生序列化
+    csharp:
+      riskPatterns:
+        - pattern: BinaryFormatter\.Deserialize
+          description: BinaryFormatter 反序列化
+        - pattern: LosFormatter\.Deserialize
+          description: LosFormatter 反序列化
+        - pattern: ObjectStateFormatter\.Deserialize
+          description: ObjectStateFormatter 反序列化
+      safePatterns:
+        - pattern: JsonSerializer\.Deserialize
+          description: JSON 序列化
+        - pattern: DataContractSerializer
+          description: 数据契约序列化
+      severity: CRITICAL
+      remediation: 禁用 BinaryFormatter，使用 JsonSerializer

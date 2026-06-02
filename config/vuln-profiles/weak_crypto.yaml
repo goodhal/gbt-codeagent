@@ -1,0 +1,154 @@
+weak_crypto:
+  description: 弱加密算法
+  cwe: CWE-327
+  gbt: GB/T34944-6.2.6.8
+  languages:
+    python:
+      riskPatterns:
+        - pattern: hashlib\.md5\s*\(
+          description: MD5哈希
+        - pattern: hashlib\.sha1\s*\(
+          description: SHA1哈希
+        - pattern: Cryptography\.crypt\(
+          description: crypt加密
+        - pattern: DES\s*\(
+          description: DES加密
+        - pattern: 3DES\s*\(
+          description: 3DES加密
+      safePatterns:
+        - pattern: hashlib\.sha256\s*\(
+          description: SHA256哈希
+        - pattern: hashlib\.sha512\s*\(
+          description: SHA512哈希
+        - pattern: AES\s*\(
+          description: AES加密
+      severity: HIGH
+      remediation: 使用SHA256/SHA512哈希，使用AES加密
+    java:
+      riskPatterns:
+        - pattern: MessageDigest\.getInstance\s*\(\s*['\"]md5
+          description: MD5算法
+        - pattern: MessageDigest\.getInstance\s*\(\s*['\"]sha-?1
+          description: SHA1算法
+        - pattern: Cipher\.getInstance\s*\(\s*['\"]DES
+          description: DES加密
+        - pattern: Cipher\.getInstance\s*\(\s*['\"]3DES
+          description: 3DES加密
+        - pattern: Cipher\.getInstance\s*\(\s*['\"]RC4
+          description: RC4加密
+      safePatterns:
+        - pattern: Cipher\.getInstance\s*\(\s*['\"]AES
+          description: AES加密
+        - pattern: MessageDigest\.getInstance\s*\(\s*['\"]SHA-256
+          description: SHA256哈希
+        - pattern: MessageDigest\.getInstance\s*\(\s*['\"]SHA-512
+          description: SHA512哈希
+      severity: HIGH
+      remediation: 使用AES加密，使用SHA256/SHA512哈希
+    javascript:
+      riskPatterns:
+        - pattern: crypt\s*\.createHash\s*\(\s*['\"]md5
+          description: MD5哈希
+        - pattern: crypt\s*\.createHash\s*\(\s*['\"]sha1
+          description: SHA1哈希
+      safePatterns:
+        - pattern: crypt\s*\.createHash\s*\(\s*['\"]sha256
+          description: SHA256哈希
+        - pattern: crypt\s*\.createHash\s*\(\s*['\"]sha512
+          description: SHA512哈希
+      severity: HIGH
+      remediation: 使用SHA256/SHA512哈希
+    php:
+      riskPatterns:
+        - pattern: md5\s*\(
+          description: MD5哈希
+        - pattern: sha1\s*\(
+          description: SHA1哈希
+        - pattern: mcrypt_encrypt\s*\(\s*MCRYPT_DES
+          description: DES加密
+      safePatterns:
+        - pattern: hash\s*\(\s*['\"]sha256
+          description: SHA256哈希
+        - pattern: openssl_encrypt\s*\(\s*['\"]AES
+          description: AES加密
+      severity: HIGH
+      remediation: 使用AES加密，使用SHA256哈希
+    go:
+      riskPatterns:
+        - pattern: crypto/md5\.New
+          description: MD5哈希
+        - pattern: crypto/sha1\.New
+          description: SHA1哈希
+      safePatterns:
+        - pattern: crypto/sha256\.New
+          description: SHA256哈希
+        - pattern: crypto/sha512\.New
+          description: SHA512哈希
+      severity: HIGH
+      remediation: 使用SHA256/SHA512哈希
+    ruby:
+      riskPatterns:
+        - pattern: Digest::MD5
+          description: MD5哈希
+        - pattern: Digest::SHA1
+          description: SHA1哈希
+        - pattern: OpenSSL::Cipher\.new\s*\(\s*['\"]des
+          description: DES加密
+      safePatterns:
+        - pattern: Digest::SHA256
+          description: SHA256哈希
+        - pattern: Digest::SHA512
+          description: SHA512哈希
+        - pattern: OpenSSL::Cipher\.new\s*\(\s*['\"]aes
+          description: AES加密
+      severity: HIGH
+      remediation: 使用AES加密，使用SHA256/SHA512哈希
+    rust:
+      riskPatterns:
+        - pattern: md5::Md5
+          description: MD5哈希
+        - pattern: sha1::Sha1
+          description: SHA1哈希
+      safePatterns:
+        - pattern: sha2::Sha256
+          description: SHA256哈希
+        - pattern: sha2::Sha512
+          description: SHA512哈希
+      severity: HIGH
+      remediation: 使用SHA256/SHA512哈希
+    cpp:
+      riskPatterns:
+        - pattern: MD5_Init
+          description: MD5哈希
+        - pattern: SHA1_Init
+          description: SHA1哈希
+        - pattern: DES_encrypt
+          description: DES加密
+      safePatterns:
+        - pattern: SHA256_Init
+          description: SHA256哈希
+        - pattern: SHA512_Init
+          description: SHA512哈希
+        - pattern: EVP_aes_256_cbc
+          description: AES加密
+      severity: HIGH
+      remediation: 使用AES加密，使用SHA256/SHA512哈希
+    csharp:
+      riskPatterns:
+        - pattern: MD5\.Create\s*\(
+          description: MD5哈希
+        - pattern: SHA1\.Create\s*\(
+          description: SHA1哈希
+        - pattern: DESCryptoServiceProvider
+          description: DES加密
+        - pattern: TripleDESCryptoServiceProvider
+          description: 3DES加密
+      safePatterns:
+        - pattern: SHA256\.Create\s*\(
+          description: SHA256哈希
+        - pattern: SHA512\.Create\s*\(
+          description: SHA512哈希
+        - pattern: AesCryptoServiceProvider
+          description: AES加密
+      severity: HIGH
+      remediation: 使用AES加密，使用SHA256/SHA512哈希

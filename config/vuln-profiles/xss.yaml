@@ -1,0 +1,70 @@
+xss:
+  description: 跨站脚本攻击 (XSS)
+  cwe: CWE-79
+  gbt: GB/T34946-2017
+  languages:
+    javascript:
+      riskPatterns:
+        - pattern: innerHTML\s*=
+          description: innerHTML 赋值
+        - pattern: outerHTML\s*=
+          description: outerHTML 赋值
+        - pattern: document\.write\s*\(
+          description: document.write
+        - pattern: insertAdjacentHTML
+          description: insertAdjacentHTML
+      safePatterns:
+        - pattern: textContent\s*=
+          description: 使用 textContent
+        - pattern: innerText\s*=
+          description: 使用 innerText
+        - pattern: createTextNode
+          description: 使用 createTextNode
+        - pattern: encodeURIComponent
+          description: URL 编码
+      severity: HIGH
+      remediation: 使用 textContent/innerText 而非 innerHTML，对用户输入进行编码
+    php:
+      riskPatterns:
+        - pattern: echo\s+\$_(GET|POST|REQUEST|COOKIE)
+          description: 直接输出用户输入
+        - pattern: print\s+\$_(GET|POST|REQUEST|COOKIE)
+          description: 直接输出用户输入
+      safePatterns:
+        - pattern: htmlspecialchars\s*\(
+          description: 使用 htmlspecialchars
+        - pattern: htmlentities\s*\(
+          description: 使用 htmlentities
+      severity: HIGH
+      remediation: 使用 htmlspecialchars 或 htmlentities 对输出进行编码
+    go:
+      riskPatterns:
+        - pattern: html/template\.HTML\s*\([^)]*\+
+          description: 模板字符串拼接
+      safePatterns:
+        - pattern: template\.HTML\s*\(
+          description: 使用 template 包
+      severity: HIGH
+      remediation: 使用 html/template 包的自动转义功能
+    ruby:
+      riskPatterns:
+        - pattern: raw\s*\([^)]*\+
+          description: raw 输出未转义
+        - pattern: html\.raw\s*\([^)]*\+
+          description: html.raw 未转义
+      safePatterns:
+        - pattern: "render.*html\\s*\\:"
+          description: 使用 ERB 默认转义
+      severity: HIGH
+      remediation: 使用 ERB 默认转义，避免 raw
+    csharp:
+      riskPatterns:
+        - pattern: Response\.Write\s*\([^)]*\+
+          description: Response.Write 字符串拼接
+        - pattern: "@Html\\.Raw\\s*\\([^)]*\\+"
+          description: "@Html.Raw 未转义"
+      safePatterns:
+        - pattern: "@Model\\."
+          description: 使用 Model 属性
+      severity: HIGH
+      remediation: 使用 @Model 而非 @Html.Raw

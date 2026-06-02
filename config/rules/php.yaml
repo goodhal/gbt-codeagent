@@ -1,0 +1,346 @@
+$schema: ./rules-schema.yaml
+language: php
+taintTracking:
+  sources: []
+  sinks:
+    - id: SEC-CMD-003
+      name: Command Execution
+      patterns:
+        - system\(
+        - exec\(
+        - shell_exec\(
+        - passthru\(
+        - popen\(
+        - proc_open\(
+        - pcntl_exec\(
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+        owasp:
+          - A03:2021
+      doc_url: https://docs.gbt-codeagent.com/rules/command-injection
+    - id: SEC-SQL-003
+      name: SQL Execution
+      patterns:
+        - mysql_query\(
+        - mysqli_query\(
+        - pg_query\(
+        - mysqli_real_query\(
+      category: sql_injection
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+        owasp:
+          - A03:2021
+      doc_url: https://docs.gbt-codeagent.com/rules/sql-injection
+    - id: SEC-CODE-003
+      name: Code Execution
+      patterns:
+        - eval\(
+        - assert\(
+        - create_function\(
+      category: code_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-94
+        owasp:
+          - A03:2021
+      doc_url: https://docs.gbt-codeagent.com/rules/code-injection
+    - id: SEC-FILE-002
+      name: File Operation
+      patterns:
+        - include\(
+        - require\(
+        - fopen\(
+        - file_get_contents
+        - file_put_contents
+      category: file_operation
+      severity: MEDIUM
+      profiles:
+        - portability
+        - default
+      guidelines:
+        cwe:
+          - CWE-22
+      doc_url: https://docs.gbt-codeagent.com/rules/path-traversal
+    - id: SEC-DES-002
+      name: Deserialization
+      patterns:
+        - unserialize(
+      category: deserialization
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-502
+        owasp:
+          - A03:2021
+      doc_url: https://docs.gbt-codeagent.com/rules/deserialization
+    - id: SEC-XXE-003
+      name: XML Processing
+      patterns:
+        - simplexml_load_string
+        - simplexml_load_file
+        - DOMDocument.loadXML
+      category: xxe
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-611
+        owasp:
+          - A03:2021
+      doc_url: https://docs.gbt-codeagent.com/rules/xxe
+    - id: QS-PHP-816
+      name: COMMAND INJECTION
+      patterns:
+        - exec\s*\(
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+      _quickScan: true
+      _vulnType: COMMAND_INJECTION
+      _cwe: CWE-78
+      _chineseSeverity: 严重
+    - id: QS-PHP-817
+      name: COMMAND INJECTION
+      patterns:
+        - system\s*\(
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+      _quickScan: true
+      _vulnType: COMMAND_INJECTION
+      _cwe: CWE-78
+      _chineseSeverity: 严重
+    - id: QS-PHP-818
+      name: COMMAND INJECTION
+      patterns:
+        - passthru\s*\(
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+      _quickScan: true
+      _vulnType: COMMAND_INJECTION
+      _cwe: CWE-78
+      _chineseSeverity: 严重
+    - id: QS-PHP-819
+      name: CODE INJECTION
+      patterns:
+        - eval\s*\(
+      category: code_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-94
+      _quickScan: true
+      _vulnType: CODE_INJECTION
+      _cwe: CWE-94
+      _chineseSeverity: 严重
+    - id: QS-PHP-820
+      name: SQL INJECTION
+      patterns:
+        - mysql_query\s*\(
+      category: sql_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+      _quickScan: true
+      _vulnType: SQL_INJECTION
+      _cwe: CWE-89
+      _chineseSeverity: 严重
+    - id: QS-PHP-821
+      name: SQL INJECTION
+      patterns:
+        - mysqli_query\s*\(
+      category: sql_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+      _quickScan: true
+      _vulnType: SQL_INJECTION
+      _cwe: CWE-89
+      _chineseSeverity: 严重
+    - id: QS-PHP-822
+      name: SQL INJECTION
+      patterns:
+        - \$sql\s*=
+      category: sql_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+      _quickScan: true
+      _vulnType: SQL_INJECTION
+      _cwe: CWE-89
+      _chineseSeverity: 严重
+    - id: QS-PHP-823
+      name: PATH TRAVERSAL
+      patterns:
+        - include\s*\(
+      category: file_operation
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-22
+      _quickScan: true
+      _vulnType: PATH_TRAVERSAL
+      _cwe: CWE-22
+      _chineseSeverity: 高危
+    - id: QS-PHP-824
+      name: PATH TRAVERSAL
+      patterns:
+        - require\s*\(
+      category: file_operation
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-22
+      _quickScan: true
+      _vulnType: PATH_TRAVERSAL
+      _cwe: CWE-22
+      _chineseSeverity: 高危
+    - id: QS-PHP-825
+      name: WEAK HASH
+      patterns:
+        - md5\s*\(
+      category: weak_hash
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-328
+      _quickScan: true
+      _vulnType: WEAK_HASH
+      _cwe: CWE-328
+      _chineseSeverity: 高危
+    - id: QS-PHP-826
+      name: WEAK HASH
+      patterns:
+        - sha1\s*\(
+      category: weak_hash
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-328
+      _quickScan: true
+      _vulnType: WEAK_HASH
+      _cwe: CWE-328
+      _chineseSeverity: 高危
+    - id: QS-PHP-827
+      name: PREDICTABLE RANDOM
+      patterns:
+        - rand\s*\(
+      category: weak_random
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-338
+      _quickScan: true
+      _vulnType: PREDICTABLE_RANDOM
+      _cwe: CWE-338
+      _chineseSeverity: 高危
+    - id: QS-PHP-828
+      name: INFO LEAK
+      patterns:
+        - echo\s*\$.*password
+      category: info_leak
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-532
+      _quickScan: true
+      _vulnType: INFO_LEAK
+      _cwe: CWE-532
+      _chineseSeverity: 中危
+  sanitizers:
+    - name: SQL Parameterization
+      patterns:
+        - mysqli_prepare
+        - PDO::prepare
+        - \$stmt->execute
+        - \$pdo->prepare
+      category: sql_safe
+    - name: Output Encoding
+      patterns:
+        - htmlspecialchars
+        - htmlentities
+        - ENT_QUOTES
+        - ENT_HTML5
+      category: encoding
+    - name: Shell Escaping
+      patterns:
+        - escapeshellarg
+        - escapeshellcmd
+      category: shell_safe
+    - name: Path Security
+      patterns:
+        - basename
+        - realpath
+        - dirname
+        - is_file
+        - is_dir
+      category: path_safe

@@ -1,0 +1,27 @@
+php_dangerous_functions:
+  description: PHP危险函数使用检测
+  cwe: CWE-78
+  languages:
+    php:
+      riskPatterns:
+        - pattern: putenv\(
+          description: 环境变量修改可能被利用
+          severity: HIGH
+        - pattern: mail\(
+          description: 邮件函数可能被用于邮件注入
+          severity: MEDIUM
+        - pattern: mb_send_mail\(
+          description: 多字节邮件函数同样存在注入风险
+          severity: MEDIUM
+        - pattern: error_log\(
+          description: 错误日志可能被用于日志注入
+          severity: MEDIUM
+        - pattern: preg_replace.*e
+          description: preg_replace e修饰符导致代码执行
+          severity: CRITICAL
+      safePatterns:
+        - pattern: filter_var.*FILTER_VALIDATE_EMAIL
+          description: 邮箱验证
+        - pattern: htmlspecialchars.*ENT_QUOTES
+          description: 输出编码
+      remediation: 避免使用危险函数，使用安全替代方案

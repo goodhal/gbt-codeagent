@@ -1,0 +1,111 @@
+# JavaScript/Node.js 安全控制适配器
+# 定义 JavaScript/Node.js 生态系统中各安全控制的检测模式
+# 支持: Express, Koa, NestJS, React, Vue, MongoDB, Mongoose, Sequelize
+# 版本: 1.0.0
+# 参考: java-audit-skills (route-mapper, auth-audit, sql-audit)
+
+language: javascript
+file_extensions:
+  - ".js"
+  - ".jsx"
+  - ".ts"
+  - ".tsx"
+
+control_patterns:
+  authentication:
+    jwt:
+      - 'jsonwebtoken|jwt-simple|jose'
+      - 'sign\(|verify\(|decode\('
+      - 'JwtService|JWTModule'
+      - 'AuthGuard|JwtAuthGuard'
+    session:
+      - 'express-session|cookie-session'
+      - 'req\.session|session\.user'
+      - 'passport|PassportStrategy'
+    oauth:
+      - 'OAuth2Client|google-auth-library'
+      - 'passport-oauth2|passport-jwt'
+
+  authorization:
+    decorators:
+      - '@UseGuards|@AuthGuard'
+      - '@Roles|@Role|@RolesAllowed'
+      - '@ApiBearerAuth|@ApiKeyAuth'
+    middleware:
+      - 'isAuthenticated|ensureAuthenticated'
+      - 'checkRole|hasRole|requireRole'
+    ownership:
+      - 'userId.*===.*req\.user'
+      - 'findOne.*userId|where.*userId'
+      - 'user\.id.*===|user\.equals'
+
+  csrf_protection:
+    express:
+      - 'csurf|csrf-protection'
+      - 'csrfToken|req\.csrfToken'
+    angular:
+      - 'HttpClientXsrfModule|XSRF-TOKEN'
+    react:
+      - 'csrf-token|CSRFToken'
+
+  input_validation:
+    class_validator:
+      - '@IsString|@IsNumber|@IsBoolean'
+      - '@IsEmail|@IsUrl|@IsUUID'
+      - '@Validate|@ValidateNested'
+      - 'ValidationPipe|validate\('
+    joi:
+      - 'Joi\.object|Joi\.string|Joi\.number'
+      - 'validate\(|validateAsync\('
+    zod:
+      - 'z\.object|z\.string|z\.number'
+      - 'parse\(|safeParse\('
+    express_validator:
+      - 'check\(|validationResult'
+      - 'body\(|param\(|query\('
+
+  sql_protection:
+    orm:
+      - 'Sequelize|Model\.find|Model\.findOne'
+      - 'where\(|include\(|order\('
+      - 'findAll|create|update|destroy'
+    prisma:
+      - 'PrismaClient|prisma\.'
+      - 'findUnique|findMany|create'
+    typeorm:
+      - 'Repository|EntityManager'
+      - 'createQueryBuilder|getRepository'
+    parameterized:
+      - '\$\{.*\?.*\}|:\w+'
+      - 'connection\.query.*\['
+
+  xss_protection:
+    escaping:
+      - 'DOMPurify|sanitize-html'
+      - 'escapeHtml|htmlEscape'
+      - 'encodeURIComponent|encodeURI'
+    react:
+      - 'dangerouslySetInnerHTML'
+      - 'React\.createElement|JSX'
+    template:
+      - 'handlebars|nunjucks|ejs'
+      - 'escape\(|autoEscape'
+
+  path_traversal:
+    safe_join:
+      - 'path\.join|path\.resolve'
+      - '__dirname|__filename'
+      - 'normalize|resolve'
+    validation:
+      - 'validatePath|sanitizePath'
+      - 'allowedExtensions|validExtensions'
+
+  file_upload:
+    validation:
+      - 'multer|formidable|busboy'
+      - 'fileFilter|limits'
+      - 'mimetype|originalname'
+    storage:
+      - 'aws-sdk|@aws-sdk'
+      - 'multer-s3|storage\.put'
+      - 'cos-nodejs-sdk|oss-sdk'

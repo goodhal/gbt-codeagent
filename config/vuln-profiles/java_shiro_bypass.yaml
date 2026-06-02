@@ -1,0 +1,19 @@
+java_shiro_bypass:
+  description: Shiro鉴权绕过 — 已知CVE版本和路径绕过模式
+  cwe: CWE-287
+  languages:
+    java:
+      riskPatterns:
+        - pattern: shiro-(core|web|spring).*1\.[0-4]\.
+          description: Shiro < 1.5.x — CVE-2020-1957/CVE-2020-11989
+          severity: CRITICAL
+        - pattern: shiro-(core|web|spring).*1\.5\.[0-2]
+          description: Shiro < 1.5.3 — CVE-2020-11989仍存在
+          severity: CRITICAL
+        - pattern: shiro-(core|web|spring).*1\.(6\.0|7\.0|7\.1|8\.0|9\.0|10\.0)
+          description: Shiro其他含CVE版本
+          severity: HIGH
+      safePatterns:
+        - pattern: shiro-(core|web|spring).*1\.1[1-9]\.|shiro.*2\.
+          description: Shiro >= 1.11.0 或 2.x
+      remediation: 升级Shiro到≥1.11.0。如无法升级：1) 前置反代过滤器拒绝分号 2) 鉴权层改用getServletPath()

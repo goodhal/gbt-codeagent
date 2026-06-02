@@ -1,0 +1,24 @@
+python_dangerous_functions:
+  description: Python危险函数使用检测
+  cwe: CWE-78
+  languages:
+    python:
+      riskPatterns:
+        - pattern: subprocess\.Popen.*shell=True
+          description: 启用shell=True的子进程调用
+          severity: CRITICAL
+        - pattern: eval\(
+          description: eval函数执行用户代码
+          severity: CRITICAL
+        - pattern: exec\(
+          description: exec函数执行用户代码
+          severity: CRITICAL
+        - pattern: pickle\.loads|yaml\.load
+          description: 不安全的反序列化
+          severity: CRITICAL
+      safePatterns:
+        - pattern: subprocess\.run.*shell=False
+          description: 禁用shell的子进程调用
+        - pattern: json\.loads
+          description: 安全的JSON解析
+      remediation: 避免使用eval/exec，使用参数化的subprocess调用

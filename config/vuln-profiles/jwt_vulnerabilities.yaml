@@ -1,0 +1,43 @@
+jwt_vulnerabilities:
+  description: JWT相关漏洞
+  cwe: CWE-345
+  languages:
+    javascript:
+      riskPatterns:
+        - pattern: jwt\.decode\s*\(
+          description: 解码但不验证JWT
+        - pattern: algorithm.*none
+          description: JWT使用none算法
+        - pattern: verify.*false
+          description: JWT验证被禁用
+      safePatterns:
+        - pattern: jwt\.verify\s*\(
+          description: 验证JWT
+        - pattern: algorithm.*HS256
+          description: 指定算法
+      severity: HIGH
+      remediation: 始终验证JWT，指定安全算法
+    python:
+      riskPatterns:
+        - pattern: jwt\.decode\s*\([^)]*verify\s*=\s*False
+          description: JWT验证被禁用
+        - pattern: jwt\.decode\s*\([^)]*algorithms\s*=\s*\[\s*['\"]none['\"]
+          description: JWT使用none算法
+      safePatterns:
+        - pattern: jwt\.decode\s*\([^)]*verify\s*=\s*True
+          description: JWT验证启用
+      severity: HIGH
+      remediation: 始终验证JWT，使用强算法
+    java:
+      riskPatterns:
+        - pattern: Algorithm\.none\s*\(
+          description: JWT使用none算法
+        - pattern: JWVerifier.*setVerify\s*\(\s*false\s*\)
+          description: JWT验证被禁用
+      safePatterns:
+        - pattern: Algorithm\.HS256
+          description: 使用HS256
+        - pattern: RS256
+          description: 使用RS256
+      severity: HIGH
+      remediation: 禁用none算法，始终验证签名

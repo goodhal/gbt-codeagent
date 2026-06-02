@@ -1,0 +1,98 @@
+# Go 语言安全控制适配器
+# 定义 Go 生态系统中各安全控制的检测模式
+# 支持: Gin, Echo, Fiber, GORM, Ent, sqlx
+# 版本: 1.0.0
+# 参考: java-audit-skills (route-mapper, auth-audit, sql-audit)
+
+language: go
+file_extensions:
+  - ".go"
+
+control_patterns:
+  authentication:
+    jwt:
+      - 'jwt\.NewWithClaims|jwt\.Parse'
+      - 'jwt-go|go-jwt-middleware'
+      - 'AccessToken|RefreshToken'
+      - 'TokenClaims|CustomClaims'
+    session:
+      - 'gorilla/sessions|scs/v2'
+      - 'SessionStore|LoadAndSave'
+      - 'GetString|SetString'
+    oauth:
+      - 'golang.org/x/oauth2'
+      - 'oauth2.Config|oauth2.Token'
+
+  authorization:
+    middleware:
+      - 'AuthMiddleware|RequireAuth'
+      - 'RequireRole|HasRole'
+      - 'CheckPermission|RequirePermission'
+    rbac:
+      - 'rbac|RoleBasedAccess'
+      - 'IsAllowed|IsPermitted'
+    ownership:
+      - 'userID.*==|userId.*=='
+      - 'Where.*UserID|FindByUserID'
+      - 'GetByUser|QueryByUser'
+
+  csrf_protection:
+    gin:
+      - 'csrf\.Middleware|csrf\.Protect'
+      - 'X-CSRF-Token|csrfToken'
+    echo:
+      - 'csrf\.New|csrf\.Config'
+
+  input_validation:
+    validator:
+      - 'validator\.Validate|ValidateStruct'
+      - 'binding:"|validate:"'
+      - '@NotEmpty|@Email|@URL'
+    custom:
+      - 'Validate\(|ValidateRequest'
+      - 'CheckInput|SanitizeInput'
+
+  sql_protection:
+    orm_gorm:
+      - 'gorm\.DB|db\.Where'
+      - 'Find\(|First\(|Take\('
+      - 'Create\(|Save\(|Update\('
+    orm_ent:
+      - 'ent\.Client|client\.'
+      - 'Query\(|Where\(|FirstX'
+    sqlx:
+      - 'sqlx\.DB|sqlx\.Named'
+      - 'Get\(|Select\(|Exec\('
+    parameterized:
+      - 'db\.Query|db\.QueryRow'
+      - '\?.*\$1|\$2.*\$n'
+
+  xss_protection:
+    escaping:
+      - 'html\.EscapeString|html\.UnescapeString'
+      - 'template\.HTMLEscape'
+    sanitization:
+      - 'bluemonday\.Sanitize'
+      - 'xss\.FilterHTML'
+    template:
+      - 'html/template|text/template'
+      - 'template\.Must|template\.New'
+
+  path_traversal:
+    safe_join:
+      - 'filepath\.Join|filepath\.Dir'
+      - 'filepath\.Abs|filepath\.Clean'
+      - 'filepath\.Base|filepath\.Ext'
+    validation:
+      - 'ValidatePath|CleanPath'
+      - 'AllowedPaths|ValidExtensions'
+
+  file_upload:
+    validation:
+      - 'mime\.TypeByExtension|DetectContentType'
+      - 'filepath\.Ext|strings\.HasSuffix'
+      - 'MaxBytesReader|LimitReader'
+    storage:
+      - 'aws/aws-sdk-go|gocloud.dev/blob'
+      - 'PutObject|Upload'
+      - 'os\.WriteFile|ioutil\.WriteFile'

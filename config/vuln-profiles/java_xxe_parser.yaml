@@ -1,0 +1,28 @@
+java_xxe_parser:
+  description: XXE漏洞 — XML解析器外部实体未禁用
+  cwe: CWE-611
+  languages:
+    java:
+      riskPatterns:
+        - pattern: DocumentBuilderFactory\.newInstance\(\)
+          description: DOM解析器，需检查是否禁用外部实体
+        - pattern: SAXParserFactory\.newInstance\(\)
+          description: SAX解析器入口
+        - pattern: SAXBuilder\(|SAXReader\(|XMLReaderFactory\.createXMLReader
+          description: dom4j/JDOM解析器入口
+        - pattern: XMLInputFactory\.newInstance\(\)
+          description: StAX解析器入口
+        - pattern: TransformerFactory\.newInstance\(\)
+          description: XSLT转换器入口
+      safePatterns:
+        - pattern: setFeature.*DISALLOW_DOCTYPE_DECL|setFeature.*EXTERNAL_GENERAL_ENTITIES.*false
+          description: 已禁用外部实体
+        - pattern: setFeature.*EXTERNAL_PARAMETER_ENTITIES.*false
+          description: 已禁用外部参数实体
+        - pattern: setExpandEntityReferences\(false\)
+          description: 已禁用实体扩展
+      severity: HIGH
+      remediation: |
+        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+        dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+        dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);

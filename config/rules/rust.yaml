@@ -1,0 +1,128 @@
+$schema: ./rules-schema.yaml
+language: rust
+taintTracking:
+  sources:
+    - name: User Input
+      patterns:
+        - std::io::stdin
+        - env::args
+        - fs::read
+      category: user_input
+    - name: Network Input
+      patterns:
+        - reqwest::get
+        - ureq::request
+      category: network_input
+  sinks:
+    - id: SEC-CMD-006
+      name: Command Execution
+      patterns:
+        - std::process::Command
+        - Command::new
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+        owasp:
+          - A03:2021
+      doc_url: https://docs.gbt-codeagent.com/rules/command-injection
+    - id: SEC-FILE-004
+      name: File Operation
+      patterns:
+        - std::fs::read
+        - std::fs::write
+        - File::open
+      category: file_operation
+      severity: MEDIUM
+      profiles:
+        - portability
+        - default
+      guidelines:
+        cwe:
+          - CWE-22
+      doc_url: https://docs.gbt-codeagent.com/rules/path-traversal
+    - id: SEC-DES-004
+      name: Deserialization
+      patterns:
+        - serde::Deserialize
+        - bincode::deserialize
+      category: deserialization
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-502
+        owasp:
+          - A03:2021
+      doc_url: https://docs.gbt-codeagent.com/rules/deserialization
+    - id: QS-RUST-836
+      name: COMMAND INJECTION
+      patterns:
+        - std::process::Command::new
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+      _quickScan: true
+      _vulnType: COMMAND_INJECTION
+      _cwe: CWE-78
+      _chineseSeverity: 严重
+    - id: QS-RUST-837
+      name: WEAK HASH
+      patterns:
+        - md5\s*\(
+      category: weak_hash
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-328
+      _quickScan: true
+      _vulnType: WEAK_HASH
+      _cwe: CWE-328
+      _chineseSeverity: 高危
+    - id: QS-RUST-838
+      name: WEAK HASH
+      patterns:
+        - sha1\s*\(
+      category: weak_hash
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-328
+      _quickScan: true
+      _vulnType: WEAK_HASH
+      _cwe: CWE-328
+      _chineseSeverity: 高危
+    - id: QS-RUST-839
+      name: PREDICTABLE RANDOM
+      patterns:
+        - rand\s*\(
+      category: weak_random
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-338
+      _quickScan: true
+      _vulnType: PREDICTABLE_RANDOM
+      _cwe: CWE-338
+      _chineseSeverity: 高危
+  sanitizers: []

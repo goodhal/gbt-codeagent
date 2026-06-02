@@ -1,0 +1,463 @@
+$schema: ./rules-schema.yaml
+language: cpp
+taintTracking:
+  sources:
+    - name: User Input
+      patterns:
+        - cin>>
+        - getline
+        - scanf
+        - gets
+        - fgets
+      category: user_input
+    - name: File Read
+      patterns:
+        - ifstream
+        - fstream
+        - FILE
+      category: file_input
+  sinks:
+    - id: SEC-CMD-007
+      name: Command Execution
+      patterns:
+        - system\(
+        - popen\(
+        - execl
+        - execlp
+        - execv
+        - execvp
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+        owasp:
+          - A03:2021
+        gbt:
+          - GB/T34943-6.1.1.6
+      doc_url: https://docs.gbt-codeagent.com/rules/command-injection
+    - id: SEC-SQL-007
+      name: SQL Execution
+      patterns:
+        - mysql_query
+        - sqlite3_exec
+        - PQexec
+      category: sql_injection
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+        owasp:
+          - A03:2021
+        gbt:
+          - GB/T34943-6.1.1.1
+      doc_url: https://docs.gbt-codeagent.com/rules/sql-injection
+    - id: SEC-FILE-005
+      name: File Operation
+      patterns:
+        - fopen
+        - ifstream
+        - ofstream
+        - freopen
+      category: file_operation
+      severity: MEDIUM
+      profiles:
+        - portability
+        - default
+      guidelines:
+        cwe:
+          - CWE-22
+        gbt:
+          - GB/T34943-6.1.1.4
+      doc_url: https://docs.gbt-codeagent.com/rules/path-traversal
+    - id: SEC-CODE-006
+      name: Code Execution
+      patterns:
+        - longjmp
+        - setjmp
+      category: code_injection
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-94
+        gbt:
+          - GB/T34943-6.1.1.3
+      doc_url: https://docs.gbt-codeagent.com/rules/code-injection
+    - id: QS-CPP-770
+      name: COMMAND INJECTION
+      patterns:
+        - system\s*\(\s*[^)]*\+
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+      _quickScan: true
+      _vulnType: COMMAND_INJECTION
+      _cwe: CWE-78
+      _chineseSeverity: 严重
+    - id: QS-CPP-771
+      name: COMMAND INJECTION
+      patterns:
+        - popen\s*\(
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+      _quickScan: true
+      _vulnType: COMMAND_INJECTION
+      _cwe: CWE-78
+      _chineseSeverity: 严重
+    - id: QS-CPP-772
+      name: BUFFER OVERFLOW
+      patterns:
+        - strcpy\s*\(
+      category: buffer_overflow
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-120
+      _quickScan: true
+      _vulnType: BUFFER_OVERFLOW
+      _cwe: CWE-120
+      _chineseSeverity: 严重
+    - id: QS-CPP-773
+      name: BUFFER OVERFLOW
+      patterns:
+        - gets\s*\(
+      category: buffer_overflow
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-120
+      _quickScan: true
+      _vulnType: BUFFER_OVERFLOW
+      _cwe: CWE-120
+      _chineseSeverity: 严重
+    - id: QS-CPP-774
+      name: BUFFER OVERFLOW
+      patterns:
+        - scanf\s*\(
+      category: buffer_overflow
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-120
+      _quickScan: true
+      _vulnType: BUFFER_OVERFLOW
+      _cwe: CWE-120
+      _chineseSeverity: 严重
+    - id: QS-CPP-775
+      name: FORMAT STRING
+      patterns:
+        - printf\s*\(\s*\w+\s*\)
+      category: format_string
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-134
+      _quickScan: true
+      _vulnType: FORMAT_STRING
+      _cwe: CWE-134
+      _chineseSeverity: 高危
+    - id: QS-CPP-776
+      name: INTEGER OVERFLOW
+      patterns:
+        - malloc\s*\(\s*\w+\s*\*\s*\d+
+      category: integer_overflow
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-190
+      _quickScan: true
+      _vulnType: INTEGER_OVERFLOW
+      _cwe: CWE-190
+      _chineseSeverity: 高危
+    - id: QS-CPP-777
+      name: HARD CODE PASSWORD
+      patterns:
+        - password\s*=\s*"[^"]{3,}"
+      category: hard_coded_secret
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-259
+      _quickScan: true
+      _vulnType: HARD_CODE_PASSWORD
+      _cwe: CWE-259
+      _chineseSeverity: 严重
+    - id: QS-CPP-778
+      name: WEAK CRYPTO
+      patterns:
+        - DES_set_key
+      category: weak_crypto
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-327
+      _quickScan: true
+      _vulnType: WEAK_CRYPTO
+      _cwe: CWE-327
+      _chineseSeverity: 高危
+    - id: QS-CPP-779
+      name: WEAK HASH
+      patterns:
+        - SHA1\s*\(
+      category: weak_hash
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-328
+      _quickScan: true
+      _vulnType: WEAK_HASH
+      _cwe: CWE-328
+      _chineseSeverity: 高危
+    - id: QS-CPP-780
+      name: PREDICTABLE RANDOM
+      patterns:
+        - rand\s*\(\s*\)
+      category: weak_random
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-338
+      _quickScan: true
+      _vulnType: PREDICTABLE_RANDOM
+      _cwe: CWE-338
+      _chineseSeverity: 高危
+    - id: QS-CPP-781
+      name: PROCESS CONTROL
+      patterns:
+        - LoadLibrary\s*\(
+      category: process_control
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-114
+      _quickScan: true
+      _vulnType: PROCESS_CONTROL
+      _cwe: CWE-114
+      _chineseSeverity: 高危
+    - id: QS-CPP-782
+      name: PROCESS CONTROL
+      patterns:
+        - dlopen\s*\(
+      category: process_control
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-114
+      _quickScan: true
+      _vulnType: PROCESS_CONTROL
+      _cwe: CWE-114
+      _chineseSeverity: 高危
+    - id: QS-CPP-783
+      name: HARDCODED CREDENTIALS
+      patterns:
+        - strcmp\s*\(\s*\w+\s*,\s*"[^"]{3,}"\s*\)
+      category: hard_coded_secret
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-798
+      _quickScan: true
+      _vulnType: HARDCODED_CREDENTIALS
+      _cwe: CWE-798
+      _chineseSeverity: 严重
+    - id: QS-CPP-784
+      name: ARBITRARY FILE READ
+      patterns:
+        - fopen\s*\(\s*(?:user|input|request|filename|filepath|path)
+      category: file_operation
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-22
+      _quickScan: true
+      _vulnType: ARBITRARY_FILE_READ
+      _cwe: CWE-22
+      _chineseSeverity: 高危
+    - id: SEC-SPRINTF-CPP-726
+      name: BUFFER OVERFLOW
+      patterns:
+        - sprintf\s*\(\s*\w+\s*,\s*"[^"]*%s
+      category: buffer_overflow
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-120
+      _quickScan: true
+      _vulnType: BUFFER_OVERFLOW
+      _cwe: CWE-120
+      _chineseSeverity: 高危
+    - id: SEC-STRCAT-CPP-727
+      name: BUFFER OVERFLOW
+      patterns:
+        - strcat\s*\(
+      category: buffer_overflow
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-120
+      _quickScan: true
+      _vulnType: BUFFER_OVERFLOW
+      _cwe: CWE-120
+      _chineseSeverity: 高危
+    - id: SEC-STRNCAT-CPP-728
+      name: BUFFER OVERFLOW
+      patterns:
+        - strncat\s*\(
+      category: buffer_overflow
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-120
+      _quickScan: true
+      _vulnType: BUFFER_OVERFLOW
+      _cwe: CWE-120
+      _chineseSeverity: 中危
+    - id: SEC-DESCRYPTO-CPP-729
+      name: WEAK CRYPTO
+      patterns:
+        - EVP_des_|DES_encrypt|DES_key
+      category: weak_crypto
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-327
+      _quickScan: true
+      _vulnType: WEAK_CRYPTO
+      _cwe: CWE-327
+      _chineseSeverity: 高危
+    - id: SEC-MD5-CPP-730
+      name: WEAK HASH
+      patterns:
+        - MD5_\w+\s*\(
+      category: weak_hash
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-328
+      _quickScan: true
+      _vulnType: WEAK_HASH
+      _cwe: CWE-328
+      _chineseSeverity: 高危
+    - id: SEC-SRAND-CPP-731
+      name: PREDICTABLE RANDOM
+      patterns:
+        - srand\s*\(\s*(?:time|clock)
+      category: weak_random
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-338
+      _quickScan: true
+      _vulnType: PREDICTABLE_RANDOM
+      _cwe: CWE-338
+      _chineseSeverity: 中危
+    - id: SEC-ATOI-CPP-732
+      name: INTEGER OVERFLOW
+      patterns:
+        - atoi\s*\(|atol\s*\(
+      category: integer_overflow
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-190
+      _quickScan: true
+      _vulnType: INTEGER_OVERFLOW
+      _cwe: CWE-190
+      _chineseSeverity: 中危
+    - id: SEC-FREAD-CPP-733
+      name: INTEGER OVERFLOW
+      patterns:
+        - fread\s*\([^)]*size\s*\*\s*count
+      category: integer_overflow
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-190
+      _quickScan: true
+      _vulnType: INTEGER_OVERFLOW
+      _cwe: CWE-190
+      _chineseSeverity: 中危
+  sanitizers: []

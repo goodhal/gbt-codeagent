@@ -1,0 +1,102 @@
+# Python 安全控制适配器
+# 定义 Python 生态系统中各安全控制的检测模式
+# 支持: Django, Flask, FastAPI, SQLAlchemy, Peewee, Requests
+# 版本: 1.0.0
+# 参考: java-audit-skills (route-mapper, auth-audit, sql-audit)
+
+language: python
+file_extensions:
+  - ".py"
+
+control_patterns:
+  authentication:
+    jwt:
+      - 'JWT|PyJWT|jwt\.encode|jwt\.decode'
+      - 'create_access_token|create_refresh_token'
+      - 'TokenStorage|JWTBearer'
+      - 'decode_token|verify_token'
+    session:
+      - 'session\[.user.\]|session.get\("user"\)'
+      - 'flask\.session|request\.session'
+      - 'login_user|logout_user|login_required'
+    oauth:
+      - 'OAuth2|OAuth2PasswordBearer'
+      - 'AuthorizationCodeBearer'
+      - 'client_id|client_secret'
+
+  authorization:
+    decorators:
+      - '@login_required|@auth_required'
+      - '@roles_required|@permissions_required'
+      - '@permission_required'
+    rbac:
+      - 'has_role\(|has_permission\('
+      - 'check_role|check_permission'
+      - 'is_admin\(|is_superuser'
+    ownership:
+      - 'user_id.*=.*request\.user'
+      - 'filter.*user_id|exclude.*user_id'
+      - 'get_object_or_404.*user'
+
+  csrf_protection:
+    flask:
+      - 'CSRFProtect|csrf.exempt'
+      - 'wtforms|FlaskForm'
+    django:
+      - '@csrf_protect|csrf_exempt'
+      - 'ensure_csrf_cookie|get_csrf_token'
+
+  input_validation:
+    pydantic:
+      - 'BaseModel|Field\(|validator'
+      - '@validate|@root_validator'
+      - 'constr|conint|confrozenset'
+    marshmallow:
+      - 'Schema|fields\.'
+      - '@validates|validates_schema'
+    django:
+      - 'forms\.Form|ModelForm'
+      - 'cleaned_data|is_valid'
+    regex:
+      - 're\.match|re\.search|re\.fullmatch'
+      - 'validate_email|validate_url'
+
+  sql_protection:
+    orm:
+      - 'SQLAlchemy|Model|session\.query'
+      - 'filter\(|filter_by\(|get\(|first\('
+      - 'all\(|one\(|scalar\('
+    orm_peewee:
+      - 'Model\.select|Model\.insert|Model\.update'
+      - 'where\(|join\(|order_by\('
+    parameterized:
+      - 'execute\(.*,%|execute\(.*,\s*\['
+      - 'paramstyle|named_parameters'
+
+  xss_protection:
+    escaping:
+      - 'escape|html.escape|cgi.escape'
+      - 'markupsafe|MarkupSafe'
+    sanitization:
+      - 'bleach\.clean|bleach\.sanitize'
+      - 'DOMPurify|sanitize_html'
+    template:
+      - 'jinja2|Jinja2Templates'
+      - 'render_template|render_template_string'
+
+  path_traversal:
+    safe_join:
+      - 'os\.path\.join|pathlib\.Path'
+      - 'abspath|realpath|normpath'
+    validation:
+      - 'validate_file_path|sanitize_path'
+      - 'allowed_extensions|allowed_paths'
+
+  file_upload:
+    validation:
+      - 'content_type|mimetype'
+      - 'file_extension|allowed_extensions'
+      - 'secure_filename|sanitize_filename'
+    storage:
+      - 'S3|Boto3|boto3\.client'
+      - 'upload_file|put_object'

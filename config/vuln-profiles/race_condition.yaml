@@ -1,0 +1,42 @@
+race_condition:
+  description: 竞态条件
+  cwe: CWE-362
+  gbt: GB/T34944-6.2.5.1
+  languages:
+    python:
+      riskPatterns:
+        - pattern: if\s+.*balance|if\s+.*stock|if\s+.*count
+          description: 检查-然后-操作模式
+        - pattern: "[.]save\\(.*\\).*balance|update.*balance.*where"
+          description: 余额更新可能竞态
+      safePatterns:
+        - pattern: select_for_update|with_for_update
+          description: 悲观锁
+        - pattern: version|revision|update.*where.*version
+          description: 乐观锁
+      severity: HIGH
+      remediation: 使用乐观锁(version字段)或悲观锁(SELECT FOR UPDATE)
+    java:
+      riskPatterns:
+        - pattern: "@Transactional.*findById.*save"
+          description: 事务中查-改-存模式
+        - pattern: if.*balance.*compareTo.*>=.*subtract
+          description: 余额检查后扣减
+      safePatterns:
+        - pattern: "@Version|@Lock.*PESSIMISTIC"
+          description: 乐观锁或悲观锁
+        - pattern: UPDATE.*WHERE.*version
+          description: 版本号更新
+      severity: HIGH
+      remediation: 使用 @Version 乐观锁或悲观写锁
+    go:
+      riskPatterns:
+        - pattern: if.*balance|if.*stock.*>
+          description: 检查-然后-操作模式
+      safePatterns:
+        - pattern: sync\.Mutex|sync\.RWMutex
+          description: 互斥锁
+        - pattern: UPDATE.*WHERE.*version
+          description: 乐观锁
+      severity: HIGH
+      remediation: 使用互斥锁或乐观锁

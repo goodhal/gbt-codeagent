@@ -14,7 +14,7 @@ class CodeAnalysisTool {
 
   async initialize(options = {}) {
     this._rulesEngine = new RulesEngine();
-    await this._rulesEngine.initialize('./config/detection_rules.yaml');
+    await this._rulesEngine.initialize('./config');
 
     this._analyzer = new CompositeAnalyzer(this._rulesEngine, {
       enableStatic: options.enableStatic !== false,

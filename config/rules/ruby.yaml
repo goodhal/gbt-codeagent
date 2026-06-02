@@ -1,0 +1,202 @@
+$schema: ./rules-schema.yaml
+language: ruby
+taintTracking:
+  sources:
+    - name: User Input
+      patterns:
+        - gets
+        - ARGV
+        - ENV
+        - params
+        - request.params
+      category: user_input
+    - name: File Read
+      patterns:
+        - File.read
+        - File.open
+        - IO.read
+      category: file_input
+  sinks:
+    - id: SEC-CMD-005
+      name: Command Execution
+      patterns:
+        - system(
+        - "`"
+        - exec(
+        - spawn(
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+        owasp:
+          - A03:2021
+      doc_url: https://docs.gbt-codeagent.com/rules/command-injection
+    - id: SEC-SQL-005
+      name: SQL Execution
+      patterns:
+        - execute.*interpolate
+        - find_by_sql
+        - ActiveRecord::Base.connection.execute
+      category: sql_injection
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+        owasp:
+          - A03:2021
+      doc_url: https://docs.gbt-codeagent.com/rules/sql-injection
+    - id: SEC-CODE-005
+      name: Code Execution
+      patterns:
+        - eval(
+        - instance_eval
+        - class_eval
+        - send(
+      category: code_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-94
+        owasp:
+          - A03:2021
+      doc_url: https://docs.gbt-codeagent.com/rules/code-injection
+    - id: SEC-DES-003
+      name: Deserialization
+      patterns:
+        - Marshal.load
+        - YAML.load
+        - Psych.load
+      category: deserialization
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-502
+        owasp:
+          - A03:2021
+      doc_url: https://docs.gbt-codeagent.com/rules/deserialization
+    - id: QS-RUBY-829
+      name: COMMAND INJECTION
+      patterns:
+        - system\s*\(
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+      _quickScan: true
+      _vulnType: COMMAND_INJECTION
+      _cwe: CWE-78
+      _chineseSeverity: 严重
+    - id: QS-RUBY-830
+      name: COMMAND INJECTION
+      patterns:
+        - exec\s*\(
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+      _quickScan: true
+      _vulnType: COMMAND_INJECTION
+      _cwe: CWE-78
+      _chineseSeverity: 严重
+    - id: QS-RUBY-831
+      name: CODE INJECTION
+      patterns:
+        - eval\s*\(
+      category: code_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-94
+      _quickScan: true
+      _vulnType: CODE_INJECTION
+      _cwe: CWE-94
+      _chineseSeverity: 严重
+    - id: QS-RUBY-832
+      name: COMMAND INJECTION
+      patterns:
+        - open\s*\(
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+      _quickScan: true
+      _vulnType: COMMAND_INJECTION
+      _cwe: CWE-78
+      _chineseSeverity: 严重
+    - id: QS-RUBY-833
+      name: WEAK HASH
+      patterns:
+        - Digest::MD5
+      category: weak_hash
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-328
+      _quickScan: true
+      _vulnType: WEAK_HASH
+      _cwe: CWE-328
+      _chineseSeverity: 高危
+    - id: QS-RUBY-834
+      name: WEAK HASH
+      patterns:
+        - Digest::SHA1
+      category: weak_hash
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-328
+      _quickScan: true
+      _vulnType: WEAK_HASH
+      _cwe: CWE-328
+      _chineseSeverity: 高危
+    - id: QS-RUBY-835
+      name: PREDICTABLE RANDOM
+      patterns:
+        - rand\s*\(
+      category: weak_random
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-338
+      _quickScan: true
+      _vulnType: PREDICTABLE_RANDOM
+      _cwe: CWE-338
+      _chineseSeverity: 高危
+  sanitizers: []

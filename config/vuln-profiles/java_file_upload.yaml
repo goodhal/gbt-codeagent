@@ -1,0 +1,25 @@
+java_file_upload:
+  description: 文件上传漏洞 — 类型校验缺失、路径穿越、Web目录写入
+  cwe: CWE-434
+  languages:
+    java:
+      riskPatterns:
+        - pattern: MultipartFile|ServletFileUpload|DiskFileItemFactory
+          description: 文件上传入口，需检查保存逻辑
+        - pattern: getOriginalFilename\(\).*File\(|transferTo\(.*getOriginalFilename
+          description: 文件名直接来自用户输入 → 路径穿越风险
+        - pattern: \.transferTo\(new File\(|new File\(.*fileName
+          description: 文件保存路径可控
+      safePatterns:
+        - pattern: Paths\.get.*\.normalize\(\)
+          description: 路径规范化处理
+        - pattern: UUID\.randomUUID|FilenameUtils\.getName
+          description: 生成安全文件名
+        - pattern: "@PostMapping.*consumes.*MULTIPART"
+          description: 明确标注文件上传
+      severity: HIGH
+      remediation: |
+        1. 使用随机文件名: UUID.randomUUID().toString()
+        2. 路径规范化: Paths.get(basePath, filename).normalize()
+        3. 白名单校验文件类型: allowedTypes.contains(contentType)
+        4. 保存到Web根目录外

@@ -1,0 +1,126 @@
+path_traversal:
+  description: 路径遍历漏洞
+  cwe: CWE-22
+  languages:
+    python:
+      riskPatterns:
+        - pattern: open\s*\(
+          description: 打开文件操作
+        - pattern: os\.path\.join\s*\([^)]*request\.
+          description: 用户输入参与路径拼接
+      safePatterns:
+        - pattern: os\.path\.realpath\s*\(
+          description: 使用 realpath 规范化
+        - pattern: os\.path\.abspath\s*\(
+          description: 使用 abspath 规范化
+        - pattern: pathlib\.Path\([^)]*\)\.resolve\(
+          description: 使用 resolve 规范化
+      severity: MEDIUM
+      remediation: 使用 Path.resolve() 规范化路径，验证路径在允许范围内
+    java:
+      riskPatterns:
+        - pattern: new File\s*\([^)]*\+
+          description: 字符串拼接的文件路径
+        - pattern: FileInputStream\s*\([^)]*\+
+          description: 文件输入流的字符串拼接
+      safePatterns:
+        - pattern: toRealPath
+          description: 使用 toRealPath 规范化
+        - pattern: toPath\(\).*\.normalize\(\)
+          description: 使用 normalize 规范化
+      severity: MEDIUM
+      remediation: 使用 Path.normalize() 和 realPath() 规范化路径
+    php:
+      riskPatterns:
+        - pattern: include\s*\([^)]*\+\s*[^)]*\)
+          description: include 字符串拼接
+        - pattern: require\s*\([^)]*\+\s*[^)]*\)
+          description: require 字符串拼接
+        - pattern: fopen\s*\([^)]*\+\s*[^)]*\)
+          description: fopen 字符串拼接
+        - pattern: file_get_contents\s*\([^)]*\+\s*[^)]*\)
+          description: file_get_contents 字符串拼接
+        - pattern: readfile\s*\([^)]*\+\s*[^)]*\)
+          description: readfile 字符串拼接
+      safePatterns:
+        - pattern: basename\s*\(
+          description: 使用 basename 提取文件名
+        - pattern: realpath\s*\(
+          description: 使用 realpath 规范化
+        - pattern: is_file\s*\(
+          description: 使用 is_file 验证
+      severity: MEDIUM
+      remediation: 使用 realpath() 规范化路径，验证文件存在且在允许范围内
+    go:
+      riskPatterns:
+        - pattern: ioutil\.ReadFile\s*\([^)]*\+\s*[^)]*\)
+          description: ioutil.ReadFile 字符串拼接
+        - pattern: ioutil\.WriteFile\s*\([^)]*\+\s*[^)]*\)
+          description: ioutil.WriteFile 字符串拼接
+        - pattern: os\.Open\s*\([^)]*\+\s*[^)]*\)
+          description: os.Open 字符串拼接
+      safePatterns:
+        - pattern: path\.Clean\s*\(
+          description: 使用 path.Clean 规范化
+        - pattern: path\.Join\s*\(
+          description: 使用 path.Join 安全拼接
+      severity: MEDIUM
+      remediation: 使用 path.Join 或 path.Clean 规范化路径
+    ruby:
+      riskPatterns:
+        - pattern: File\.open\s*\([^)]*\+\s*[^)]*\)
+          description: File.open 字符串拼接
+        - pattern: open\s*\([^)]*\+\s*[^)]*\)
+          description: open 方法字符串拼接
+        - pattern: read\s*\([^)]*\+\s*[^)]*\)
+          description: read 方法字符串拼接
+      safePatterns:
+        - pattern: File\.join\s*\(
+          description: 使用 File.join 拼接
+        - pattern: File\.basename\s*\(
+          description: 使用 File.basename 提取文件名
+      severity: MEDIUM
+      remediation: 使用 File.join 拼接路径，避免字符串拼接
+    rust:
+      riskPatterns:
+        - pattern: std::fs::read\s*\([^)]*\+\s*[^)]*\)
+          description: std::fs::read 字符串拼接
+        - pattern: std::fs::write\s*\([^)]*\+\s*[^)]*\)
+          description: std::fs::write 字符串拼接
+        - pattern: File::open\s*\([^)]*\+\s*[^)]*\)
+          description: File::open 字符串拼接
+      safePatterns:
+        - pattern: std::path::Path\.new\s*\(
+          description: 使用 Path::new
+        - pattern: Path::join\s*\(
+          description: 使用 Path::join 拼接
+      severity: MEDIUM
+      remediation: 使用 Path::join 拼接路径
+    cpp:
+      riskPatterns:
+        - pattern: fopen\s*\([^)]*\+\s*[^)]*\)
+          description: fopen 字符串拼接
+        - pattern: ifstream\s*\([^)]*\+\s*[^)]*\)
+          description: ifstream 字符串拼接
+        - pattern: ofstream\s*\([^)]*\+\s*[^)]*\)
+          description: ofstream 字符串拼接
+      safePatterns:
+        - pattern: realpath\s*\(
+          description: 使用 realpath 规范化
+      severity: MEDIUM
+      remediation: 使用 realpath 规范化路径
+    csharp:
+      riskPatterns:
+        - pattern: File\.Open\s*\([^)]*\+\s*[^)]*\)
+          description: File.Open 字符串拼接
+        - pattern: File\.ReadAllText\s*\([^)]*\+\s*[^)]*\)
+          description: File.ReadAllText 字符串拼接
+        - pattern: File\.WriteAllText\s*\([^)]*\+\s*[^)]*\)
+          description: File.WriteAllText 字符串拼接
+      safePatterns:
+        - pattern: Path\.Combine\s*\(
+          description: 使用 Path.Combine
+        - pattern: Path\.GetFullPath\s*\(
+          description: 使用 Path.GetFullPath
+      severity: MEDIUM
+      remediation: 使用 Path.Combine 拼接路径

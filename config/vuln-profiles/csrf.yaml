@@ -1,0 +1,56 @@
+csrf:
+  description: 跨站请求伪造 (CSRF)
+  cwe: CWE-352
+  languages:
+    python:
+      riskPatterns:
+        - pattern: "@app\\.route.*methods.*POST"
+          description: POST路由缺少CSRF保护
+        - pattern: session\.get\s*\(
+          description: 使用session但未验证CSRF
+      safePatterns:
+        - pattern: csrf_token
+          description: CSRF token验证
+        - pattern: CSRFProtect
+          description: Flask-WTF CSRF保护
+      severity: MEDIUM
+      remediation: 为所有状态变更操作添加CSRF token验证
+    javascript:
+      riskPatterns:
+        - pattern: fetch\s*\([^)]*\)
+          description: fetch请求可能缺少CSRF保护
+        - pattern: axios\.post\s*\([^)]*\)
+          description: axios POST请求可能缺少CSRF保护
+      safePatterns:
+        - pattern: xsrfToken
+          description: XSRF token
+        - pattern: __RequestVerificationToken
+          description: ASP.NET CSRF token
+      severity: MEDIUM
+      remediation: 添加SameSite cookie和CSRF token
+    java:
+      riskPatterns:
+        - pattern: "@PostMapping"
+          description: POST映射缺少CSRF验证
+        - pattern: "@RequestMapping.*method.*POST"
+          description: 状态变更端点缺少CSRF保护
+      safePatterns:
+        - pattern: CsrfToken
+          description: Spring Security CSRF
+        - pattern: "@EnableCsrf"
+          description: CSRF保护启用
+      severity: MEDIUM
+      remediation: 启用Spring Security CSRF保护
+    php:
+      riskPatterns:
+        - pattern: \$_POST\s*\[
+          description: 直接使用POST参数
+        - pattern: \$_GET\s*\[
+          description: 使用GET处理状态变更
+      safePatterns:
+        - pattern: csrf_token
+          description: CSRF token验证
+        - pattern: SESSION\.verify
+          description: 会话验证
+      severity: MEDIUM
+      remediation: 使用CSRF token和保护cookie

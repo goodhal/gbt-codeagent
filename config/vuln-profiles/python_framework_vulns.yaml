@@ -1,0 +1,21 @@
+python_framework_vulns:
+  description: Python框架特定漏洞 - Django/Flask/FastAPI
+  cwe: CWE-915
+  languages:
+    python:
+      riskPatterns:
+        - pattern: django\.forms\.formsets.*add_error
+          description: Django Formset add_error 拒绝服务漏洞
+          severity: HIGH
+        - pattern: flask\.request\.files.*save
+          description: Flask 文件上传路径穿越风险
+          severity: HIGH
+        - pattern: fastapi\.security\.oauth2.*OAuth2PasswordBearer
+          description: OAuth2配置不当可能导致认证绕过
+          severity: HIGH
+      safePatterns:
+        - pattern: django-cleanup|secure_filename
+          description: 使用安全的文件处理库
+        - pattern: OAuth2AuthorizationCodeBearer
+          description: 使用授权码流程
+      remediation: 升级框架版本，使用安全的文件处理方式

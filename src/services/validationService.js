@@ -16,7 +16,8 @@
 import { promises as fs } from "node:fs";
 import path from "path";
 import { globalVulnValidator } from "./sandbox.js";
-import { VERDICT, SANITIZER_PATTERNS } from "../config/auditConfig.js";
+import { VERDICT } from "../config/auditConfig.js";
+import { loadSanitizerPatterns } from "../config/sanitizerPatternsLoader.js";
 import {
   FILE_EXTENSION_MAP,
   LANGUAGE_VULN_MAP,
@@ -29,6 +30,14 @@ import { CodeCommentParser } from "./codeCommentParser.js";
 export class ValidationService {
   constructor() {
     this.codeCommentParser = new CodeCommentParser();
+    this.sanitizerPatterns = null;
+  }
+
+  async _ensureSanitizerPatterns() {
+    if (!this.sanitizerPatterns) {
+      this.sanitizerPatterns = await loadSanitizerPatterns();
+    }
+    return this.sanitizerPatterns;
   }
 
   /**
@@ -979,16 +988,17 @@ export class ValidationService {
     const vulnType = finding.type || finding.vulnType || '';
     const upperType = vulnType.toUpperCase();
     
-    let patterns = [...SANITIZER_PATTERNS.general];
+    const sanitizerPatterns = await this._ensureSanitizerPatterns();
+    let patterns = [...(sanitizerPatterns.general || [])];
     
     if (upperType.includes('SQL')) {
-      patterns = [...patterns, ...SANITIZER_PATTERNS.sql];
+      patterns = [...patterns, ...(sanitizerPatterns.sql || [])];
     } else if (upperType.includes('XSS')) {
-      patterns = [...patterns, ...SANITIZER_PATTERNS.xss];
+      patterns = [...patterns, ...(sanitizerPatterns.xss || [])];
     } else if (upperType.includes('COMMAND') || upperType.includes('CMD')) {
-      patterns = [...patterns, ...SANITIZER_PATTERNS.cmd];
+      patterns = [...patterns, ...(sanitizerPatterns.cmd || [])];
     } else if (upperType.includes('PATH') || upperType.includes('TRAVERSAL')) {
-      patterns = [...patterns, ...SANITIZER_PATTERNS.path];
+      patterns = [...patterns, ...(sanitizerPatterns.path || [])];
     }
 
     const lineNum = finding.line || parseInt(finding.location?.split(':')[1], 10) || 1;

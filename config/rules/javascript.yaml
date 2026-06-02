@@ -1,0 +1,257 @@
+$schema: ./rules-schema.yaml
+language: javascript
+taintTracking:
+  sources:
+    - name: DOM Input
+      patterns:
+        - innerHTML
+        - outerHTML
+        - document\.write
+        - eval\(
+        - location\.href
+        - location\.search
+        - document\.cookie
+      category: dom_input
+    - name: User Input
+      patterns:
+        - prompt\(
+        - confirm\(
+        - fetch\(
+        - XMLHttpRequest
+        - axios\(
+        - req\.
+        - res\.
+        - \.json\(\)
+        - \.text\(\)
+        - \.data
+        - \.body
+      category: user_input
+  sinks:
+    - id: SEC-CODE-002
+      name: Code Execution
+      patterns:
+        - eval\(
+        - Function\(
+        - setTimeout\(
+        - setInterval\(
+        - new Function
+      category: code_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-94
+        owasp:
+          - A03:2021
+      doc_url: https://docs.gbt-codeagent.com/rules/code-injection
+    - id: SEC-XSS-001
+      name: DOM Manipulation
+      patterns:
+        - innerHTML
+        - outerHTML
+        - insertAdjacentHTML
+        - document.write
+      category: xss
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-79
+        owasp:
+          - A03:2021
+        gbt:
+          - GB/T34946-6.1.1.2
+      doc_url: https://docs.gbt-codeagent.com/rules/xss
+    - id: SEC-SSRF-001
+      name: Network Request
+      patterns:
+        - fetch\(
+        - XMLHttpRequest
+        - axios\(
+      category: ssrf
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-918
+        owasp:
+          - A03:2021
+      doc_url: https://docs.gbt-codeagent.com/rules/ssrf
+    - id: SEC-XXE-001
+      name: XML Processing
+      patterns:
+        - DOMParser
+        - new DOMParser
+        - parseFromString
+        - xmldom
+        - xml2js
+        - xml-js
+        - fast-xml-parser
+        - xmlbuilder
+        - \.parse\(
+      category: xxe
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-611
+        owasp:
+          - A03:2021
+      doc_url: https://docs.gbt-codeagent.com/rules/xxe
+    - id: QS-JAVASCRIPT-798
+      name: CODE INJECTION
+      patterns:
+        - eval\s*\(
+      category: code_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-94
+      _quickScan: true
+      _vulnType: CODE_INJECTION
+      _cwe: CWE-94
+      _chineseSeverity: 严重
+    - id: QS-JAVASCRIPT-799
+      name: CODE INJECTION
+      patterns:
+        - Function\s*\(
+      category: code_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-94
+      _quickScan: true
+      _vulnType: CODE_INJECTION
+      _cwe: CWE-94
+      _chineseSeverity: 严重
+    - id: QS-JAVASCRIPT-800
+      name: XSS
+      patterns:
+        - innerHTML\s*=
+      category: xss
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-79
+      _quickScan: true
+      _vulnType: XSS
+      _cwe: CWE-79
+      _chineseSeverity: 高危
+    - id: QS-JAVASCRIPT-801
+      name: XSS
+      patterns:
+        - document\.write\s*\(
+      category: xss
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-79
+      _quickScan: true
+      _vulnType: XSS
+      _cwe: CWE-79
+      _chineseSeverity: 高危
+    - id: QS-JAVASCRIPT-802
+      name: COMMAND INJECTION
+      patterns:
+        - require\s*\(\s*child_process\s*\)
+      category: command_exec
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+      _quickScan: true
+      _vulnType: COMMAND_INJECTION
+      _cwe: CWE-78
+      _chineseSeverity: 高危
+    - id: QS-JAVASCRIPT-803
+      name: COMMAND INJECTION
+      patterns:
+        - exec\s*\(
+      category: command_exec
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+      _quickScan: true
+      _vulnType: COMMAND_INJECTION
+      _cwe: CWE-78
+      _chineseSeverity: 高危
+    - id: QS-JAVASCRIPT-804
+      name: COMMAND INJECTION
+      patterns:
+        - spawn\s*\(
+      category: command_exec
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+      _quickScan: true
+      _vulnType: COMMAND_INJECTION
+      _cwe: CWE-78
+      _chineseSeverity: 高危
+  sanitizers:
+    - name: Output Encoding
+      patterns:
+        - textContent
+        - innerText
+        - encodeURIComponent
+        - encodeURI
+        - escape\(
+        - lodash\.escape
+        - xss\.filterXSS
+        - DOMPurify\.
+      category: encoding
+    - name: DOM Safe Methods
+      patterns:
+        - createElement
+        - createTextNode
+        - appendChild
+        - removeChild
+        - setAttribute
+        - textContent\s*=
+        - innerText\s*=
+      category: dom_safe
+    - name: Input Validation
+      patterns:
+        - Joi\.
+        - Yup\.
+        - Zod\.
+        - validator\.
+        - isEmail\(
+        - isURL\(
+      category: validation
+    - name: Path Security
+      patterns:
+        - path\.basename
+        - path\.normalize
+        - path\.resolve
+      category: path_safe

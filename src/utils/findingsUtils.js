@@ -7,7 +7,6 @@ import {
   VULN_TYPE_CODES,
   SEVERITY_PREFIX,
   VERDICT,
-  SANITIZER_PATTERNS,
   DKTSS_BASE_SCORES,
   DKTSS_FRICTION,
   DKTSS_WEAPON,
@@ -16,6 +15,10 @@ import {
   calculateDKTSS as configCalculateDKTSS,
   getDktssSeverity as configGetDktssSeverity
 } from "../config/auditConfig.js";
+import { getSanitizerPatterns } from "../config/sanitizerPatternsLoader.js";
+
+// 保持向后兼容性，导出 SANITIZER_PATTERNS
+export const SANITIZER_PATTERNS = getSanitizerPatterns();
 
 /**
  * 为漏洞列表批量生成编号
@@ -169,5 +172,3 @@ export function getDktSSSeverity(dktssScore) {
   return configGetDktssSeverity(dktssScore);
 }
 
-// 导出 VERDICT 和 SANITIZER_PATTERNS 保持兼容性
-export { VERDICT, SANITIZER_PATTERNS };

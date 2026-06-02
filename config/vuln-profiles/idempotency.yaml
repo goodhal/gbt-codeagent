@@ -1,0 +1,26 @@
+idempotency:
+  description: 缺少幂等性保护
+  cwe: CWE-841
+  languages:
+    python:
+      riskPatterns:
+        - pattern: "@app\\.route.*POST.*(pay|order|transfer|withdraw)"
+          description: 支付/下单接口无幂等
+      safePatterns:
+        - pattern: idempotency_key|idempotent|request_id|nonce
+          description: 幂等键
+        - pattern: redis.*setnx|unique_together
+          description: 防重复提交
+      severity: MEDIUM
+      remediation: 添加幂等键(Idempotency-Key)防重复提交
+    java:
+      riskPatterns:
+        - pattern: "@PostMapping.*(pay|order|transfer)"
+          description: 支付接口无幂等
+      safePatterns:
+        - pattern: "@Idempotent|IdempotencyKey|requestId"
+          description: 幂等注解
+        - pattern: redis.*setIfAbsent|unique.*constraint
+          description: 防重复
+      severity: MEDIUM
+      remediation: 使用幂等键+数据库唯一约束

@@ -1,0 +1,54 @@
+insecure_random:
+  description: 不安全的随机数
+  cwe: CWE-338
+  languages:
+    python:
+      riskPatterns:
+        - pattern: random\.random\s*\(
+          description: 使用random模块生成安全随机数
+        - pattern: random\.randint\s*\(
+          description: random.randint不安全
+        - pattern: random\.choice\s*\(
+          description: random.choice不安全
+      safePatterns:
+        - pattern: secrets\.\w+\s*\(
+          description: 使用secrets模块
+        - pattern: os\.urandom\s*\(
+          description: 使用os.urandom
+      severity: MEDIUM
+      remediation: 安全场景使用 secrets 模块
+    javascript:
+      riskPatterns:
+        - pattern: Math\.random\s*\(
+          description: Math.random不安全
+      safePatterns:
+        - pattern: crypto\.randomBytes
+          description: 使用crypto.randomBytes
+        - pattern: window\.crypto\.getRandomValues
+          description: 使用Web Crypto API
+      severity: MEDIUM
+      remediation: 安全场景使用crypto.randomBytes
+    java:
+      riskPatterns:
+        - pattern: new Random\s*\(
+          description: java.util.Random不安全
+        - pattern: Math\.random\s*\(
+          description: Math.random不安全
+      safePatterns:
+        - pattern: SecureRandom\s*\(
+          description: 使用SecureRandom
+        - pattern: new\s+SecureRandom\(\)
+          description: 实例化SecureRandom
+      severity: MEDIUM
+      remediation: 安全场景使用SecureRandom
+    go:
+      riskPatterns:
+        - pattern: rand\.Int\d*\s*\(
+          description: math/rand不安全
+        - pattern: rand\.Read\s*\(
+          description: math/rand不安全
+      safePatterns:
+        - pattern: crypto/rand\.Read\s*\(
+          description: 使用crypto/rand
+      severity: MEDIUM
+      remediation: 安全场景使用crypto/rand

@@ -1,0 +1,24 @@
+php_framework_vulns:
+  description: PHP框架特定漏洞 - Laravel/Symfony/Yii
+  cwe: CWE-915
+  languages:
+    php:
+      riskPatterns:
+        - pattern: Illuminate\\Foundation\\Application::make
+          description: Laravel Application::make 可被利用进行反序列化
+          severity: CRITICAL
+        - pattern: Illuminate\\Container\\Container::getContextualConcrete
+          description: Laravel容器上下文解析可能导致反序列化
+          severity: HIGH
+        - pattern: Symfony\\Component\\Serializer\\Serializer::deserialize
+          description: Symfony序列化器可能存在反序列化漏洞
+          severity: HIGH
+        - pattern: Yii::createObject|Yii::$app->createObject
+          description: Yii框架对象创建可能被利用
+          severity: HIGH
+      safePatterns:
+        - pattern: composer require laravel/framework
+          description: 使用最新版本框架
+        - pattern: SerializerInterface|DenormalizerInterface
+          description: 使用安全的序列化接口
+      remediation: 及时升级框架版本，使用官方安全补丁

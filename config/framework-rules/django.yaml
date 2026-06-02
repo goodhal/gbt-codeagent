@@ -1,0 +1,22 @@
+django:
+  name: Django
+  languages:
+    - python
+  indicators:
+    - from django
+    - import django
+    - "@app.route"
+  specificVulnerabilities:
+    - id: django-sql-injection
+      description: Django ORM 不安全使用
+      patterns:
+        - extra\s*\(
+        - raw\s*\(
+        - .objects\.raw\s*\(
+      remediation: 使用 Django ORM 的参数化查询
+    - id: django-ssti
+      description: 模板注入
+      patterns:
+        - Template\s*\(\s*request\.
+        - render_to_string\s*\([^,]*request\.
+      remediation: 避免用户输入直接进入模板

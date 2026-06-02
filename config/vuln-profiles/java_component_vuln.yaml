@@ -1,0 +1,29 @@
+java_component_vuln:
+  description: Java高危组件版本检测 — Fastjson/Log4j/Jackson/XStream
+  cwe: CWE-1104
+  languages:
+    java:
+      riskPatterns:
+        - pattern: fastjson.*1\.2\.([0-6][0-9]|7[0-9]|80)
+          description: Fastjson ≤1.2.80 — 反序列化RCE (CVE-2022-25845)
+          severity: CRITICAL
+        - pattern: log4j-core.*2\.(0|1[0-6])\.
+          description: Log4j2 ≤2.16.x — Log4Shell RCE (CVE-2021-44228/CVE-2021-45046)
+          severity: CRITICAL
+        - pattern: jackson-databind.*2\.([0-9]|1[0-2])\.
+          description: Jackson-databind ≤2.12.x — 多CVE反序列化
+          severity: HIGH
+        - pattern: xstream.*1\.4\.[0-9]
+          description: XStream < 1.4.18 — 多CVE反序列化
+          severity: HIGH
+      safePatterns:
+        - pattern: fastjson2|com\.alibaba\.fastjson2
+          description: 推荐使用Fastjson2
+        - pattern: log4j-core.*2\.(1[7-9]|2[0-9])\.
+          description: Log4j2 ≥2.17.0 — 安全版本
+      remediation: |
+        升级到安全版本:
+        - Fastjson → 2.x 或 ≥1.2.83
+        - Log4j2 → ≥2.17.1
+        - Jackson-databind → ≥2.13.x
+        - XStream → ≥1.4.18

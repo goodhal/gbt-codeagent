@@ -386,9 +386,8 @@ export const DUAL_VERDICT_SYSTEM = `
 - 如果答案明确可复现 → 保持确认风险`;
 
 /**
- * False Positive Kill Switch — 安全控制自动降级规则
- * 参考: code-security-audit 误报过滤机制
- * 指导 LLM 在发现危险模式时，先检查是否已有安全控制措施
+ * 借鉴 java-audit-skills 的净化措施检测
+ * 扩展 FALSE_POSITIVE_KILL_SWITCH
  */
 export const FALSE_POSITIVE_KILL_SWITCH = `
 【误报 Kill Switch — 发现漏洞前先检查安全控制】
@@ -416,11 +415,27 @@ export const FALSE_POSITIVE_KILL_SWITCH = `
    - JPA @Query with :param (非 nativeQuery) → 降级为 Low
    - Criteria API type-safe 查询 → 降级为 Low
    - MyBatis \${} 或 JPA nativeQuery + 拼接 → 保持 Critical
+   - Eloquent/ORM 方法（find/findOne/findById） → 降级为 Low
 
 5. 真实权限校验（非注解摆设）
    - @PreAuthorize + @EnableGlobalMethodSecurity(prePostEnabled=true) → 降级为 Low
    - 方法内首行权限检查 (if (!hasRole()) throw) → 降级为 Low
    - 仅有注解，无 SecurityConfig 配置启用 → 保持原级别
+
+6. 命令执行安全模式
+   - subprocess.run([...]) 参数数组（非 shell 字符串） → 降级为 Low
+   - ProcessBuilder 非字符串构造 → 降级为 Low
+   - shlex.quote() 包裹用户输入 → 降级为 Low
+
+7. 路径安全处理
+   - Path.normalize() + getCanonicalPath() → 路径遍历降级为 Low
+   - path.join(__dirname, ...) 相对安全路径 → 降级为 Low
+   - 白名单文件扩展名验证 → 文件上传降级为 Low
+
+8. XSS 防护模式
+   - DOMPurify.sanitize() / sanitize-html → 降级为 Low
+   - React JSX 自动转义（{userInput}） → 不算漏洞
+   - Handlebars/EJS/Nunjucks 默认转义 → 降级为 Low
 
 🔴 关键规则：降级 ≠ 不报告。即使触发了 Kill Switch，仍应在 findings 中报告该发现，severity 下调一级，同时在 killSwitchInfo 中填写降级原因。`;
 
@@ -628,15 +643,26 @@ export async function loadAuditKnowledge({ languages = [], vulnerabilityTypes = 
       let inMappingTable = false;
       let mappingLines = [];
 
+      let foundHeader = false;
       for (const line of lines) {
-        if (line.includes('| 语言') && line.includes('GB/T')) {
+        // 找到国标映射表的表头行（含 | 语言 和 |）
+        if (!foundHeader && line.includes('|') && line.includes('语言')) {
+          foundHeader = true;
           inMappingTable = true;
+          mappingLines.push(line);
+          continue;
         }
         if (inMappingTable) {
-          mappingLines.push(line);
-          if (line.trim() === '|' && mappingLines.length > 5) {
+          // 遇到空行或非表格行则结束
+          if (line.trim() === '' || (!line.includes('|') && mappingLines.length > 3)) {
             break;
           }
+          // 跳过表头分隔行（|---|---|---|）
+          if (line.trim().match(/^\|[-:\s]+\|/)) {
+            mappingLines.push(line);
+            continue;
+          }
+          mappingLines.push(line);
         }
       }
 
@@ -779,6 +805,97 @@ export async function loadAuditKnowledge({ languages = [], vulnerabilityTypes = 
   // 加载框架特定安全知识
   knowledge.frameworkGuides = await loadFrameworkGuides(languages);
   knowledge.securityDomainGuides = await loadSecurityDomainGuides(vulnerabilityTypes);
+
+  // 通用语义提示 — 仅当审计涉及相关领域时按需加载
+  const vulnTypesLower = (vulnerabilityTypes || []).map(v => v.toLowerCase());
+  const UNIVERSAL_TRIGGERS = {
+    'D2_认证': ['auth_bypass', 'auth_missing', 'session_fixation', 'auth_info_exposure'],
+    'D3_授权': ['idor', 'missing_access_control', 'mass_assignment'],
+    'D7_加密': ['weak_crypto', 'weak_hash', 'hard_code_password', 'rsa_weak_padding'],
+    'D8_信息泄露': ['info_leak', 'information_disclosure', 'log_injection', 'swagger_exposure'],
+    'D9_业务逻辑': ['business_logic', 'race_condition', 'rate_limiting', 'idempotency', 'no_rate_limit'],
+  };
+  const shouldLoadUniversal = Object.values(UNIVERSAL_TRIGGERS).some(
+    triggers => triggers.some(t => vulnTypesLower.includes(t))
+  );
+  if (shouldLoadUniversal) {
+    try {
+      const universalPath = path.join(docsDir, "security", "universal.md");
+      knowledge.universalHints = (await fs.readFile(universalPath, "utf8")).substring(0, 3000);
+    } catch {
+      knowledge.universalHints = "";
+    }
+  } else {
+    knowledge.universalHints = "";
+  }
+
+  // 真实漏洞案例 — 仅当审计类型与案例匹配时加载
+  const VULN_CASE_MAP = {
+    'command_injection': ['Log4Shell', '命令注入', 'command'],
+    'deserialization': ['Fastjson', 'Log4Shell', '反序列化', 'deserialization'],
+    'jndi_injection': ['Log4Shell', 'JNDI'],
+    'xxe': ['XXE'],
+    'sql_injection': ['SQL注入'],
+    'path_traversal': ['路径遍历', '文件包含', 'ThinkPHP'],
+    'code_injection': ['代码注入', 'RCE', 'Fastjson'],
+  };
+  const matchedCaseKeys = Object.entries(VULN_CASE_MAP)
+    .filter(([vt]) => vulnTypesLower.includes(vt))
+    .flatMap(([_, keywords]) => keywords);
+  if (matchedCaseKeys.length > 0) {
+    try {
+      const vulnsContent = await fs.readFile(path.join(docsDir, "security", "real_world_vulns.md"), "utf8");
+      const sections = vulnsContent.split(/(?=^## )/m);
+      const selected = sections.filter(s => matchedCaseKeys.some(k => s.toLowerCase().includes(k.toLowerCase())));
+      knowledge.realWorldVulns = selected.join('\n').substring(0, 8000);
+    } catch {
+      knowledge.realWorldVulns = "";
+    }
+  } else {
+    knowledge.realWorldVulns = "";
+  }
+
+  // 快速检索规则 — 仅当审计类型匹配时加载
+  const GREP_TRIGGERS = ['sql_injection', 'command_injection', 'deserialization', 'xxe', 'ssrf',
+    'xss', 'path_traversal', 'code_injection', 'hard_code_password', 'insecure_random'];
+  const shouldLoadGrep = vulnTypesLower.some(vt => GREP_TRIGGERS.includes(vt));
+  if (shouldLoadGrep) {
+    try {
+      knowledge.quickGrepRules = (await fs.readFile(path.join(docsDir, "security", "quick-grep-rules.md"), "utf8")).substring(0, 2500);
+    } catch {
+      knowledge.quickGrepRules = "";
+    }
+  } else {
+    knowledge.quickGrepRules = "";
+  }
+
+  // 加载 vulnType→GB/T 精确编码速查表（来自 gbt-mappings.yaml）
+  // 使 LLM 能输出具体子条款编码而非仅"通用基线"
+  try {
+    const gbtMappingsPath = path.join(process.cwd(), "config", "gbt-mappings.yaml");
+    const gbtRaw = await fs.readFile(gbtMappingsPath, "utf8");
+    const gbtParsed = (await import('yaml')).parse(gbtRaw);
+    const mappings = gbtParsed?.gbtMappings || {};
+    
+    // 只保留当前语言的映射，减少 token 消耗
+    const currentLangs = (languages || []).map(l => l.toLowerCase());
+    const langPriority = [...currentLangs, 'default'];
+    
+    const relevantTypes = (vulnerabilityTypes || []).map(v => v.toUpperCase());
+    const lookupLines = [];
+    for (const [vulnType, langMap] of Object.entries(mappings)) {
+      // 只包含当前审计相关的漏洞类型
+      if (relevantTypes.length > 0 && !relevantTypes.includes(vulnType)) continue;
+      const codes = langPriority.map(l => langMap[l]).filter(Boolean);
+      if (codes.length > 0) {
+        const unique = [...new Set(codes)];
+        lookupLines.push(`  ${vulnType} → ${unique.join(' | ')}`);
+      }
+    }
+    knowledge.gbtMappingsLookup = lookupLines.join('\n');
+  } catch {
+    knowledge.gbtMappingsLookup = "";
+  }
 
   return knowledge;
 }
@@ -979,6 +1096,16 @@ export async function buildSystemPrompt(selectedSkills, auditKnowledge = {}, lan
       );
     }
 
+    if (auditKnowledge.gbtMappingsLookup) {
+      prompt.push(
+        "",
+        "【漏洞类型→GB/T 精确编码速查表】（必须优先使用，禁止随意填写通用基线）：",
+        "---",
+        auditKnowledge.gbtMappingsLookup,
+        "---"
+      );
+    }
+
     if (auditKnowledge.languageAudit) {
       prompt.push(
         "",
@@ -1094,6 +1221,36 @@ export async function buildSystemPrompt(selectedSkills, auditKnowledge = {}, lan
         "【安全域通用指南】（业务逻辑/认证鉴权/API安全等）：",
         "---",
         auditKnowledge.securityDomainGuides,
+        "---"
+      );
+    }
+
+    if (auditKnowledge.universalHints) {
+      prompt.push(
+        "",
+        "【通用语义审计提示】（架构级/逻辑级，语言无关）：",
+        "---",
+        auditKnowledge.universalHints,
+        "---"
+      );
+    }
+
+    if (auditKnowledge.realWorldVulns) {
+      prompt.push(
+        "",
+        "【真实漏洞案例参考】（同类漏洞的 PoC/绕过技巧）：",
+        "---",
+        auditKnowledge.realWorldVulns,
+        "---"
+      );
+    }
+
+    if (auditKnowledge.quickGrepRules) {
+      prompt.push(
+        "",
+        "【快速检索规则参考】（辅助定位危险模式）：",
+        "---",
+        auditKnowledge.quickGrepRules,
         "---"
       );
     }
@@ -1274,7 +1431,8 @@ export function buildUserPrompt({ project, selectedSkills, heuristicFindings, ba
       "",
       "🔴 核心要求（再次强调）：",
       "- 两步审计：① 先逐条验证下方快速扫描发现（确认/降级/误报）② 再独立搜索清单外的其他安全问题",
-      "- 🔴 强制覆盖：必须审计本批次每一个文件！每个文件至少输出一条 finding（即使只是 Low 级别标记为 safe）。禁止跳过任何文件",
+      "- 🔴 强制覆盖文件：必须审计本批次每一个文件！每个文件至少输出一条 finding（即使只是 Low 级别标记为 safe）。禁止跳过任何文件",
+      "- 🔴 强制覆盖类型：对每种语言，必须审计其相关的全部漏洞类型（参考上方【漏洞类型→GB/T 精确编码速查表】），不能仅发现 1-2 种类型就认为该文件已审完。例如 C++ 文件应检查：命令注入/SQL注入/路径遍历/缓冲区溢出/信息泄露/XSS/竞态条件等；C# 文件应检查：命令注入/SQL注入/XSS/CSRF/路径遍历/反序列化/硬编码凭据/Cookie安全等。确保每种类型至少审查一次。",
       "- 准确行号：需要验证行号，禁止凭记忆填写",
       "",
       "📝 输出要求：",

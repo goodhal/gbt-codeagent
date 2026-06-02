@@ -1,0 +1,41 @@
+rate_limiting:
+  description: 缺少速率限制
+  cwe: CWE-770
+  languages:
+    python:
+      riskPatterns:
+        - pattern: "@app\\.route.*POST|@router\\.post"
+          description: 写操作可能无限调用
+        - pattern: send_sms|send_email|send_verify
+          description: 短信/邮件可能被刷
+      safePatterns:
+        - pattern: rate_limit|throttle|limiter
+          description: 速率限制
+        - pattern: redis.*incr.*expire
+          description: 计数器限流
+      severity: MEDIUM
+      remediation: 为敏感操作添加速率限制
+    javascript:
+      riskPatterns:
+        - pattern: app\.post|router\.post
+          description: POST路由无速率限制
+        - pattern: sendVerification|sendOTP|sendSms
+          description: 验证码接口无限制
+      safePatterns:
+        - pattern: rateLimit|express-rate-limit
+          description: 速率限制中间件
+        - pattern: throttle|limiter
+          description: 限流器
+      severity: MEDIUM
+      remediation: 添加 express-rate-limit 等限流中间件
+    java:
+      riskPatterns:
+        - pattern: "@PostMapping.*login|@PostMapping.*sms|@PostMapping.*verify"
+          description: 登录/验证接口无限制
+      safePatterns:
+        - pattern: "@RateLimit|Bucket4j"
+          description: 速率限制注解
+        - pattern: RateLimiter
+          description: Guava限流器
+      severity: MEDIUM
+      remediation: 使用 Bucket4j 或 Guava RateLimiter

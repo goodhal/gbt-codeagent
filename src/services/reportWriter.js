@@ -353,7 +353,7 @@ function renderFindings(findings, emptyMessage, verdictMap) {
       ${findings
         .map(
           (finding, index) => {
-            const isGbtFinding = finding.skillId === "gbt-code-audit";
+            const isGbtFinding = finding.skillId === "gbt-code-audit" || finding.skillId === "vuln-type-gapfill";
             // 处理OWASP映射，添加中文名称
             let owaspDisplay = "无";
             if (finding.owasp) {

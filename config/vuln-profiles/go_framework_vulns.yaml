@@ -1,0 +1,21 @@
+go_framework_vulns:
+  description: Go框架特定漏洞 - Gin/Echo/Beego
+  cwe: CWE-915
+  languages:
+    go:
+      riskPatterns:
+        - pattern: gin\.Context.*RawData
+          description: Gin原始数据读取可能导致内存耗尽
+          severity: HIGH
+        - pattern: echo\.Context.*FormValue
+          description: Echo表单值处理可能存在注入风险
+          severity: MEDIUM
+        - pattern: beego.*ORM.*Raw
+          description: Beego ORM原始SQL可能导致注入
+          severity: HIGH
+      safePatterns:
+        - pattern: gin\.binding\.ShouldBind
+          description: 使用绑定验证
+        - pattern: gorm\.DB.*Where
+          description: 使用参数化查询
+      remediation: 使用框架提供的安全方法，避免直接操作原始数据

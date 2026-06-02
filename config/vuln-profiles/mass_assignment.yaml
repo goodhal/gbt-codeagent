@@ -1,0 +1,45 @@
+mass_assignment:
+  description: 批量赋值漏洞
+  cwe: CWE-915
+  languages:
+    python:
+      riskPatterns:
+        - pattern: \*\*request\.(form|json|data)
+          description: 解包请求数据
+        - pattern: \.update\(request\.(form|json)\)
+          description: 批量更新对象
+        - pattern: Model\(\*\*request\.data\)
+          description: 解包创建模型
+      safePatterns:
+        - pattern: only\(|exclude\(|whitelist|allowed_fields
+          description: 字段白名单
+        - pattern: serializer\.fields|fields\s*=
+          description: 序列化器字段限制
+      severity: HIGH
+      remediation: 使用白名单限制可修改字段
+    java:
+      riskPatterns:
+        - pattern: "@RequestBody.*DTO|@RequestBody.*Entity"
+          description: DTO可能继承Entity
+        - pattern: BeanUtils\.copyProperties
+          description: 属性拷贝可能越权
+      safePatterns:
+        - pattern: "@JsonProperty.*access.*READ_ONLY"
+          description: 只读字段
+        - pattern: "@JsonIgnore"
+          description: 忽略字段
+      severity: HIGH
+      remediation: 使用独立DTO，限制可修改字段
+    javascript:
+      riskPatterns:
+        - pattern: \.\.\.req\.body|Object\.assign.*req\.body
+          description: 展开请求体
+        - pattern: model\.set\(req\.body\)|model\.update\(req\.body\)
+          description: 批量赋值
+      safePatterns:
+        - pattern: pick\(|omit\(|allowedFields|whitelist
+          description: 字段过滤
+        - pattern: zod|joi|yup.*validate
+          description: Schema验证
+      severity: HIGH
+      remediation: 使用 pick/omit 限制可修改字段

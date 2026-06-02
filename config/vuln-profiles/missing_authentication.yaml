@@ -1,0 +1,50 @@
+missing_authentication:
+  description: 缺失身份认证
+  cwe: CWE-287
+  gbt: GB/T34944-6.2.7.1
+  languages:
+    python:
+      riskPatterns:
+        - pattern: "@app\\.route\\s*\\([^)]*"
+          description: 路由定义可能缺少认证
+        - pattern: def\s+\w+\s*\([^)]*request
+          description: 视图函数
+      safePatterns:
+        - pattern: "@login_required"
+          description: 登录装饰器
+        - pattern: "@jwt_required"
+          description: JWT认证
+        - pattern: request\.user\s*
+          description: 用户对象访问
+      severity: HIGH
+      remediation: 为敏感路由添加认证装饰器
+    java:
+      riskPatterns:
+        - pattern: "@GetMapping\\s*\\("
+          description: GET映射
+        - pattern: "@PostMapping\\s*\\("
+          description: POST映射
+      safePatterns:
+        - pattern: "@PreAuthorize\\s*\\("
+          description: 方法级安全
+        - pattern: "@Secured\\s*\\("
+          description: 安全注解
+        - pattern: "@AuthenticationPrincipal"
+          description: 认证主体
+      severity: HIGH
+      remediation: 为敏感端点添加认证注解
+    javascript:
+      riskPatterns:
+        - pattern: app\.get\s*\([^)]*
+          description: GET路由
+        - pattern: router\.post\s*\([^)]*
+          description: POST路由
+      safePatterns:
+        - pattern: ensureLoggedIn\s*\(
+          description: 登录检查中间件
+        - pattern: authenticate\s*\(
+          description: 认证中间件
+        - pattern: jwt.*middleware
+          description: JWT中间件
+      severity: HIGH
+      remediation: 为敏感路由添加认证中间件

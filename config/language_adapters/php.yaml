@@ -1,0 +1,137 @@
+# PHP 语言安全控制适配器
+# 基于 Kunlun-M 项目的 PHP 分析引擎
+# 支持 Laravel、Symfony、CodeIgniter、Yii 等框架
+
+version: '1.0'
+
+control_patterns:
+  authentication:
+    session:
+      - 'session_start'
+      - 'session_regenerate_id'
+      - '$_SESSION'
+    jwt:
+      - 'Firebase\JWT\JWT'
+      - 'JWT::encode'
+      - 'JWT::decode'
+    form_login:
+      - 'password_verify'
+      - 'password_hash'
+      - 'Auth::attempt'
+      - 'Auth::check'
+
+  authorization:
+    rbac:
+      - 'Gate::allows'
+      - 'Gate::denies'
+      - '@can'
+      - '@cannot'
+    role_based:
+      - 'hasRole'
+      - 'hasAnyRole'
+      - 'isAdmin'
+
+  csrf:
+    laravel:
+      - '@csrf'
+      - 'csrf_field'
+      - 'csrf_token'
+      - 'VerifyCsrfToken'
+
+  input_validation:
+    laravel:
+      - 'Validator::make'
+      - '->validate'
+    general:
+      - 'filter_var'
+      - 'filter_input'
+      - 'htmlspecialchars'
+
+  xss_protection:
+    output:
+      - 'htmlspecialchars'
+      - 'htmlentities'
+      - 'strip_tags'
+    template:
+      - 'Blade::escape'
+      - 'e('
+
+dangerous_patterns:
+  command_execution:
+    - 'exec('
+    - 'system('
+    - 'shell_exec('
+    - 'passthru('
+    - 'pcntl_exec('
+    - 'proc_open('
+
+  sql_injection:
+    - 'mysql_query('
+    - 'mysqli_query('
+    - 'pdo->query('
+    - 'SELECT.*FROM.*WHERE'
+
+  file_operations:
+    - 'fopen('
+    - 'file_get_contents('
+    - 'file_put_contents('
+    - 'unlink('
+    - 'rmdir('
+
+  path_traversal:
+    - '..'
+    - 'realpath('
+    - 'dirname('
+
+  unserialize:
+    - 'unserialize('
+    - 'json_decode('
+
+  info_disclosure:
+    - 'phpinfo('
+    - 'var_dump('
+    - 'print_r('
+
+framework_configs:
+  Laravel:
+    config_files:
+      - 'config/app.php'
+      - 'config/auth.php'
+      - 'config/session.php'
+    security_location: 'app/Http/Middleware/'
+    controller_location: 'app/Http/Controllers/'
+    action_location: 'routes/'
+    entity_location: 'app/Models/'
+
+  Symfony:
+    config_files:
+      - 'config/packages/security.yaml'
+      - 'config/packages/cors.yaml'
+    security_location: 'src/Security/'
+    controller_location: 'src/Controller/'
+
+route_annotations:
+  Laravel:
+    - 'Route::get'
+    - 'Route::post'
+    - 'Route::put'
+    - 'Route::delete'
+    - '@get'
+    - '@post'
+  Symfony:
+    - '@Route'
+  Yii:
+    - 'public function action'
+
+safe_functions:
+  escaping:
+    - 'htmlspecialchars'
+    - 'htmlentities'
+    - 'strip_tags'
+    - 'addslashes'
+  validation:
+    - 'filter_var'
+    - 'filter_input'
+  crypto:
+    - 'password_hash'
+    - 'password_verify'

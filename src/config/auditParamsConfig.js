@@ -26,14 +26,23 @@ const BASE_CONTEXT_TOKENS = 128000;
 let _auditParams = null;
 
 function loadRawConfig() {
-  const configPath = path.join(process.cwd(), "config", "detection_rules.yaml");
+  // 优先读取拆分后的 config/audit-config.yaml；兼容旧 detection_rules.yaml
+  const configPath = path.join(process.cwd(), "config", "audit-config.yaml");
+  const fallbackPath = path.join(process.cwd(), "config", "detection_rules.yaml");
   try {
     const content = readFileSync(configPath, "utf8");
     const parsed = yaml.load(content);
     return parsed?.audit || {};
-  } catch (err) {
-    console.warn("[审计参数] 配置文件读取失败，使用默认值:", err.message);
-    return {};
+  } catch {
+    // 兼容旧版单文件
+    try {
+      const content = readFileSync(fallbackPath, "utf8");
+      const parsed = yaml.load(content);
+      return parsed?.audit || {};
+    } catch (err) {
+      console.warn("[审计参数] 配置文件读取失败，使用默认值:", err.message);
+      return {};
+    }
   }
 }
 
@@ -111,7 +120,8 @@ export function getCompletionTokens(modelMaxTokens) {
 }
 
 // 监听配置文件变更，热更新缓存
-const CONFIG_PATH = path.join(process.cwd(), "config", "detection_rules.yaml");
+const CONFIG_PATH = path.join(process.cwd(), "config", "audit-config.yaml");
+const FALLBACK_PATH = path.join(process.cwd(), "config", "detection_rules.yaml");
 try {
   watchFile(CONFIG_PATH, (curr, prev) => {
     if (curr.mtimeMs !== prev.mtimeMs) {
@@ -120,6 +130,16 @@ try {
     }
   });
 } catch (err) {
-  console.debug("[审计参数] 无法监听配置文件:", err.message);
+  // 兼容旧版
+  try {
+    watchFile(FALLBACK_PATH, (curr, prev) => {
+      if (curr.mtimeMs !== prev.mtimeMs) {
+        _auditParams = null;
+        console.log("[审计参数] 检测到配置文件变更，已热更新缓存");
+      }
+    });
+  } catch {
+    console.debug("[审计参数] 无法监听配置文件:", err.message);
+  }
 }
 

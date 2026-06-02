@@ -1,0 +1,124 @@
+sql_injection:
+  description: SQL 注入漏洞
+  cwe: CWE-89
+  gbt: GB/T34943-2017, GB/T34944-2017, GB/T34946-2017
+  languages:
+    python:
+      riskPatterns:
+        - pattern: execute\s*\([^)]*\+[^)]*\)
+          description: 字符串拼接的 SQL 查询
+        - pattern: cursor\.execute\s*\([^)]*format\s*\(
+          description: 使用 format 的 SQL 查询
+        - pattern: cursor\.execute\s*\([^)]*%[^)]*\)
+          description: 使用 % 格式化的 SQL 查询
+      safePatterns:
+        - pattern: execute\s*\([^,]+,\s*\[.*\]\)
+          description: 参数化查询
+        - pattern: cursor\.execute\s*\([^,]+,\s*\(.*\)\)
+          description: 参数化查询
+      severity: HIGH
+      remediation: 使用参数化查询或 ORM
+    java:
+      riskPatterns:
+        - pattern: Statement\.executeQuery\s*\([^)]*\+[^)]*\)
+          description: 字符串拼接的 SQL 查询
+        - pattern: createStatement\(\)\.executeQuery\s*\([^)]*\+
+          description: 直接拼接的 SQL
+      safePatterns:
+        - pattern: PreparedStatement
+          description: 预处理语句
+        - pattern: \?\s*=\s*.*set\w+
+          description: 参数绑定
+      severity: HIGH
+      remediation: 使用 PreparedStatement 参数化查询
+    javascript:
+      riskPatterns:
+        - pattern: query\s*\([^)]*\+[^)]*\)
+          description: 字符串拼接的 SQL 查询
+      safePatterns:
+        - pattern: \$in\s*:\s*\[
+          description: MongoDB 参数化
+      severity: HIGH
+      remediation: 使用参数化查询
+    php:
+      riskPatterns:
+        - pattern: \$_(GET|POST|REQUEST|COOKIE)\s*\[.*?\].*?(?:SELECT|INSERT|UPDATE|DELETE)
+          description: 直接使用用户输入构造 SQL
+        - pattern: mysql_query\s*\([^)]*\+\s*[^)]*\)
+          description: mysql_query 字符串拼接
+        - pattern: mysqli_query\s*\([^)]*\+\s*[^)]*\)
+          description: mysqli_query 字符串拼接
+        - pattern: pg_query\s*\([^)]*\+\s*[^)]*\)
+          description: pg_query 字符串拼接
+      safePatterns:
+        - pattern: mysqli_prepare\s*\(
+          description: 预处理语句
+        - pattern: PDO::prepare\s*\(
+          description: PDO 预处理
+        - pattern: \$stmt\s*=\s*.*->execute\s*\(
+          description: 参数化查询
+      severity: HIGH
+      remediation: 使用参数化查询或 ORM
+    go:
+      riskPatterns:
+        - pattern: db\.Query\s*\([^)]*\+\s*[^)]*\)
+          description: 字符串拼接的 SQL 查询
+        - pattern: db\.Exec\s*\([^)]*fmt\.Sprintf
+          description: fmt.Sprintf 构造的 SQL
+      safePatterns:
+        - pattern: \?\s*
+          description: 参数占位符
+        - pattern: \$\d+
+          description: 参数占位符
+      severity: HIGH
+      remediation: 使用参数化查询，避免字符串拼接 SQL
+    ruby:
+      riskPatterns:
+        - pattern: execute.*interpolate.*true
+          description: 启用了字符串插值的查询
+        - pattern: find_by_sql\s*\([^)]*\+
+          description: 字符串拼接的 SQL
+      safePatterns:
+        - pattern: where\(
+          description: ActiveRecord 查询方法
+        - pattern: \?\s*
+          description: 参数占位符
+      severity: HIGH
+      remediation: 使用 ActiveRecord ORM，避免字符串拼接 SQL
+    rust:
+      riskPatterns:
+        - pattern: sqlx::query\s*\([^)]*\+\s*[^)]*\)
+          description: 字符串拼接的 SQL 查询
+        - pattern: rust-postgres.*execute\s*\([^)]*\+
+          description: 字符串拼接的 SQL
+      safePatterns:
+        - pattern: \?\s*
+          description: 参数占位符
+        - pattern: \$\d+
+          description: 参数占位符
+      severity: HIGH
+      remediation: 使用参数化查询
+    cpp:
+      riskPatterns:
+        - pattern: mysql_query\s*\([^)]*\+\s*[^)]*\)
+          description: 字符串拼接的 SQL 查询
+        - pattern: sqlite3_exec\s*\([^)]*\+\s*[^)]*\)
+          description: 字符串拼接的 SQL
+      safePatterns:
+        - pattern: sqlite3_prepare
+          description: 预处理语句
+      severity: HIGH
+      remediation: 使用预处理语句，避免字符串拼接 SQL
+    csharp:
+      riskPatterns:
+        - pattern: SqlCommand\s*\([^)]*\+\s*[^)]*\)
+          description: 字符串拼接的 SQL 查询
+        - pattern: ExecuteReader\s*\([^)]*\+\s*[^)]*\)
+          description: 字符串拼接的 SQL
+      safePatterns:
+        - pattern: SqlCommand.*@
+          description: 参数化查询
+        - pattern: Using.*SqlParameter
+          description: 使用 SqlParameter
+      severity: HIGH
+      remediation: 使用参数化查询，避免字符串拼接 SQL

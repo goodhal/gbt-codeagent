@@ -1,0 +1,550 @@
+$schema: ./rules-schema.yaml
+language: csharp
+taintTracking:
+  sources:
+    - name: User Input
+      patterns:
+        - Console.ReadLine
+        - Request.QueryString
+        - Request.Form
+        - Request.Params
+      category: user_input
+    - name: Database
+      patterns:
+        - SqlCommand
+        - SqlDataReader
+        - ExecuteReader
+      category: db_input
+  sinks:
+    - id: SEC-CMD-008
+      name: Command Execution
+      patterns:
+        - Process.Start
+        - Runtime.exec
+        - ProcessStartInfo
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+        owasp:
+          - A03:2021
+        gbt:
+          - GB/T34946-6.1.1.6
+      doc_url: https://docs.gbt-codeagent.com/rules/command-injection
+    - id: SEC-SQL-008
+      name: SQL Execution
+      patterns:
+        - SqlCommand
+        - ExecuteReader
+        - ExecuteNonQuery
+        - ExecuteScalar
+      category: sql_injection
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+        owasp:
+          - A03:2021
+        gbt:
+          - GB/T34946-6.1.1.1
+      doc_url: https://docs.gbt-codeagent.com/rules/sql-injection
+    - id: SEC-CODE-007
+      name: Code Execution
+      patterns:
+        - DynamicMethod
+        - Assembly.Load
+      category: code_injection
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-94
+        gbt:
+          - GB/T34946-6.1.1.3
+      doc_url: https://docs.gbt-codeagent.com/rules/code-injection
+    - id: SEC-DES-005
+      name: Deserialization
+      patterns:
+        - BinaryFormatter.Deserialize
+        - LosFormatter.Deserialize
+        - ObjectStateFormatter.Deserialize
+      category: deserialization
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-502
+        owasp:
+          - A03:2021
+        gbt:
+          - GB/T34946-6.1.1.7
+      doc_url: https://docs.gbt-codeagent.com/rules/deserialization
+    - id: QS-CSHARP-785
+      name: COMMAND INJECTION
+      patterns:
+        - Process\.Start\s*\(
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+      _quickScan: true
+      _vulnType: COMMAND_INJECTION
+      _cwe: CWE-78
+      _chineseSeverity: 严重
+    - id: QS-CSHARP-786
+      name: SQL INJECTION
+      patterns:
+        - SqlCommand.*\+
+      category: sql_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+      _quickScan: true
+      _vulnType: SQL_INJECTION
+      _cwe: CWE-89
+      _chineseSeverity: 严重
+    - id: QS-CSHARP-787
+      name: SQL INJECTION
+      patterns:
+        - ORDER BY.*\+
+      category: sql_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+      _quickScan: true
+      _vulnType: SQL_INJECTION
+      _cwe: CWE-89
+      _chineseSeverity: 严重
+    - id: QS-CSHARP-788
+      name: XPATH INJECTION
+      patterns:
+        - XPath.*\+
+      category: xpath
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-643
+      _quickScan: true
+      _vulnType: XPATH_INJECTION
+      _cwe: CWE-643
+      _chineseSeverity: 高危
+    - id: QS-CSHARP-789
+      name: HARD CODE PASSWORD
+      patterns:
+        - password\s*=\s*"[^"]{3,}"
+      category: hard_coded_secret
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-259
+      _quickScan: true
+      _vulnType: HARD_CODE_PASSWORD
+      _cwe: CWE-259
+      _chineseSeverity: 严重
+    - id: QS-CSHARP-790
+      name: WEAK CRYPTO
+      patterns:
+        - DES\.Create\s*\(\)
+      category: weak_crypto
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-327
+      _quickScan: true
+      _vulnType: WEAK_CRYPTO
+      _cwe: CWE-327
+      _chineseSeverity: 高危
+    - id: QS-CSHARP-791
+      name: WEAK HASH
+      patterns:
+        - SHA1\.Create\s*\(\)
+      category: weak_hash
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-328
+      _quickScan: true
+      _vulnType: WEAK_HASH
+      _cwe: CWE-328
+      _chineseSeverity: 高危
+    - id: QS-CSHARP-792
+      name: PREDICTABLE RANDOM
+      patterns:
+        - Random\s*=\s*new\s+Random\s*\(\s*\)
+      category: weak_random
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-338
+      _quickScan: true
+      _vulnType: PREDICTABLE_RANDOM
+      _cwe: CWE-338
+      _chineseSeverity: 高危
+    - id: QS-CSHARP-793
+      name: PROCESS CONTROL
+      patterns:
+        - Assembly\.LoadFrom\s*\(
+      category: process_control
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-114
+      _quickScan: true
+      _vulnType: PROCESS_CONTROL
+      _cwe: CWE-114
+      _chineseSeverity: 高危
+    - id: QS-CSHARP-794
+      name: INFO LEAK
+      patterns:
+        - Trace\.WriteLine.*password
+      category: info_leak
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-532
+      _quickScan: true
+      _vulnType: INFO_LEAK
+      _cwe: CWE-532
+      _chineseSeverity: 中危
+    - id: QS-CSHARP-795
+      name: SESSION FIXATION
+      patterns:
+        - session\[.*\]\s*=\s*username
+      category: session_fixation
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-384
+      _quickScan: true
+      _vulnType: SESSION_FIXATION
+      _cwe: CWE-384
+      _chineseSeverity: 高危
+    - id: QS-CSHARP-796
+      name: COOKIE MANIPULATION
+      patterns:
+        - Cookie.*=.*=
+      category: cookie_manipulation
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-565
+      _quickScan: true
+      _vulnType: COOKIE_MANIPULATION
+      _cwe: CWE-565
+      _chineseSeverity: 高危
+    - id: QS-CSHARP-797
+      name: XSS
+      patterns:
+        - resp\.Write\s*\(
+      category: xss
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-79
+      _quickScan: true
+      _vulnType: XSS
+      _cwe: CWE-79
+      _chineseSeverity: 高危
+    - id: SEC-XPATH-CS-701
+      name: XPATH INJECTION
+      patterns:
+        - XPathNavigator
+        - XPathNodeIterator
+        - nav\.Select
+      category: xpath
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-643
+      _quickScan: true
+      _vulnType: XPATH_INJECTION
+      _cwe: CWE-643
+      _chineseSeverity: 高危
+    - id: SEC-UPLOAD-CS-702
+      name: UNRESTRICTED FILE UPLOAD
+      patterns:
+        - FileUpload
+        - PostedFile
+        - \.SaveAs\s*\(
+      category: file_upload
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-434
+      _quickScan: true
+      _vulnType: UNRESTRICTED_FILE_UPLOAD
+      _cwe: CWE-434
+      _chineseSeverity: 高危
+    - id: SEC-WEAKCRYPTO-CS-703
+      name: WEAK CRYPTO
+      patterns:
+        - Aes\.Create\s*\(\)
+        - DESCryptoServiceProvider
+        - TripleDESCryptoServiceProvider
+        - RC2CryptoServiceProvider
+      category: weak_crypto
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-327
+      _quickScan: true
+      _vulnType: WEAK_CRYPTO
+      _cwe: CWE-327
+      _chineseSeverity: 高危
+    - id: SEC-WEAKHASH-CS-704
+      name: WEAK HASH
+      patterns:
+        - SHA256\.Create\s*\(\)
+        - MD5\.Create\s*\(\)
+      category: weak_hash
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-328
+      _quickScan: true
+      _vulnType: WEAK_HASH
+      _cwe: CWE-328
+      _chineseSeverity: 高危
+    - id: SEC-RSA-CS-705
+      name: RSA WEAK PADDING
+      patterns:
+        - new\s+RSACryptoServiceProvider\(.*Padding\s*=\s*PaddingMode\.PKCS1
+      category: weak_crypto
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-780
+      _quickScan: true
+      _vulnType: RSA_WEAK_PADDING
+      _cwe: CWE-780
+      _chineseSeverity: 高危
+    - id: SEC-RANDOM-CS-706
+      name: PREDICTABLE RANDOM
+      patterns:
+        - new\s+Random\s*\(\s*\)
+      category: weak_random
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-338
+      _quickScan: true
+      _vulnType: PREDICTABLE_RANDOM
+      _cwe: CWE-338
+      _chineseSeverity: 中危
+    - id: SEC-SESSION-CS-707
+      name: SESSION FIXATION
+      patterns:
+        - session\["\w+"\]\s*=\s*\w+;\s*//.*未创建新session
+        - session\["\w+"\]\s*=\s*username
+      category: session_fixation
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-384
+      _quickScan: true
+      _vulnType: SESSION_FIXATION
+      _cwe: CWE-384
+      _chineseSeverity: 高危
+    - id: SEC-XSS-CS-708
+      name: XSS
+      patterns:
+        - Response\.Write\s*\(.*Request\[
+      category: xss
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-79
+      _quickScan: true
+      _vulnType: XSS
+      _cwe: CWE-79
+      _chineseSeverity: 高危
+    - id: SEC-AUTH-CS-709
+      name: AUTH BYPASS
+      patterns:
+        - \[Authorize\(Roles\s*=\s*".*\|\|.*"\)\]
+      category: auth_bypass
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-863
+      _quickScan: true
+      _vulnType: AUTH_BYPASS
+      _cwe: CWE-863
+      _chineseSeverity: 高危
+    - id: SEC-ACCESS-CS-710
+      name: MISSING ACCESS CONTROL
+      patterns:
+        - \[AllowAnonymous\]
+      category: auth_bypass
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-862
+      _quickScan: true
+      _vulnType: MISSING_ACCESS_CONTROL
+      _cwe: CWE-862
+      _chineseSeverity: 中危
+    - id: SEC-SSRF-CS-711
+      name: SSRF
+      patterns:
+        - WebClient\.DownloadFile\s*\(
+      category: ssrf
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-918
+      _quickScan: true
+      _vulnType: SSRF
+      _cwe: CWE-918
+      _chineseSeverity: 高危
+    - id: SEC-DESER-CS-712
+      name: DESERIALIZATION
+      patterns:
+        - XmlSerializer\.Deserialize\s*\(
+      category: deserialization
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-502
+      _quickScan: true
+      _vulnType: DESERIALIZATION
+      _cwe: CWE-502
+      _chineseSeverity: 高危
+    - id: SEC-VALID-CS-713
+      name: XSS
+      patterns:
+        - \[ValidateInput\(false\)\]
+      category: xss
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-79
+      _quickScan: true
+      _vulnType: XSS
+      _cwe: CWE-79
+      _chineseSeverity: 高危
+    - id: SEC-COOKIE-CS-714
+      name: INSECURE COOKIE AUTH
+      patterns:
+        - FormsAuthentication\.SetAuthCookie\s*\(.*false
+      category: cookie_manipulation
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-614
+      _quickScan: true
+      _vulnType: INSECURE_COOKIE_AUTH
+      _cwe: CWE-614
+      _chineseSeverity: 中危
+    - id: SEC-SMTP-CS-715
+      name: PLAINTEXT TRANSMISSION
+      patterns:
+        - SmtpClient.*UseDefaultCredentials\s*=\s*true
+      category: info_leak
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-319
+      _quickScan: true
+      _vulnType: PLAINTEXT_TRANSMISSION
+      _cwe: CWE-319
+      _chineseSeverity: 中危
+  sanitizers: []

@@ -308,52 +308,7 @@ export const VERDICT = {
   HYPOTHESIS: 'hypothesis'
 };
 
-/**
- * 净化函数模式
- */
-export const SANITIZER_PATTERNS = {
-  sql: [
-    /PreparedStatement/,
-    /prepareStatement/,
-    /JdbcTemplate\./,
-    /@Param/,
-    /namedParameter/,
-    /queryForObject/,
-    /queryForList/
-  ],
-  xss: [
-    /HtmlUtils\.escape/,
-    /StringEscapeUtils\.escapeHtml/,
-    /ESAPI\.encoder\./,
-    /encodeForHTML/,
-    /sanitize/,
-    /cleanInput/
-  ],
-  cmd: [
-    /ProcessBuilder/,
-    /Runtime\.getRuntime\(\)\.exec/,
-    /sanitizeCommand/,
-    /validateCommand/
-  ],
-  path: [
-    /Path\.normalize/,
-    /File\.getCanonicalPath/,
-    /sanitizePath/,
-    /validatePath/,
-    /PathMatcher/
-  ],
-  general: [
-    /Integer\.parseInt/,
-    /Long\.parseLong/,
-    /Double\.parseDouble/,
-    /parseInt/,
-    /parseLong/,
-    /UUID\.fromString/,
-    /Pattern\.matches/,
-    /validateInput/,
-    /checkArgument/
-  ]
-};
+
 
 /**
  * 抑制规则模式

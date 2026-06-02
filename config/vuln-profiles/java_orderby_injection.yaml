@@ -1,0 +1,29 @@
+java_orderby_injection:
+  description: ORDER BY / GROUP BY SQL注入 — 动态排序字段拼接
+  cwe: CWE-89
+  languages:
+    java:
+      riskPatterns:
+        - pattern: \.getOrderBy\(\)|\.getSortField\(\)|\.getGroupBy\(\)
+          description: 获取排序/分组字段，若为String类型且直接拼接→高危
+        - pattern: sql.*append.*ORDER BY
+          description: StringBuilder拼接ORDER BY
+        - pattern: '" ORDER BY "\s*\+'
+          description: ORDER BY字符串拼接
+        - pattern: String\.format.*ORDER BY
+          description: String.format拼接ORDER BY
+        - pattern: sql.*append.*orderBy|sql.*\+.*orderBy
+          description: ORDER BY字段动态拼接
+      safePatterns:
+        - pattern: allowedColumns\.contains|whitelist.*orderBy
+          description: 白名单校验排序字段
+        - pattern: orderBy\.matches\("\[a-zA-Z_\]+"\)
+          description: 正则校验排序字段
+        - pattern: \.equals\("id"\).*\.equals\("name"\)
+          description: 硬编码白名单
+      severity: HIGH
+      remediation: |
+        排序字段使用白名单校验:
+        Set<String> ALLOWED = Set.of("id", "name", "createTime");
+        if (!ALLOWED.contains(orderBy)) throw new IllegalArgumentException("Invalid column");
+        或使用枚举: SortField.fromString(orderBy);

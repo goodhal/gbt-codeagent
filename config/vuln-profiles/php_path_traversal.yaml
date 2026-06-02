@@ -1,0 +1,29 @@
+php_path_traversal:
+  description: PHP路径遍历和文件包含漏洞增强检测
+  cwe: CWE-22
+  languages:
+    php:
+      riskPatterns:
+        - pattern: include_once\(
+          description: include_once可能导致文件包含
+          severity: HIGH
+        - pattern: require_once\(
+          description: require_once可能导致文件包含
+          severity: HIGH
+        - pattern: file_get_contents\(
+          description: 文件读取可能被利用
+          severity: HIGH
+        - pattern: readfile\(
+          description: 文件读取可能被利用
+          severity: HIGH
+        - pattern: fopen\(
+          description: 文件打开可能被利用
+          severity: HIGH
+      safePatterns:
+        - pattern: basename\(
+          description: 获取文件名
+        - pattern: realpath\(
+          description: 获取规范化路径
+        - pattern: in_array.*allowed_files
+          description: 文件白名单校验
+      remediation: 使用basename/realpath处理路径，实现白名单校验

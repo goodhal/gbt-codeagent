@@ -1,0 +1,24 @@
+java_dangerous_functions:
+  description: Java危险函数使用检测
+  cwe: CWE-78
+  languages:
+    java:
+      riskPatterns:
+        - pattern: ProcessBuilder.*command\(
+          description: 进程构建器可能执行恶意命令
+          severity: HIGH
+        - pattern: ScriptEngine.*eval\(
+          description: 脚本引擎执行用户代码
+          severity: CRITICAL
+        - pattern: GroovyShell
+          description: Groovy脚本引擎可能执行恶意代码
+          severity: CRITICAL
+        - pattern: ObjectInputStream.*readObject
+          description: 反序列化可能导致RCE
+          severity: CRITICAL
+      safePatterns:
+        - pattern: ProcessBuilder.*directory\(
+          description: 限制执行目录
+        - pattern: DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES
+          description: Jackson安全配置
+      remediation: 限制进程执行权限，使用安全的序列化方式

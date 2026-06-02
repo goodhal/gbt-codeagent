@@ -1,0 +1,54 @@
+session_fixation:
+  description: 会话固定漏洞
+  cwe: CWE-384
+  languages:
+    python:
+      riskPatterns:
+        - pattern: session\[.*\]\s*=\s*request\.
+          description: 直接使用用户输入设置session
+      safePatterns:
+        - pattern: session\.regenerate_id\s*\(
+          description: 会话ID轮换
+        - pattern: logout.*session\.clear
+          description: 登出清除会话
+      severity: MEDIUM
+      remediation: 用户登录时重置会话ID
+    javascript:
+      riskPatterns:
+        - pattern: sessionStorage\.setItem\s*\([^)]*\)
+          description: 可能使用固定会话
+        - pattern: document\.cookie.*session_id
+          description: URL传递会话ID
+      safePatterns:
+        - pattern: sessionStorage\.clear\s*\(
+          description: 清除会话存储
+        - pattern: crypto.randomUUID
+          description: 生成随机会话ID
+      severity: MEDIUM
+      remediation: 使用安全会话管理机制
+    php:
+      riskPatterns:
+        - pattern: session_id\s*\(\s*\$_GET
+          description: 从URL设置会话ID
+        - pattern: session_id\s*\(\s*\$_POST
+          description: 从POST设置会话ID
+      safePatterns:
+        - pattern: session_regenerate_id\s*\(\s*true\s*\)
+          description: 安全会话ID轮换
+        - pattern: session_destroy\s*\(
+          description: 会话销毁
+      severity: MEDIUM
+      remediation: 登录时调用session_regenerate_id
+    java:
+      riskPatterns:
+        - pattern: request\.getSession\s*\(\s*false\s*\)
+          description: 不创建新会话
+        - pattern: session\.setAttribute.*request\.
+          description: 直接设置会话属性
+      safePatterns:
+        - pattern: request\.changeSessionId\s*\(
+          description: 会话ID轮换
+        - pattern: session\.invalidate\s*\(
+          description: 会话失效
+      severity: MEDIUM
+      remediation: 登录时调用changeSessionId

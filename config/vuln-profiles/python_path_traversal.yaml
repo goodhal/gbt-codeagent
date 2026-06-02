@@ -1,0 +1,23 @@
+python_path_traversal:
+  description: Python路径遍历漏洞增强检测
+  cwe: CWE-22
+  languages:
+    python:
+      riskPatterns:
+        - pattern: open\(.*input|open\(.*request
+          description: 使用用户输入打开文件
+          severity: HIGH
+        - pattern: os\.path\.join.*input|os\.path\.join.*request
+          description: 用户输入参与路径拼接
+          severity: HIGH
+        - pattern: shutil\.copy.*input|shutil\.move.*input
+          description: 用户输入参与文件操作
+          severity: HIGH
+      safePatterns:
+        - pattern: os\.path\.abspath.*os\.path\.normpath
+          description: 路径规范化
+        - pattern: Path\(.*\).resolve\(\)
+          description: 路径解析
+        - pattern: ALLOWED_DIRS|allowed_paths
+          description: 目录白名单
+      remediation: 使用pathlib或规范化路径，限制访问目录

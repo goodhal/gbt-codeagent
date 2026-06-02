@@ -1,0 +1,63 @@
+information_disclosure:
+  description: 敏感信息泄露
+  cwe: CWE-200
+  gbt: GB/T34944-6.2.3.7
+  languages:
+    python:
+      riskPatterns:
+        - pattern: print\s*\([^)]*password
+          description: 打印密码
+        - pattern: logging\.info\s*\([^)]*password
+          description: 日志记录密码
+        - pattern: traceback\.print_exc\s*\(
+          description: 打印异常堆栈
+        - pattern: except.*print
+          description: 异常处理中打印
+      safePatterns:
+        - pattern: logging\.error\s*\([^)]*exc_info
+          description: 结构化异常日志
+        - pattern: logger\.exception\s*\(
+          description: 异常日志
+      severity: MEDIUM
+      remediation: 避免在日志或输出中包含敏感信息
+    java:
+      riskPatterns:
+        - pattern: e\.printStackTrace\s*\(
+          description: 打印异常堆栈
+        - pattern: System\.out\.print.*password
+          description: 输出密码
+        - pattern: System\.err\.print.*password
+          description: 错误输出密码
+      safePatterns:
+        - pattern: logger\.error\s*\([^)]*e\)
+          description: 日志记录异常
+        - pattern: log\.error.*Exception
+          description: 异常日志
+      severity: MEDIUM
+      remediation: 使用日志框架而非直接打印异常
+    javascript:
+      riskPatterns:
+        - pattern: console\.log\s*\([^)]*password
+          description: 控制台输出密码
+        - pattern: console\.log\s*\([^)]*token
+          description: 控制台输出token
+        - pattern: console\.error\s*\([^)]*password
+          description: 错误输出密码
+      safePatterns:
+        - pattern: logger\.error\s*\(
+          description: 使用日志框架
+      severity: MEDIUM
+      remediation: 避免在控制台输出敏感信息
+    php:
+      riskPatterns:
+        - pattern: echo\s+.*password
+          description: 输出密码
+        - pattern: var_dump\s*\([^)]*password
+          description: 调试输出密码
+        - pattern: print_r\s*\([^)]*password
+          description: 打印密码
+      safePatterns:
+        - pattern: error_log\s*\(
+          description: 使用error_log
+      severity: MEDIUM
+      remediation: 避免输出敏感信息到响应

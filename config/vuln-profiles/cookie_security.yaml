@@ -1,0 +1,78 @@
+cookie_security:
+  description: Cookie安全属性缺失
+  cwe: CWE-1004
+  gbt: GB/T34944-6.2.7.3
+  languages:
+    python:
+      riskPatterns:
+        - pattern: set_cookie\s*\([^)]*
+          description: 设置Cookie可能缺少安全属性
+        - pattern: session\.cookie\s*=
+          description: 会话Cookie设置
+      safePatterns:
+        - pattern: secure\s*=\s*True
+          description: Secure属性
+        - pattern: httponly\s*=\s*True
+          description: HttpOnly属性
+        - pattern: samesite\s*=\s*['\"]Strict['\"]
+          description: SameSite=Strict
+        - pattern: samesite\s*=\s*['\"]Lax['\"]
+          description: SameSite=Lax
+      severity: MEDIUM
+      remediation: 设置Secure、HttpOnly和SameSite属性
+    javascript:
+      riskPatterns:
+        - pattern: document\.cookie\s*=\s*[^;]*
+          description: 设置Cookie可能缺少安全属性
+      safePatterns:
+        - pattern: ;\s*Secure
+          description: Secure属性
+        - pattern: ;\s*HttpOnly
+          description: HttpOnly属性
+        - pattern: ;\s*SameSite=(Strict|Lax)
+          description: SameSite属性
+      severity: MEDIUM
+      remediation: 添加Secure、HttpOnly和SameSite属性
+    java:
+      riskPatterns:
+        - pattern: addCookie\s*\(
+          description: 添加Cookie
+        - pattern: Cookie\s*cookie\s*=\s*new
+          description: 创建Cookie对象
+      safePatterns:
+        - pattern: setSecure\s*\(\s*true\s*\)
+          description: 设置Secure
+        - pattern: setHttpOnly\s*\(\s*true\s*\)
+          description: 设置HttpOnly
+        - pattern: setSameSite\s*\(
+          description: 设置SameSite
+      severity: MEDIUM
+      remediation: 设置Secure、HttpOnly和SameSite属性
+    php:
+      riskPatterns:
+        - pattern: setcookie\s*\(
+          description: 设置Cookie
+        - pattern: session_set_cookie_params\s*\(
+          description: 会话Cookie参数
+      safePatterns:
+        - pattern: secure\s*=\s*true
+          description: Secure属性
+        - pattern: httponly\s*=\s*true
+          description: HttpOnly属性
+      severity: MEDIUM
+      remediation: 设置Secure和HttpOnly标志
+    csharp:
+      riskPatterns:
+        - pattern: Response\.Cookies\.Add\s*\(
+          description: 添加Cookie
+        - pattern: new HttpCookie\s*\(
+          description: 创建HttpCookie
+      safePatterns:
+        - pattern: HttpOnly\s*=\s*true
+          description: HttpOnly属性
+        - pattern: Secure\s*=\s*true
+          description: Secure属性
+        - pattern: SameSite\s*=\s*SameSiteMode
+          description: SameSite属性
+      severity: MEDIUM
+      remediation: 设置HttpOnly、Secure和SameSite属性

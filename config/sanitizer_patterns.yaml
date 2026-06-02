@@ -1,0 +1,169 @@
+# 净化函数模式配置
+# 用于检测代码中的安全防护措施，降低误报率
+# 参考: java-audit-skills sanitizer-patterns
+# 版本: 1.0.0
+
+version: "1.0"
+
+sanitizer_patterns:
+  sql:
+    - name: PreparedStatement
+      patterns:
+        - PreparedStatement
+        - prepareStatement
+        - JdbcTemplate\.
+        - NamedParameterJdbcTemplate
+        - "@Param"
+        - namedParameter
+        - queryForObject
+        - queryForList
+        - executeQuery\s*\(
+        - createQuery\s*\(
+        - createNativeQuery\s*\(
+      description: 参数化查询防止SQL注入
+      confidence: 0.95
+
+    - name: ORM框架
+      patterns:
+        - Eloquent\s+
+        - \.find\(.*\)
+        - \.findOne\(.*\)
+        - \.findById\(.*\)
+        - \.where\(.*\)\.first\(\)
+        - \.where\(.*\)\.get\(\)
+        - query\s*\(\s*\)
+        - select\s*\(\s*\)
+        - TypeORM.*\.(find|findOne|findBy|createQueryBuilder)
+        - Prisma\.(client|query)
+        - Sequelize\.(query|model)
+      description: ORM框架自带防护
+      confidence: 0.9
+
+    - name: 参数绑定
+      patterns:
+        - \.param\(
+        - \.bind\(
+        - \?\s*\[
+        - \$\{.*\?.*\}
+        - \#\{.*\}
+      description: 参数绑定防止注入
+      confidence: 0.95
+
+    - name: 转义函数
+      patterns:
+        - mysqli_real_escape_string
+        - pg_escape_string
+        - escape_string\s*\(
+        - addslashes\s*\(
+      description: SQL转义函数
+      confidence: 0.7
+
+  xss:
+    - name: HTML转义
+      patterns:
+        - HtmlUtils\.escape
+        - StringEscapeUtils\.escapeHtml
+        - ESAPI\.encoder\.
+        - encodeForHTML
+        - escapeHtml4
+        - htmlspecialchars\s*\(
+      description: HTML转义函数
+      confidence: 0.9
+
+    - name: 内容净化
+      patterns:
+        - DOMPurify\.sanitize
+        - sanitizeHtml\s*\(
+        - striptags\s*\(
+        - strip_tags\s*\(
+        - sanitize\s*\(
+        - cleanInput
+      description: HTML内容净化
+      confidence: 0.95
+
+    - name: 安全输出
+      patterns:
+        - text\s*\(
+        - \.text\s*\(
+        - \.html\s*\(\s*['"][^"\\']*['"]\s*\)
+        - innerText\s*=
+        - \.textContent\s*=
+        - React\..*encode
+      description: 安全的内容输出方式
+      confidence: 0.85
+
+    - name: URL编码
+      patterns:
+        - \.encodeURIComponent
+        - urlencode\s*\(
+        - escape\s*\(\s*[\$\w]
+        - _\.escape\s*\(
+        - lodash.*escape
+      description: URL编码函数
+      confidence: 0.75
+
+    - name: 模板引擎转义
+      patterns:
+        - Handlebars\.escape
+        - template\.escape
+        - nunjucks\.escape
+        - ejs\.escape
+        - twig\.escape
+      description: 模板引擎默认转义
+      confidence: 0.8
+
+  cmd:
+    - name: 参数数组执行
+      patterns:
+        - subprocess\.run\s*\(\s*\[
+        - subprocess\.Popen\s*\(\s*\[
+        - ProcessBuilder\s*\(\s*\[
+      description: 使用参数数组而非shell字符串
+      confidence: 0.95
+
+    - name: 命令转义
+      patterns:
+        - shlex\.quote\s*\(
+        - escapeshellarg\s*\(
+        - escapeshellcmd\s*\(
+      description: 命令参数转义
+      confidence: 0.85
+
+  path:
+    - name: 路径规范化
+      patterns:
+        - Path\.normalize
+        - getCanonicalPath
+        - getAbsolutePath
+        - realpath\s*\(
+      description: 路径规范化处理
+      confidence: 0.9
+
+    - name: 安全路径拼接
+      patterns:
+        - path\.join.*__dirname
+        - Path\.resolve.*__dirname
+        - os\.path\.join.*__file__
+      description: 使用安全的路径拼接方式
+      confidence: 0.85
+
+    - name: 白名单验证
+      patterns:
+        - whitelist|allowList
+        - validateEnum|isValidType
+        - extension.*in.*\[
+        - \.endsWith\(
+        - \.match\(.*ext
+      description: 文件扩展名白名单验证
+      confidence: 0.8
+
+  general:
+    - name: 通用转义
+      patterns:
+        - URLEncoder\.encode
+        - URLDecoder\.decode
+        - base64
+        - hexEncode
+        - unicodeEscape
+      description: 通用编码函数
+      confidence: 0.7

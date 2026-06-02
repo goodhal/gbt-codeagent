@@ -1,0 +1,2423 @@
+$schema: ./rules-schema.yaml
+language: java
+taintTracking:
+  sources:
+    - name: User Input
+      patterns:
+        - request.getParameter
+        - request.getHeader
+        - request.getInputStream
+      category: user_input
+    - name: Database
+      patterns:
+        - Statement.execute
+        - ResultSet
+        - PreparedStatement
+      category: db_input
+  sinks:
+    - id: SEC-CMD-002
+      name: Command Execution
+      patterns:
+        - Runtime.exec
+        - ProcessBuilder
+        - java.lang.Runtime
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+        owasp:
+          - A03:2021
+        gbt:
+          - GB/T34944-6.1.1.6
+      doc_url: https://docs.gbt-codeagent.com/rules/command-injection
+    - id: SEC-SQL-002
+      name: SQL Execution
+      patterns:
+        - Statement.execute
+        - Statement.executeQuery
+        - Statement.executeUpdate
+      category: sql_injection
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+        owasp:
+          - A03:2021
+        gbt:
+          - GB/T34944-6.1.1.1
+      doc_url: https://docs.gbt-codeagent.com/rules/sql-injection
+    - id: SEC-XXE-002
+      name: XML Processing
+      patterns:
+        - DocumentBuilder.parse
+        - SAXParser.parse
+        - XMLReader.parse
+      category: xxe
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-611
+        owasp:
+          - A03:2021
+      doc_url: https://docs.gbt-codeagent.com/rules/xxe
+    - id: QS-JAVA-601
+      name: COMMAND INJECTION
+      patterns:
+        - Runtime\.getRuntime\(\)\.exec\s*\(
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+      _quickScan: true
+      _vulnType: COMMAND_INJECTION
+      _cwe: CWE-78
+      _chineseSeverity: 严重
+    - id: QS-JAVA-602
+      name: COMMAND INJECTION
+      patterns:
+        - ProcessBuilder\s*\(
+      category: command_exec
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+      _quickScan: true
+      _vulnType: COMMAND_INJECTION
+      _cwe: CWE-78
+      _chineseSeverity: 高危
+    - id: QS-JAVA-603
+      name: COMMAND INJECTION
+      patterns:
+        - ProcessImpl\.start
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+      _quickScan: true
+      _vulnType: COMMAND_INJECTION
+      _cwe: CWE-78
+      _chineseSeverity: 严重
+    - id: QS-JAVA-604
+      name: SQL INJECTION
+      patterns:
+        - String\s+sql\s*=\s*"
+      category: sql_injection
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+      _quickScan: true
+      _vulnType: SQL_INJECTION
+      _cwe: CWE-89
+      _chineseSeverity: 高危
+    - id: QS-JAVA-605
+      name: SQL INJECTION
+      patterns:
+        - Statement\.execute
+      category: sql_injection
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+      _quickScan: true
+      _vulnType: SQL_INJECTION
+      _cwe: CWE-89
+      _chineseSeverity: 高危
+    - id: QS-JAVA-606
+      name: SQL INJECTION
+      patterns:
+        - ORDER BY.*\+
+      category: sql_injection
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+      _quickScan: true
+      _vulnType: SQL_INJECTION
+      _cwe: CWE-89
+      _chineseSeverity: 高危
+    - id: QS-JAVA-607
+      name: SQL INJECTION
+      patterns:
+        - HibernateTemplate\.execute\s*\(
+      category: sql_injection
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+      _quickScan: true
+      _vulnType: SQL_INJECTION
+      _cwe: CWE-89
+      _chineseSeverity: 高危
+    - id: QS-JAVA-608
+      name: SQL INJECTION
+      patterns:
+        - entityManager\.createQuery\s*\(
+      category: sql_injection
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+      _quickScan: true
+      _vulnType: SQL_INJECTION
+      _cwe: CWE-89
+      _chineseSeverity: 高危
+    - id: QS-JAVA-609
+      name: SQL INJECTION
+      patterns:
+        - createNativeQuery\s*\(
+      category: sql_injection
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+      _quickScan: true
+      _vulnType: SQL_INJECTION
+      _cwe: CWE-89
+      _chineseSeverity: 高危
+    - id: QS-JAVA-610
+      name: SQL INJECTION
+      patterns:
+        - JdbcTemplate\s*\(
+      category: sql_injection
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+      _quickScan: true
+      _vulnType: SQL_INJECTION
+      _cwe: CWE-89
+      _chineseSeverity: 高危
+    - id: QS-JAVA-611
+      name: XPATH INJECTION
+      patterns:
+        - XPath.*\+
+      category: xpath
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-643
+      _quickScan: true
+      _vulnType: XPATH_INJECTION
+      _cwe: CWE-643
+      _chineseSeverity: 高危
+    - id: QS-JAVA-612
+      name: XPATH INJECTION
+      patterns:
+        - XPathFactory\.newInstance\s*\(
+      category: xpath
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-643
+      _quickScan: true
+      _vulnType: XPATH_INJECTION
+      _cwe: CWE-643
+      _chineseSeverity: 高危
+    - id: QS-JAVA-613
+      name: XPATH INJECTION
+      patterns:
+        - xpath\.evaluate\s*\(
+      category: xpath
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-643
+      _quickScan: true
+      _vulnType: XPATH_INJECTION
+      _cwe: CWE-643
+      _chineseSeverity: 高危
+    - id: QS-JAVA-614
+      name: HARD CODE PASSWORD
+      patterns:
+        - password\s*=\s*"[^"]{3,}"
+      category: hard_coded_secret
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-259
+      _quickScan: true
+      _vulnType: HARD_CODE_PASSWORD
+      _cwe: CWE-259
+      _chineseSeverity: 高危
+    - id: QS-JAVA-615
+      name: PATH TRAVERSAL
+      patterns:
+        - new\s+File\s*\(\s*
+      category: file_operation
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-22
+      _quickScan: true
+      _vulnType: PATH_TRAVERSAL
+      _cwe: CWE-22
+      _chineseSeverity: 高危
+    - id: QS-JAVA-616
+      name: PATH TRAVERSAL
+      patterns:
+        - FileInputStream\s*\(\s*
+      category: file_operation
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-22
+      _quickScan: true
+      _vulnType: PATH_TRAVERSAL
+      _cwe: CWE-22
+      _chineseSeverity: 高危
+    - id: QS-JAVA-617
+      name: PATH TRAVERSAL
+      patterns:
+        - Files\.lines\s*\(\s*filePath\s*\)
+      category: file_operation
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-22
+      _quickScan: true
+      _vulnType: PATH_TRAVERSAL
+      _cwe: CWE-22
+      _chineseSeverity: 高危
+    - id: QS-JAVA-618
+      name: PATH TRAVERSAL
+      patterns:
+        - Files\.readAllBytes\s*\(
+      category: file_operation
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-22
+      _quickScan: true
+      _vulnType: PATH_TRAVERSAL
+      _cwe: CWE-22
+      _chineseSeverity: 高危
+    - id: QS-JAVA-619
+      name: PATH TRAVERSAL
+      patterns:
+        - StreamUtils\.copy\s*\(
+      category: file_operation
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-22
+      _quickScan: true
+      _vulnType: PATH_TRAVERSAL
+      _cwe: CWE-22
+      _chineseSeverity: 高危
+    - id: QS-JAVA-620
+      name: CODE INJECTION
+      patterns:
+        - ScriptEngine.*eval\s*\(
+      category: code_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-94
+      _quickScan: true
+      _vulnType: CODE_INJECTION
+      _cwe: CWE-94
+      _chineseSeverity: 严重
+    - id: QS-JAVA-621
+      name: CODE INJECTION
+      patterns:
+        - GroovyShell\s*\(
+      category: code_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-94
+      _quickScan: true
+      _vulnType: CODE_INJECTION
+      _cwe: CWE-94
+      _chineseSeverity: 严重
+    - id: QS-JAVA-622
+      name: CODE INJECTION
+      patterns:
+        - shell\.evaluate\s*\(
+      category: code_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-94
+      _quickScan: true
+      _vulnType: CODE_INJECTION
+      _cwe: CWE-94
+      _chineseSeverity: 严重
+    - id: QS-JAVA-623
+      name: PROCESS CONTROL
+      patterns:
+        - System\.load\s*\(
+      category: process_control
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-114
+      _quickScan: true
+      _vulnType: PROCESS_CONTROL
+      _cwe: CWE-114
+      _chineseSeverity: 高危
+    - id: QS-JAVA-624
+      name: WEAK HASH
+      patterns:
+        - MessageDigest.*getInstance.*MD5
+      category: weak_hash
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-328
+      _quickScan: true
+      _vulnType: WEAK_HASH
+      _cwe: CWE-328
+      _chineseSeverity: 高危
+    - id: QS-JAVA-625
+      name: WEAK HASH
+      patterns:
+        - MessageDigest.*getInstance.*SHA1
+      category: weak_hash
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-328
+      _quickScan: true
+      _vulnType: WEAK_HASH
+      _cwe: CWE-328
+      _chineseSeverity: 高危
+    - id: QS-JAVA-626
+      name: WEAK CRYPTO
+      patterns:
+        - Cipher.*getInstance.*DES
+      category: weak_crypto
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-327
+      _quickScan: true
+      _vulnType: WEAK_CRYPTO
+      _cwe: CWE-327
+      _chineseSeverity: 高危
+    - id: QS-JAVA-627
+      name: PREDICTABLE RANDOM
+      patterns:
+        - new\s+Random\s*\(\s*\)
+      category: weak_random
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-338
+      _quickScan: true
+      _vulnType: PREDICTABLE_RANDOM
+      _cwe: CWE-338
+      _chineseSeverity: 高危
+    - id: QS-JAVA-628
+      name: WEAK RANDOM
+      patterns:
+        - SecureRandom\s*\(\s*\)
+      category: weak_random
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-338
+      _quickScan: true
+      _vulnType: WEAK_RANDOM
+      _cwe: CWE-338
+      _chineseSeverity: 中危
+    - id: QS-JAVA-629
+      name: INFO LEAK
+      patterns:
+        - println.*password
+      category: info_leak
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-532
+      _quickScan: true
+      _vulnType: INFO_LEAK
+      _cwe: CWE-532
+      _chineseSeverity: 中危
+    - id: QS-JAVA-630
+      name: SESSION FIXATION
+      patterns:
+        - session\.put\s*\(
+      category: session_fixation
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-384
+      _quickScan: true
+      _vulnType: SESSION_FIXATION
+      _cwe: CWE-384
+      _chineseSeverity: 高危
+    - id: QS-JAVA-631
+      name: COOKIE MANIPULATION
+      patterns:
+        - Cookie.*=.*=
+      category: cookie_manipulation
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-565
+      _quickScan: true
+      _vulnType: COOKIE_MANIPULATION
+      _cwe: CWE-565
+      _chineseSeverity: 高危
+    - id: QS-JAVA-632
+      name: AUTH BYPASS
+      patterns:
+        - referer.*contains
+      category: auth_bypass
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-287
+      _quickScan: true
+      _vulnType: AUTH_BYPASS
+      _cwe: CWE-287
+      _chineseSeverity: 高危
+    - id: QS-JAVA-633
+      name: REFERER AUTH BYPASS
+      patterns:
+        - referer\.startsWith\s*\(
+      category: auth_bypass
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-293
+      _quickScan: true
+      _vulnType: REFERER_AUTH_BYPASS
+      _cwe: CWE-293
+      _chineseSeverity: 高危
+    - id: QS-JAVA-634
+      name: REFERER AUTH BYPASS
+      patterns:
+        - request\.getHeader\s*\(\s*"referer"
+      category: auth_bypass
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-293
+      _quickScan: true
+      _vulnType: REFERER_AUTH_BYPASS
+      _cwe: CWE-293
+      _chineseSeverity: 高危
+    - id: QS-JAVA-635
+      name: AUTH BYPASS
+      patterns:
+        - code_verify
+      category: auth_bypass
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-287
+      _quickScan: true
+      _vulnType: AUTH_BYPASS
+      _cwe: CWE-287
+      _chineseSeverity: 高危
+    - id: QS-JAVA-636
+      name: AUTH BYPASS
+      patterns:
+        - stepData\.put\s*\(
+      category: auth_bypass
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-287
+      _quickScan: true
+      _vulnType: AUTH_BYPASS
+      _cwe: CWE-287
+      _chineseSeverity: 高危
+    - id: QS-JAVA-637
+      name: AUTH BYPASS
+      patterns:
+        - orderStatusMap\.get\s*\(
+      category: auth_bypass
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-287
+      _quickScan: true
+      _vulnType: AUTH_BYPASS
+      _cwe: CWE-287
+      _chineseSeverity: 高危
+    - id: QS-JAVA-638
+      name: AUTH BYPASS
+      patterns:
+        - paymentStatusMap\.get\s*\(
+      category: auth_bypass
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-287
+      _quickScan: true
+      _vulnType: AUTH_BYPASS
+      _cwe: CWE-287
+      _chineseSeverity: 高危
+    - id: QS-JAVA-639
+      name: AUTH BYPASS
+      patterns:
+        - status\.isPaid\s*=
+      category: auth_bypass
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-287
+      _quickScan: true
+      _vulnType: AUTH_BYPASS
+      _cwe: CWE-287
+      _chineseSeverity: 高危
+    - id: QS-JAVA-640
+      name: AUTH BYPASS
+      patterns:
+        - SecurityContextHolder\.getContext\s*\(
+      category: auth_bypass
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-287
+      _quickScan: true
+      _vulnType: AUTH_BYPASS
+      _cwe: CWE-287
+      _chineseSeverity: 中危
+    - id: QS-JAVA-641
+      name: AUTH INFO EXPOSURE
+      patterns:
+        - REAL_USERNAMES\.contains\s*\(
+      category: info_leak
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-204
+      _quickScan: true
+      _vulnType: AUTH_INFO_EXPOSURE
+      _cwe: CWE-204
+      _chineseSeverity: 中危
+    - id: QS-JAVA-642
+      name: IDOR
+      patterns:
+        - userMapper\.getAllByUsername\s*\(
+      category: idor
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-639
+      _quickScan: true
+      _vulnType: IDOR
+      _cwe: CWE-639
+      _chineseSeverity: 高危
+    - id: QS-JAVA-643
+      name: UNCONTROLLED MEMORY
+      patterns:
+        - byte\[.*\]\s*=\s*new\s+byte\[.*size
+      category: buffer_overflow
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-770
+      _quickScan: true
+      _vulnType: UNCONTROLLED_MEMORY
+      _cwe: CWE-770
+      _chineseSeverity: 高危
+    - id: QS-JAVA-644
+      name: IMPROPER EXCEPTION HANDLING
+      patterns:
+        - catch\s*\(\s*Exception\s*\)\s*\{\s*\}
+      category: info_leak
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-703
+      _quickScan: true
+      _vulnType: IMPROPER_EXCEPTION_HANDLING
+      _cwe: CWE-703
+      _chineseSeverity: 高危
+    - id: QS-JAVA-645
+      name: WEAK PASSWORD POLICY
+      patterns:
+        - password\.length\s*\(\s*\)\s*>=\s*4
+      category: hard_coded_secret
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-521
+      _quickScan: true
+      _vulnType: WEAK_PASSWORD_POLICY
+      _cwe: CWE-521
+      _chineseSeverity: 中危
+    - id: QS-JAVA-646
+      name: PLAINTEXT TRANSMISSION
+      patterns:
+        - http:\/\/api\.
+      category: info_leak
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-319
+      _quickScan: true
+      _vulnType: PLAINTEXT_TRANSMISSION
+      _cwe: CWE-319
+      _chineseSeverity: 中危
+    - id: QS-JAVA-647
+      name: OPEN REDIRECT
+      patterns:
+        - return\s+"redirect:"
+      category: xss
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-601
+      _quickScan: true
+      _vulnType: OPEN_REDIRECT
+      _cwe: CWE-601
+      _chineseSeverity: 高危
+    - id: QS-JAVA-648
+      name: OPEN REDIRECT
+      patterns:
+        - response\.sendRedirect\s*\(
+      category: xss
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-601
+      _quickScan: true
+      _vulnType: OPEN_REDIRECT
+      _cwe: CWE-601
+      _chineseSeverity: 高危
+    - id: QS-JAVA-649
+      name: OPEN REDIRECT
+      patterns:
+        - ModelAndView\s*\(\s*"redirect:"
+      category: xss
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-601
+      _quickScan: true
+      _vulnType: OPEN_REDIRECT
+      _cwe: CWE-601
+      _chineseSeverity: 高危
+    - id: QS-JAVA-650
+      name: OPEN REDIRECT
+      patterns:
+        - headers\.setLocation\s*\(
+      category: xss
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-601
+      _quickScan: true
+      _vulnType: OPEN_REDIRECT
+      _cwe: CWE-601
+      _chineseSeverity: 高危
+    - id: QS-JAVA-651
+      name: OPEN REDIRECT
+      patterns:
+        - response\.setHeader\s*\(\s*"Location"
+      category: xss
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-601
+      _quickScan: true
+      _vulnType: OPEN_REDIRECT
+      _cwe: CWE-601
+      _chineseSeverity: 高危
+    - id: QS-JAVA-652
+      name: DESERIALIZATION
+      patterns:
+        - XMLDecoder\s*\(
+      category: deserialization
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-502
+      _quickScan: true
+      _vulnType: DESERIALIZATION
+      _cwe: CWE-502
+      _chineseSeverity: 严重
+    - id: QS-JAVA-653
+      name: DESERIALIZATION
+      patterns:
+        - ObjectInputStream\s*\(
+      category: deserialization
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-502
+      _quickScan: true
+      _vulnType: DESERIALIZATION
+      _cwe: CWE-502
+      _chineseSeverity: 严重
+    - id: QS-JAVA-654
+      name: DESERIALIZATION
+      patterns:
+        - enableDefaultTyping\s*\(
+      category: deserialization
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-502
+      _quickScan: true
+      _vulnType: DESERIALIZATION
+      _cwe: CWE-502
+      _chineseSeverity: 严重
+    - id: QS-JAVA-655
+      name: DESERIALIZATION
+      patterns:
+        - XStream\s*\(\s*\)
+      category: deserialization
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-502
+      _quickScan: true
+      _vulnType: DESERIALIZATION
+      _cwe: CWE-502
+      _chineseSeverity: 严重
+    - id: QS-JAVA-656
+      name: DESERIALIZATION
+      patterns:
+        - JSON\.parseObject\s*\(
+      category: deserialization
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-502
+      _quickScan: true
+      _vulnType: DESERIALIZATION
+      _cwe: CWE-502
+      _chineseSeverity: 高危
+    - id: QS-JAVA-657
+      name: XXE
+      patterns:
+        - XMLReaderFactory\.createXMLReader\s*\(
+      category: xxe
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-611
+      _quickScan: true
+      _vulnType: XXE
+      _cwe: CWE-611
+      _chineseSeverity: 高危
+    - id: QS-JAVA-658
+      name: XXE
+      patterns:
+        - SAXParserFactory\.newInstance\s*\(
+      category: xxe
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-611
+      _quickScan: true
+      _vulnType: XXE
+      _cwe: CWE-611
+      _chineseSeverity: 高危
+    - id: QS-JAVA-659
+      name: XXE
+      patterns:
+        - DocumentBuilderFactory\.newInstance\s*\(
+      category: xxe
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-611
+      _quickScan: true
+      _vulnType: XXE
+      _cwe: CWE-611
+      _chineseSeverity: 高危
+    - id: QS-JAVA-660
+      name: LOG INJECTION
+      patterns:
+        - logger\.error\s*\(
+      category: log_injection
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-93
+      _quickScan: true
+      _vulnType: LOG_INJECTION
+      _cwe: CWE-93
+      _chineseSeverity: 高危
+    - id: QS-JAVA-661
+      name: PLAINTEXT PASSWORD
+      patterns:
+        - NoOpPasswordEncoder\.getInstance\s*\(
+      category: hard_coded_secret
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-256
+      _quickScan: true
+      _vulnType: PLAINTEXT_PASSWORD
+      _cwe: CWE-256
+      _chineseSeverity: 严重
+    - id: QS-JAVA-662
+      name: CORS MISCONFIGURATION
+      patterns:
+        - Access-Control-Allow-Origin.*\*
+      category: auth_bypass
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-942
+      _quickScan: true
+      _vulnType: CORS_MISCONFIGURATION
+      _cwe: CWE-942
+      _chineseSeverity: 高危
+    - id: QS-JAVA-663
+      name: CORS MISCONFIGURATION
+      patterns:
+        - Access-Control-Allow-Credentials.*true
+      category: auth_bypass
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-942
+      _quickScan: true
+      _vulnType: CORS_MISCONFIGURATION
+      _cwe: CWE-942
+      _chineseSeverity: 高危
+    - id: QS-JAVA-664
+      name: CORS MISCONFIGURATION
+      patterns:
+        - response\.setHeader\s*\(\s*"Access-Control-Allow-Origin"
+      category: auth_bypass
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-942
+      _quickScan: true
+      _vulnType: CORS_MISCONFIGURATION
+      _cwe: CWE-942
+      _chineseSeverity: 高危
+    - id: QS-JAVA-665
+      name: CORS MISCONFIGURATION
+      patterns:
+        - request\.getHeader\s*\(\s*"origin"
+      category: auth_bypass
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-942
+      _quickScan: true
+      _vulnType: CORS_MISCONFIGURATION
+      _cwe: CWE-942
+      _chineseSeverity: 高危
+    - id: QS-JAVA-666
+      name: CORS MISCONFIGURATION
+      patterns:
+        - setHeader\s*\(\s*"Access-Control-Allow-Origin"\s*,\s*origin
+      category: auth_bypass
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-942
+      _quickScan: true
+      _vulnType: CORS_MISCONFIGURATION
+      _cwe: CWE-942
+      _chineseSeverity: 高危
+    - id: QS-JAVA-667
+      name: CORS MISCONFIGURATION
+      patterns:
+        - addHeader\s*\(\s*"Access-Control-Allow-Origin"\s*,\s*origin
+      category: auth_bypass
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-942
+      _quickScan: true
+      _vulnType: CORS_MISCONFIGURATION
+      _cwe: CWE-942
+      _chineseSeverity: 高危
+    - id: QS-JAVA-668
+      name: CORS MISCONFIGURATION
+      patterns:
+        - allowedOrigins\s*\(\s*"\*"\s*\)
+      category: auth_bypass
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-942
+      _quickScan: true
+      _vulnType: CORS_MISCONFIGURATION
+      _cwe: CWE-942
+      _chineseSeverity: 高危
+    - id: QS-JAVA-669
+      name: CORS MISCONFIGURATION
+      patterns:
+        - addCorsMappings\s*\(
+      category: auth_bypass
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-942
+      _quickScan: true
+      _vulnType: CORS_MISCONFIGURATION
+      _cwe: CWE-942
+      _chineseSeverity: 中危
+    - id: QS-JAVA-670
+      name: CSRF PROTECTION
+      patterns:
+        - session\.getAttribute\s*\(\s*"csrfToken"
+      category: session_fixation
+      severity: INFO
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-352
+      _quickScan: true
+      _vulnType: CSRF_PROTECTION
+      _cwe: CWE-352
+      _chineseSeverity: info
+    - id: QS-JAVA-671
+      name: CSRF MISSING
+      patterns:
+        - "@PostMapping\\s*\\("
+      category: session_fixation
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-352
+      _quickScan: true
+      _vulnType: CSRF_MISSING
+      _cwe: CWE-352
+      _chineseSeverity: 高危
+    - id: QS-JAVA-672
+      name: CSRF MISSING
+      patterns:
+        - "@RequestMapping\\s*\\(.*method\\s*=\\s*RequestMethod\\.POST"
+      category: session_fixation
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-352
+      _quickScan: true
+      _vulnType: CSRF_MISSING
+      _cwe: CWE-352
+      _chineseSeverity: 高危
+    - id: QS-JAVA-673
+      name: SPEL INJECTION
+      patterns:
+        - StandardEvaluationContext\s*\(
+      category: code_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-94
+      _quickScan: true
+      _vulnType: SPEL_INJECTION
+      _cwe: CWE-94
+      _chineseSeverity: 严重
+    - id: QS-JAVA-674
+      name: SSRF
+      patterns:
+        - URL\s+u\s*=\s*new\s+URL\s*\(
+      category: ssrf
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-918
+      _quickScan: true
+      _vulnType: SSRF
+      _cwe: CWE-918
+      _chineseSeverity: 严重
+    - id: QS-JAVA-675
+      name: SSRF
+      patterns:
+        - URLConnection\s+conn\s*=\s*u\.openConnection
+      category: ssrf
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-918
+      _quickScan: true
+      _vulnType: SSRF
+      _cwe: CWE-918
+      _chineseSeverity: 严重
+    - id: QS-JAVA-676
+      name: XSS
+      patterns:
+        - response\.getWriter\(\)\.print\s*\(
+      category: xss
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-79
+      _quickScan: true
+      _vulnType: XSS
+      _cwe: CWE-79
+      _chineseSeverity: 高危
+    - id: QS-JAVA-677
+      name: XSS
+      patterns:
+        - response\.getWriter\(\)\.write\s*\(
+      category: xss
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-79
+      _quickScan: true
+      _vulnType: XSS
+      _cwe: CWE-79
+      _chineseSeverity: 高危
+    - id: QS-JAVA-678
+      name: XSS
+      patterns:
+        - response\.setContentType\s*\(\s*"text\/html"
+      category: xss
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-79
+      _quickScan: true
+      _vulnType: XSS
+      _cwe: CWE-79
+      _chineseSeverity: 高危
+    - id: QS-JAVA-679
+      name: XSS REFLECTED
+      patterns:
+        - out\.println\s*\(.*request\.getParameter
+      category: xss
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-79
+      _quickScan: true
+      _vulnType: XSS_REFLECTED
+      _cwe: CWE-79
+      _chineseSeverity: 高危
+    - id: QS-JAVA-680
+      name: XSS REFLECTED
+      patterns:
+        - out\.write\s*\(.*request\.getParameter
+      category: xss
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-79
+      _quickScan: true
+      _vulnType: XSS_REFLECTED
+      _cwe: CWE-79
+      _chineseSeverity: 高危
+    - id: QS-JAVA-681
+      name: XSS STORED
+      patterns:
+        - ModelAndView\s*\(\s*".*".*request\.getParameter
+      category: xss
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-79
+      _quickScan: true
+      _vulnType: XSS_STORED
+      _cwe: CWE-79
+      _chineseSeverity: 中危
+    - id: QS-JAVA-682
+      name: SWAGGER EXPOSURE
+      patterns:
+        - "@EnableSwagger2"
+      category: info_leak
+      severity: LOW
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-200
+      _quickScan: true
+      _vulnType: SWAGGER_EXPOSURE
+      _cwe: CWE-200
+      _chineseSeverity: 低危
+    - id: QS-JAVA-683
+      name: SWAGGER EXPOSURE
+      patterns:
+        - "@EnableOpenApi"
+      category: info_leak
+      severity: LOW
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-200
+      _quickScan: true
+      _vulnType: SWAGGER_EXPOSURE
+      _cwe: CWE-200
+      _chineseSeverity: 低危
+    - id: QS-JAVA-684
+      name: SWAGGER EXPOSURE
+      patterns:
+        - new\s+Docket\s*\(
+      category: info_leak
+      severity: LOW
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-200
+      _quickScan: true
+      _vulnType: SWAGGER_EXPOSURE
+      _cwe: CWE-200
+      _chineseSeverity: 低危
+    - id: QS-JAVA-685
+      name: SWAGGER EXPOSURE
+      patterns:
+        - swagger-ui
+      category: info_leak
+      severity: INFO
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-200
+      _quickScan: true
+      _vulnType: SWAGGER_EXPOSURE
+      _cwe: CWE-200
+      _chineseSeverity: info
+    - id: QS-JAVA-686
+      name: RACE CONDITION
+      patterns:
+        - Thread\.sleep\s*\(
+      category: auth_bypass
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-362
+      _quickScan: true
+      _vulnType: RACE_CONDITION
+      _cwe: CWE-362
+      _chineseSeverity: 高危
+    - id: QS-JAVA-687
+      name: RACE CONDITION
+      patterns:
+        - AtomicReference\.get\s*\(
+      category: auth_bypass
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-362
+      _quickScan: true
+      _vulnType: RACE_CONDITION
+      _cwe: CWE-362
+      _chineseSeverity: 中危
+    - id: QS-JAVA-688
+      name: RACE CONDITION
+      patterns:
+        - userMoney\.get\s*\(
+      category: auth_bypass
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-362
+      _quickScan: true
+      _vulnType: RACE_CONDITION
+      _cwe: CWE-362
+      _chineseSeverity: 中危
+    - id: QS-JAVA-689
+      name: INTEGER OVERFLOW
+      patterns:
+        - Integer\.parseInt\s*\(.*\*
+      category: integer_overflow
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-190
+      _quickScan: true
+      _vulnType: INTEGER_OVERFLOW
+      _cwe: CWE-190
+      _chineseSeverity: 高危
+    - id: QS-JAVA-690
+      name: INTEGER OVERFLOW
+      patterns:
+        - Double\.parseDouble\s*\(.*\*
+      category: integer_overflow
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-190
+      _quickScan: true
+      _vulnType: INTEGER_OVERFLOW
+      _cwe: CWE-190
+      _chineseSeverity: 高危
+    - id: QS-JAVA-691
+      name: SSTI
+      patterns:
+        - return\s+"vul\/ssti\/"
+      category: code_injection
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-94
+      _quickScan: true
+      _vulnType: SSTI
+      _cwe: CWE-94
+      _chineseSeverity: 高危
+    - id: QS-JAVA-692
+      name: SSTI
+      patterns:
+        - model\.addAttribute\s*\(\s*"templateContent"
+      category: code_injection
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-94
+      _quickScan: true
+      _vulnType: SSTI
+      _cwe: CWE-94
+      _chineseSeverity: 高危
+    - id: QS-JAVA-693
+      name: SQL INJECTION MYBATIS
+      patterns:
+        - \$\{[\w.]+\}
+      category: sql_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+      _quickScan: true
+      _vulnType: SQL_INJECTION_MYBATIS
+      _cwe: CWE-89
+      _chineseSeverity: 严重
+    - id: QS-JAVA-694
+      name: SQL INJECTION ORDERBY
+      patterns:
+        - \.getOrderBy\s*\(\s*\)
+      category: sql_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+      _quickScan: true
+      _vulnType: SQL_INJECTION_ORDERBY
+      _cwe: CWE-89
+      _chineseSeverity: 严重
+    - id: QS-JAVA-695
+      name: SQL INJECTION ORDERBY
+      patterns:
+        - \.getSortField\s*\(\s*\)
+      category: sql_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+      _quickScan: true
+      _vulnType: SQL_INJECTION_ORDERBY
+      _cwe: CWE-89
+      _chineseSeverity: 严重
+    - id: QS-JAVA-696
+      name: SQL INJECTION GROUPBY
+      patterns:
+        - \.getGroupBy\s*\(\s*\)
+      category: sql_injection
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+      _quickScan: true
+      _vulnType: SQL_INJECTION_GROUPBY
+      _cwe: CWE-89
+      _chineseSeverity: 高危
+    - id: QS-JAVA-697
+      name: SQL INJECTION ORDERBY
+      patterns:
+        - sql.*append\s*\(\s*.*orderBy
+      category: sql_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+      _quickScan: true
+      _vulnType: SQL_INJECTION_ORDERBY
+      _cwe: CWE-89
+      _chineseSeverity: 严重
+    - id: QS-JAVA-698
+      name: SQL INJECTION ORDERBY
+      patterns:
+        - sql.*append\s*\(\s*.*sort
+      category: sql_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+      _quickScan: true
+      _vulnType: SQL_INJECTION_ORDERBY
+      _cwe: CWE-89
+      _chineseSeverity: 严重
+    - id: QS-JAVA-699
+      name: SQL INJECTION HQL
+      patterns:
+        - Session\.createQuery\s*\(\s*.*\+
+      category: sql_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+      _quickScan: true
+      _vulnType: SQL_INJECTION_HQL
+      _cwe: CWE-89
+      _chineseSeverity: 严重
+    - id: QS-JAVA-700
+      name: SQL INJECTION HQL
+      patterns:
+        - createSQLQuery\s*\(\s*.*\+
+      category: sql_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+      _quickScan: true
+      _vulnType: SQL_INJECTION_HQL
+      _cwe: CWE-89
+      _chineseSeverity: 严重
+    - id: QS-JAVA-701
+      name: AUTH BYPASS URI
+      patterns:
+        - getRequestURI\s*\(\s*\).*endsWith
+      category: auth_bypass
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-287
+      _quickScan: true
+      _vulnType: AUTH_BYPASS_URI
+      _cwe: CWE-287
+      _chineseSeverity: 严重
+    - id: QS-JAVA-702
+      name: AUTH BYPASS URI
+      patterns:
+        - getRequestURI\s*\(\s*\).*startsWith
+      category: auth_bypass
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-287
+      _quickScan: true
+      _vulnType: AUTH_BYPASS_URI
+      _cwe: CWE-287
+      _chineseSeverity: 高危
+    - id: QS-JAVA-703
+      name: AUTH BYPASS URI
+      patterns:
+        - getRequestURI\s*\(\s*\).*contains
+      category: auth_bypass
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-287
+      _quickScan: true
+      _vulnType: AUTH_BYPASS_URI
+      _cwe: CWE-287
+      _chineseSeverity: 高危
+    - id: QS-JAVA-704
+      name: AUTH BYPASS URI
+      patterns:
+        - getRequestURL\s*\(\s*\).*toString
+      category: auth_bypass
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-287
+      _quickScan: true
+      _vulnType: AUTH_BYPASS_URI
+      _cwe: CWE-287
+      _chineseSeverity: 高危
+    - id: QS-JAVA-705
+      name: AUTH BYPASS SUFFIX
+      patterns:
+        - \.endsWith\s*\(\s*"\.(js|css|png|jpg|html|ico)"
+      category: auth_bypass
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-287
+      _quickScan: true
+      _vulnType: AUTH_BYPASS_SUFFIX
+      _cwe: CWE-287
+      _chineseSeverity: 严重
+    - id: QS-JAVA-706
+      name: AUTH SERVLETPATH SAFE
+      patterns:
+        - request\.getServletPath\s*\(\s*\)
+      category: auth_bypass
+      severity: LOW
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-NONE
+      _quickScan: true
+      _vulnType: AUTH_SERVLETPATH_SAFE
+      _cwe: CWE-NONE
+      _chineseSeverity: 低危
+    - id: QS-JAVA-707
+      name: COMPONENT VULNERABILITY
+      patterns:
+        - shiro-spring.*1\.[0-4]\.
+      category: info_leak
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-937
+      _quickScan: true
+      _vulnType: COMPONENT_VULNERABILITY
+      _cwe: CWE-937
+      _chineseSeverity: 严重
+    - id: QS-JAVA-708
+      name: COMPONENT VULNERABILITY
+      patterns:
+        - spring-security.*5\.[0-6]\.
+      category: info_leak
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-937
+      _quickScan: true
+      _vulnType: COMPONENT_VULNERABILITY
+      _cwe: CWE-937
+      _chineseSeverity: 高危
+    - id: QS-JAVA-709
+      name: AUTH BYPASS SPRING
+      patterns:
+        - antMatchers\s*\(\s*"[^"]*"\s*\)
+      category: auth_bypass
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-287
+      _quickScan: true
+      _vulnType: AUTH_BYPASS_SPRING
+      _cwe: CWE-287
+      _chineseSeverity: 高危
+    - id: QS-JAVA-710
+      name: AUTH CSRF DISABLED
+      patterns:
+        - csrf\s*\(\s*\)\s*\.disable\s*\(\s*\)
+      category: auth_bypass
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-352
+      _quickScan: true
+      _vulnType: AUTH_CSRF_DISABLED
+      _cwe: CWE-352
+      _chineseSeverity: 高危
+    - id: QS-JAVA-711
+      name: COMPONENT VULNERABILITY
+      patterns:
+        - struts2-core.*2\.[0-5]\.
+      category: info_leak
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-937
+      _quickScan: true
+      _vulnType: COMPONENT_VULNERABILITY
+      _cwe: CWE-937
+      _chineseSeverity: 严重
+    - id: QS-JAVA-712
+      name: STRUTS WILDCARD
+      patterns:
+        - name\s*=\s*"\*_\*"
+      category: info_leak
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-937
+      _quickScan: true
+      _vulnType: STRUTS_WILDCARD
+      _cwe: CWE-937
+      _chineseSeverity: 中危
+    - id: QS-JAVA-713
+      name: FILE UPLOAD
+      patterns:
+        - \.transferTo\s*\(
+      category: file_upload
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-434
+      _quickScan: true
+      _vulnType: FILE_UPLOAD
+      _cwe: CWE-434
+      _chineseSeverity: 高危
+    - id: QS-JAVA-714
+      name: FILE UPLOAD
+      patterns:
+        - MultipartFile.*getOriginalFilename
+      category: file_upload
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-434
+      _quickScan: true
+      _vulnType: FILE_UPLOAD
+      _cwe: CWE-434
+      _chineseSeverity: 高危
+    - id: QS-JAVA-715
+      name: FILE UPLOAD
+      patterns:
+        - ServletFileUpload.*parseRequest
+      category: file_upload
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-434
+      _quickScan: true
+      _vulnType: FILE_UPLOAD
+      _cwe: CWE-434
+      _chineseSeverity: 高危
+    - id: QS-JAVA-716
+      name: FILE READ
+      patterns:
+        - Files\.readAllLines\s*\(
+      category: file_operation
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-22
+      _quickScan: true
+      _vulnType: FILE_READ
+      _cwe: CWE-22
+      _chineseSeverity: 高危
+    - id: QS-JAVA-717
+      name: FILE READ
+      patterns:
+        - BufferedReader.*new\s+File
+      category: file_operation
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-22
+      _quickScan: true
+      _vulnType: FILE_READ
+      _cwe: CWE-22
+      _chineseSeverity: 高危
+    - id: QS-JAVA-718
+      name: XXE
+      patterns:
+        - SAXBuilder\s*\(
+      category: xxe
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-611
+      _quickScan: true
+      _vulnType: XXE
+      _cwe: CWE-611
+      _chineseSeverity: 高危
+    - id: QS-JAVA-719
+      name: XXE
+      patterns:
+        - SAXReader\s*\(
+      category: xxe
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-611
+      _quickScan: true
+      _vulnType: XXE
+      _cwe: CWE-611
+      _chineseSeverity: 高危
+    - id: QS-JAVA-720
+      name: XXE
+      patterns:
+        - XMLInputFactory\.newInstance\s*\(
+      category: xxe
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-611
+      _quickScan: true
+      _vulnType: XXE
+      _cwe: CWE-611
+      _chineseSeverity: 高危
+    - id: QS-JAVA-721
+      name: XXE
+      patterns:
+        - TransformerFactory\.newInstance\s*\(
+      category: xxe
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-611
+      _quickScan: true
+      _vulnType: XXE
+      _cwe: CWE-611
+      _chineseSeverity: 高危
+    - id: QS-JAVA-722
+      name: COMPONENT VULNERABILITY
+      patterns:
+        - fastjson.*1\.2\.(0|[1-6][0-9]|7[0-9]|80)
+      category: info_leak
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-502
+      _quickScan: true
+      _vulnType: COMPONENT_VULNERABILITY
+      _cwe: CWE-502
+      _chineseSeverity: 严重
+    - id: QS-JAVA-723
+      name: COMPONENT VULNERABILITY
+      patterns:
+        - log4j-core.*2\.(0|1[0-6])\.
+      category: info_leak
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-917
+      _quickScan: true
+      _vulnType: COMPONENT_VULNERABILITY
+      _cwe: CWE-917
+      _chineseSeverity: 严重
+    - id: QS-JAVA-724
+      name: SPEL INJECTION
+      patterns:
+        - parseExpression\s*\(
+      category: code_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-94
+      _quickScan: true
+      _vulnType: SPEL_INJECTION
+      _cwe: CWE-94
+      _chineseSeverity: 严重
+    - id: QS-JAVA-725
+      name: HARD CODE PASSWORD
+      patterns:
+        - \b(?:pass|secret|token|apiKey|password)\s*=\s*"[^"]{2,32}"
+      category: hard_coded_secret
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-259
+      _quickScan: true
+      _vulnType: HARD_CODE_PASSWORD
+      _cwe: CWE-259
+      _chineseSeverity: 严重
+    - id: QS-JAVA-726
+      name: JNDI INJECTION
+      patterns:
+        - InitialContext\s*\(\s*\)
+      category: code_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-74
+      _quickScan: true
+      _vulnType: JNDI_INJECTION
+      _cwe: CWE-74
+      _chineseSeverity: 严重
+    - id: QS-JAVA-727
+      name: JNDI INJECTION
+      patterns:
+        - \.lookup\s*\(\s*\w
+      category: code_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-74
+      _quickScan: true
+      _vulnType: JNDI_INJECTION
+      _cwe: CWE-74
+      _chineseSeverity: 严重
+    - id: QS-JAVA-728
+      name: CSRF DISABLED
+      patterns:
+        - csrf\s*\(\s*\)\s*\.\s*disable\s*\(\s*\)
+      category: session_fixation
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-352
+      _quickScan: true
+      _vulnType: CSRF_DISABLED
+      _cwe: CWE-352
+      _chineseSeverity: 高危
+    - id: QS-JAVA-729
+      name: SSTI
+      patterns:
+        - templateEngine\s*\.\s*process\s*\(
+      category: code_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-94
+      _quickScan: true
+      _vulnType: SSTI
+      _cwe: CWE-94
+      _chineseSeverity: 严重
+    - id: QS-JAVA-730
+      name: COMMAND INJECTION
+      patterns:
+        - ProcessBuilder\s*\(\s*.*\+
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+      _quickScan: true
+      _vulnType: COMMAND_INJECTION
+      _cwe: CWE-78
+      _chineseSeverity: 严重
+    - id: QS-JAVA-731
+      name: FILE UPLOAD
+      patterns:
+        - transferTo\s*\(\s*new\s+File
+      category: file_upload
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-434
+      _quickScan: true
+      _vulnType: FILE_UPLOAD
+      _cwe: CWE-434
+      _chineseSeverity: 高危
+    - id: QS-JAVA-732
+      name: FILE UPLOAD
+      patterns:
+        - MultipartFile\s+getOriginalFilename
+      category: file_upload
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-434
+      _quickScan: true
+      _vulnType: FILE_UPLOAD
+      _cwe: CWE-434
+      _chineseSeverity: 中危
+    - id: QS-JAVA-733
+      name: BLACKLIST VALIDATION
+      patterns:
+        - \bblack\s*=.*\bcontains\b
+      category: auth_bypass
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-693
+      _quickScan: true
+      _vulnType: BLACKLIST_VALIDATION
+      _cwe: CWE-693
+      _chineseSeverity: 中危
+    - id: QS-JAVA-734
+      name: INFO LEAK
+      patterns:
+        - System\.getProperty\s*\(\s*"[^"]+version
+      category: info_leak
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-200
+      _quickScan: true
+      _vulnType: INFO_LEAK
+      _cwe: CWE-200
+      _chineseSeverity: 中危
+    - id: QS-JAVA-735
+      name: XSS
+      patterns:
+        - model\s*\.\s*addAttribute\s*\(\s*"[^"]*"\s*,\s*(?:req|request)
+      category: xss
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-79
+      _quickScan: true
+      _vulnType: XSS
+      _cwe: CWE-79
+      _chineseSeverity: 高危
+    - id: QS-JAVA-736
+      name: OPEN REDIRECT
+      patterns:
+        - redirect:\s*\+\s*(?:url|target|redirect_uri|returnUrl)
+      category: xss
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-601
+      _quickScan: true
+      _vulnType: OPEN_REDIRECT
+      _cwe: CWE-601
+      _chineseSeverity: 高危
+    - id: QS-JAVA-737
+      name: SQL INJECTION
+      patterns:
+        - prepareStatement\s*\(\s*\w+\s*\)
+      category: sql_injection
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+      _quickScan: true
+      _vulnType: SQL_INJECTION
+      _cwe: CWE-89
+      _chineseSeverity: 高危
+    - id: QS-JAVA-738
+      name: SQL INJECTION
+      patterns:
+        - String\s+sql\s*=\s*"[^"]*"\s*\+\s*\w+
+      category: sql_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+      _quickScan: true
+      _vulnType: SQL_INJECTION
+      _cwe: CWE-89
+      _chineseSeverity: 严重
+    - id: QS-JAVA-739
+      name: INFORMATION DISCLOSURE
+      patterns:
+        - return\s+e\.getMessage\s*\(\s*\)
+      category: info_leak
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-209
+      _quickScan: true
+      _vulnType: INFORMATION_DISCLOSURE
+      _cwe: CWE-209
+      _chineseSeverity: 中危
+    - id: QS-JAVA-740
+      name: INFORMATION DISCLOSURE
+      patterns:
+        - return\s+e\.toString\s*\(\s*\)
+      category: info_leak
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-209
+      _quickScan: true
+      _vulnType: INFORMATION_DISCLOSURE
+      _cwe: CWE-209
+      _chineseSeverity: 中危
+    - id: QS-JAVA-741
+      name: INFORMATION DISCLOSURE
+      patterns:
+        - return\s+e\.getLocalizedMessage\s*\(\s*\)
+      category: info_leak
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-209
+      _quickScan: true
+      _vulnType: INFORMATION_DISCLOSURE
+      _cwe: CWE-209
+      _chineseSeverity: 中危
+    - id: QS-JAVA-742
+      name: IMPROPER EXCEPTION HANDLING
+      patterns:
+        - assert\s+\w+\s*!=\s*null
+      category: info_leak
+      severity: LOW
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-703
+      _quickScan: true
+      _vulnType: IMPROPER_EXCEPTION_HANDLING
+      _cwe: CWE-703
+      _chineseSeverity: 低危
+    - id: QS-JAVA-743
+      name: IMPROPER EXCEPTION HANDLING
+      patterns:
+        - assert\s+\w+\s*==\s*null
+      category: info_leak
+      severity: LOW
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-703
+      _quickScan: true
+      _vulnType: IMPROPER_EXCEPTION_HANDLING
+      _cwe: CWE-703
+      _chineseSeverity: 低危
+    - id: SEC-PREPSTMT-JAVA-734
+      name: SQL INJECTION
+      patterns:
+        - PreparedStatement.*\+\s*\w+
+        - stmt\.setString.*\+\s*\w+
+      category: sql_injection
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+      _quickScan: true
+      _vulnType: SQL_INJECTION
+      _cwe: CWE-89
+      _chineseSeverity: 高危
+    - id: SEC-EXCEPT-JAVA-735
+      name: EXCEPTION INFO LEAK
+      patterns:
+        - e\.getMessage\(\)\s*;\s*//.*返回
+        - e\.toString\(\)\s*;\s*return
+      category: info_leak
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-209
+      _quickScan: true
+      _vulnType: EXCEPTION_INFO_LEAK
+      _cwe: CWE-209
+      _chineseSeverity: 中危
+    - id: SEC-ASSERT-JAVA-736
+      name: ASSERT MISUSE
+      patterns:
+        - assert\s+\w+\s*:\s*new\s+\w+Exception
+      category: info_leak
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-617
+      _quickScan: true
+      _vulnType: ASSERT_MISUSE
+      _cwe: CWE-617
+      _chineseSeverity: 中危
+  sanitizers:
+    - name: SQL Parameterization
+      patterns:
+        - PreparedStatement
+        - \?\s*=
+        - setString
+        - setInt
+      category: sql_safe
+    - name: XML Security
+      patterns:
+        - XMLConstants.FEATURE_SECURE_PROCESSING
+        - setFeature.*SECURE_PROCESSING
+      category: xml_safe

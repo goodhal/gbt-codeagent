@@ -380,3 +380,125 @@ framework_configs:
       - 'hibernate.cfg.xml'
       - 'persistence.xml'
     entity_location: '**/entity/**'
+  quarkus:
+    config_files:
+      - 'application.yml'
+      - 'application.properties'
+      - 'application.yaml'
+    controller_location: '**/resource/**'
+    security_location: '**/security/**'
+    config_class_pattern: '@ApplicationScoped|@RequestScoped|@Singleton'
+  micronaut:
+    config_files:
+      - 'application.yml'
+      - 'application.properties'
+      - 'application.yaml'
+    controller_location: '**/controller/**'
+    security_location: '**/security/**'
+    config_class_pattern: '@Controller|@Singleton|@Context'
+
+# === 云原生安全控制模式 ===
+cloud_native_security:
+  aws:
+    credentials:
+      - 'AWSCredentials'
+      - 'BasicAWSCredentials'
+      - 'DefaultAWSCredentialsProviderChain'
+      - 'EnvironmentVariableCredentialsProvider'
+    services:
+      - 'AmazonS3'
+      - 'AmazonDynamoDB'
+      - 'AmazonKMS'
+      - 'IAMClient'
+      - 'SecretsManagerClient'
+      - 'SSMClient'
+  azure:
+    credentials:
+      - 'DefaultAzureCredential'
+      - 'EnvironmentCredential'
+      - 'ManagedIdentityCredential'
+    services:
+      - 'SecretClient'
+      - 'KeyVaultClient'
+      - 'BlobServiceClient'
+      - 'CosmosClient'
+  gcp:
+    credentials:
+      - 'GoogleCredentials'
+      - 'ApplicationDefaultCredentials'
+    services:
+      - 'SecretManagerServiceClient'
+      - 'Storage'
+      - 'BigQuery'
+  oauth2:
+    authorization:
+      - 'OAuth2AuthorizedClient'
+      - '@RegisteredOAuth2AuthorizedClient'
+      - 'OAuth2AuthorizedClientManager'
+      - 'ClientRegistrationRepository'
+      - 'OAuth2AccessToken'
+    client:
+      - 'WebClient'
+      - 'RestTemplate'
+      - 'OAuth2RestTemplate'
+  kubernetes:
+    config:
+      - 'ConfigMap'
+      - 'Secret'
+      - 'ServiceAccount'
+      - 'RoleBinding'
+    security:
+      - 'PodSecurityPolicy'
+      - 'NetworkPolicy'
+      - 'ServiceAccountToken'
+
+# === 容器安全模式 ===
+container_security:
+  docker:
+    patterns:
+      - 'Dockerfile'
+      - 'FROM.*latest'
+      - 'RUN.*curl|RUN.*wget'
+      - 'ADD.*http|COPY.*http'
+      - 'USER root'
+  kubernetes:
+    patterns:
+      - 'securityContext'
+      - 'runAsNonRoot'
+      - 'allowPrivilegeEscalation'
+      - 'readOnlyRootFilesystem'
+      - 'capabilities'
+
+# === 密钥管理模式 ===
+secret_management:
+  patterns:
+    - 'KeyStore'
+    - 'TrustStore'
+    - 'SecretKey'
+    - 'PrivateKey'
+    - 'PublicKey'
+    - 'KeyPairGenerator'
+    - 'KeyGenerator'
+    - 'SecretKeyFactory'
+    - 'CertificateFactory'
+    - 'KeyManagerFactory'
+    - 'TrustManagerFactory'
+
+# === API安全模式 ===
+api_security:
+  rate_limit:
+    - '@RateLimiter'
+    - 'RateLimiter.*create'
+    - 'Bucket.*builder'
+    - 'Semaphore'
+  api_gateway:
+    - 'ZuulFilter'
+    - 'GatewayFilter'
+    - 'RouteLocator'
+    - 'DiscoveryClient'
+  graphql:
+    - '@Query'
+    - '@Mutation'
+    - '@SchemaMapping'
+    - 'GraphQLSchema'
+    - 'DataFetcher'

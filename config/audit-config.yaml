@@ -1,0 +1,88 @@
+# ============================================================
+# 审计配置 — 从原 detection_rules.yaml 提取的配置信息
+# 不包含检测规则，规则请参见 config/rules/ 和 config/vuln-profiles/
+# ============================================================
+
+version: "1.0"
+
+labelDescriptions:
+  profile:
+    default: 高质量标准检查，低误报率
+    sensitive: 默认检查 + 更全面的检查，低误报率
+    security: 针对潜在漏洞代码的检查，包含所有 SEI Cert 规则
+    portability: 检测平台差异带来的代码问题（如32位和64位架构）
+    extreme: 敏感检查 + 更全面的检查，可接受的误报率
+  severity:
+    CRITICAL: 表示编译错误或会导致运行时错误的真正漏洞
+    HIGH: 真正漏洞表示源代码将导致运行时错误
+    MEDIUM: 真正漏洞表示源代码可能不会导致运行时错误（但违反直觉，容易出错）
+    LOW: 真正漏洞表示源代码难以阅读/理解或可轻松优化
+    INFO: 信息性发现，不一定是漏洞
+    UNSPECIFIED: 未指定严重级别
+  guideline:
+    cwe-top-25-2024: https://cwe.mitre.org/top25/
+    sei-cert-c: https://wiki.sei.cmu.edu/confluence/display/c/SEI+CERT+C+Coding+Standard
+    sei-cert-cpp: https://wiki.sei.cmu.edu/confluence/pages/viewpage.action?pageId=88046682
+    misra-c: https://www.misra.org.uk/
+    memory-safety: https://cwe.mitre.org/data/definitions/1399.html
+    owasp-top-10-2021: https://owasp.org/Top10/2021/
+    gbt-34943: GB/T 34943-2017 C/C++ 语言源代码漏洞测试规范
+    gbt-34944: GB/T 34944-2017 Java 语言源代码漏洞测试规范
+    gbt-34946: GB/T 34946-2017 C# 语言源代码漏洞测试规范
+    gbt-39412: GB/T 39412-2020 网络安全技术 源代码漏洞检测规则
+
+supportedLanguages:
+  - python
+  - javascript
+  - typescript
+  - java
+  - php
+  - go
+  - ruby
+  - rust
+  - cpp
+  - csharp
+
+severityLevels:
+  CRITICAL:
+    score: 9.5
+    description: 危急漏洞，可导致系统完全被控
+  HIGH:
+    score: 7.5
+    description: 高危漏洞，可导致数据泄露或权限提升
+  MEDIUM:
+    score: 5
+    description: 中危漏洞，可导致部分功能受影响
+  LOW:
+    score: 2.5
+    description: 低危漏洞，潜在风险或代码质量问题
+
+analysisOptions:
+  maxLineLength: 10000
+  maxFileSize: 10485760
+  supportedExtensions:
+    - .py
+    - .js
+    - .ts
+    - .jsx
+    - .tsx
+    - .java
+    - .php
+    - .go
+    - .rb
+    - .rs
+    - .c
+    - .cpp
+    - .cs
+
+audit:
+  maxBatches: 32
+  maxFilesPerBatch: 6
+  maxCharsPerBatch: 35000
+  maxParallelRequests: 5
+  maxParallelProjects: 4
+  embeddingMaxConcurrency: 5
+  fetchTimeoutMs: 150000
+  codeIndexMinFiles: 50
+  codeIndexMaxFiles: 100
+  checkpointInterval: 3

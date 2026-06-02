@@ -1,0 +1,16 @@
+java_struts2_wildcard:
+  description: Struts2通配符路由 — 安全风险评估
+  cwe: CWE-937
+  languages:
+    java:
+      riskPatterns:
+        - pattern: name="\*_\*"
+          description: Struts2双通配符 — 扩大攻击面
+          severity: MEDIUM
+        - pattern: struts2-core.*2\.[0-5]\.
+          description: Struts2 < 2.5.26 — 存在已知RCE(CVE-2020-17530 S2-061)
+          severity: CRITICAL
+      safePatterns:
+        - pattern: struts2-core.*2\.[5-9]\.[2-9]|struts.*6\.
+          description: Struts2 >= 2.5.26 或 6.x
+      remediation: 升级Struts2到≥2.5.26或6.x。限制通配符使用范围，避免使用*_*双通配符。

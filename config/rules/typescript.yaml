@@ -1,0 +1,102 @@
+$schema: ./rules-schema.yaml
+language: typescript
+taintTracking:
+  sources: []
+  sinks:
+    - id: QS-TYPESCRIPT-805
+      name: CODE INJECTION
+      patterns:
+        - eval\s*\(
+      category: code_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-94
+      _quickScan: true
+      _vulnType: CODE_INJECTION
+      _cwe: CWE-94
+      _chineseSeverity: 严重
+    - id: QS-TYPESCRIPT-806
+      name: XSS
+      patterns:
+        - innerHTML\s*=
+      category: xss
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-79
+      _quickScan: true
+      _vulnType: XSS
+      _cwe: CWE-79
+      _chineseSeverity: 高危
+    - id: QS-TYPESCRIPT-807
+      name: XSS
+      patterns:
+        - document\.write\s*\(
+      category: xss
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-79
+      _quickScan: true
+      _vulnType: XSS
+      _cwe: CWE-79
+      _chineseSeverity: 高危
+    - id: QS-TYPESCRIPT-808
+      name: COMMAND INJECTION
+      patterns:
+        - require\s*\(\s*child_process\s*\)
+      category: command_exec
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+      _quickScan: true
+      _vulnType: COMMAND_INJECTION
+      _cwe: CWE-78
+      _chineseSeverity: 高危
+    - id: QS-TYPESCRIPT-809
+      name: COMMAND INJECTION
+      patterns:
+        - exec\s*\(
+      category: command_exec
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+      _quickScan: true
+      _vulnType: COMMAND_INJECTION
+      _cwe: CWE-78
+      _chineseSeverity: 高危
+    - id: QS-TYPESCRIPT-810
+      name: COMMAND INJECTION
+      patterns:
+        - spawn\s*\(
+      category: command_exec
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+      _quickScan: true
+      _vulnType: COMMAND_INJECTION
+      _cwe: CWE-78
+      _chineseSeverity: 高危
+  sanitizers: []

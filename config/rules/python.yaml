@@ -1,0 +1,785 @@
+$schema: ./rules-schema.yaml
+language: python
+taintTracking:
+  sources:
+    - name: User Input
+      patterns:
+        - input\(
+        - sys\.argv
+        - os\.environ
+        - request\.args
+        - request\.form
+        - request\.json
+        - request\.values
+        - request\.data
+        - request\.cookies
+        - request\.headers
+        - flask\.request
+        - django\.request
+      category: user_input
+    - name: File Read
+      patterns:
+        - open\(
+        - file\(
+        - \.read\(
+        - Path\(
+        - Path\.open
+      category: file_input
+    - name: Network Input
+      patterns:
+        - requests\.get
+        - requests\.post
+        - requests\.request
+        - urllib\.
+        - http\.client
+        - httpx\.
+        - \.json\(\)
+        - \.text\(\)
+        - \.content\b
+        - \.read\(\)
+        - \.body
+      category: network_input
+    - name: Database Input
+      patterns:
+        - cursor\.fetch
+        - query\(
+        - get\(
+        - filter\(
+      category: db_input
+  sinks:
+    - id: SEC-CMD-001
+      name: Command Execution
+      patterns:
+        - os\.system
+        - os\.popen
+        - subprocess\.call
+        - subprocess\.Popen
+        - subprocess\.run
+        - exec\(
+        - eval\(
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+        owasp:
+          - A03:2021
+        gbt:
+          - GB/T34944-6.1.1.6
+          - GB/T34943-6.1.1.6
+      doc_url: https://docs.gbt-codeagent.com/rules/command-injection
+    - id: SEC-SQL-001
+      name: SQL Execution
+      patterns:
+        - cursor\.execute
+        - cursor\.executemany
+        - connection\.execute
+        - Session\.execute
+        - raw\(
+      category: sql_injection
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+        owasp:
+          - A03:2021
+        gbt:
+          - GB/T34944-6.1.1.1
+          - GB/T34943-6.1.1.1
+          - GB/T34946-6.1.1.1
+      doc_url: https://docs.gbt-codeagent.com/rules/sql-injection
+    - id: SEC-CODE-001
+      name: Code Execution
+      patterns:
+        - eval\(
+        - exec\(
+        - compile\(
+      category: code_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-94
+        owasp:
+          - A03:2021
+        gbt:
+          - GB/T34944-6.1.1.3
+      doc_url: https://docs.gbt-codeagent.com/rules/code-injection
+    - id: SEC-FILE-001
+      name: File Operation
+      patterns:
+        - open\(
+        - file_put_contents
+        - shutil\.copy
+        - os\.rename
+      category: file_operation
+      severity: MEDIUM
+      profiles:
+        - portability
+        - default
+      guidelines:
+        cwe:
+          - CWE-22
+        gbt:
+          - GB/T34944-6.1.1.4
+      doc_url: https://docs.gbt-codeagent.com/rules/path-traversal
+    - id: SEC-DES-001
+      name: Deserialization
+      patterns:
+        - pickle.loads
+        - yaml.load
+        - marshal.loads
+        - shelve
+      category: deserialization
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-502
+        owasp:
+          - A03:2021
+        gbt:
+          - GB/T34944-6.1.1.7
+      doc_url: https://docs.gbt-codeagent.com/rules/deserialization
+    - id: QS-PYTHON-744
+      name: COMMAND INJECTION
+      patterns:
+        - os\.system\s*\(
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+      _quickScan: true
+      _vulnType: COMMAND_INJECTION
+      _cwe: CWE-78
+      _chineseSeverity: 严重
+    - id: QS-PYTHON-745
+      name: COMMAND INJECTION
+      patterns:
+        - subprocess\.\w+\s*\(.*shell\s*=\s*True
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+      _quickScan: true
+      _vulnType: COMMAND_INJECTION
+      _cwe: CWE-78
+      _chineseSeverity: 严重
+    - id: QS-PYTHON-746
+      name: COMMAND INJECTION
+      patterns:
+        - subprocess\.Popen\s*\(
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+      _quickScan: true
+      _vulnType: COMMAND_INJECTION
+      _cwe: CWE-78
+      _chineseSeverity: 严重
+    - id: QS-PYTHON-747
+      name: CODE INJECTION
+      patterns:
+        - \bexec\s*\(
+      category: code_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-94
+      _quickScan: true
+      _vulnType: CODE_INJECTION
+      _cwe: CWE-94
+      _chineseSeverity: 严重
+    - id: QS-PYTHON-748
+      name: CODE INJECTION
+      patterns:
+        - \beval\s*\(
+      category: code_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-94
+      _quickScan: true
+      _vulnType: CODE_INJECTION
+      _cwe: CWE-94
+      _chineseSeverity: 严重
+    - id: QS-PYTHON-749
+      name: DESERIALIZATION
+      patterns:
+        - pickle\.load
+      category: deserialization
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-502
+      _quickScan: true
+      _vulnType: DESERIALIZATION
+      _cwe: CWE-502
+      _chineseSeverity: 严重
+    - id: QS-PYTHON-750
+      name: DESERIALIZATION
+      patterns:
+        - yaml\.load\s*\(
+      category: deserialization
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-502
+      _quickScan: true
+      _vulnType: DESERIALIZATION
+      _cwe: CWE-502
+      _chineseSeverity: 严重
+    - id: QS-PYTHON-751
+      name: SSRF
+      patterns:
+        - urllib\.request\.urlopen\s*\(
+      category: ssrf
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-918
+      _quickScan: true
+      _vulnType: SSRF
+      _cwe: CWE-918
+      _chineseSeverity: 严重
+    - id: QS-PYTHON-752
+      name: HARD CODE PASSWORD
+      patterns:
+        - password\s*=\s*"
+      category: hard_coded_secret
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-259
+      _quickScan: true
+      _vulnType: HARD_CODE_PASSWORD
+      _cwe: CWE-259
+      _chineseSeverity: 严重
+    - id: QS-PYTHON-753
+      name: WEAK HASH
+      patterns:
+        - hashlib\.md5
+      category: weak_hash
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-328
+      _quickScan: true
+      _vulnType: WEAK_HASH
+      _cwe: CWE-328
+      _chineseSeverity: 高危
+    - id: QS-PYTHON-754
+      name: WEAK HASH
+      patterns:
+        - hashlib\.sha1
+      category: weak_hash
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-328
+      _quickScan: true
+      _vulnType: WEAK_HASH
+      _cwe: CWE-328
+      _chineseSeverity: 高危
+    - id: QS-PYTHON-755
+      name: PREDICTABLE RANDOM
+      patterns:
+        - random\.rand
+      category: weak_random
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-338
+      _quickScan: true
+      _vulnType: PREDICTABLE_RANDOM
+      _cwe: CWE-338
+      _chineseSeverity: 高危
+    - id: QS-PYTHON-756
+      name: INFO LEAK
+      patterns:
+        - logging\.info.*password
+      category: info_leak
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-532
+      _quickScan: true
+      _vulnType: INFO_LEAK
+      _cwe: CWE-532
+      _chineseSeverity: 中危
+    - id: QS-PYTHON-757
+      name: AUTH BYPASS
+      patterns:
+        - is_admin\s*=\s*user_input
+      category: auth_bypass
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-287
+      _quickScan: true
+      _vulnType: AUTH_BYPASS
+      _cwe: CWE-287
+      _chineseSeverity: 严重
+    - id: QS-PYTHON-758
+      name: INFINITE LOOP
+      patterns:
+        - "while True:"
+      category: info_leak
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-835
+      _quickScan: true
+      _vulnType: INFINITE_LOOP
+      _cwe: CWE-835
+      _chineseSeverity: 高危
+    - id: QS-PYTHON-759
+      name: IMPROPER EXCEPTION HANDLING
+      patterns:
+        - except:\s*pass
+      category: info_leak
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-703
+      _quickScan: true
+      _vulnType: IMPROPER_EXCEPTION_HANDLING
+      _cwe: CWE-703
+      _chineseSeverity: 高危
+    - id: QS-PYTHON-760
+      name: SQL INJECTION
+      patterns:
+        - execute\(.*f"
+      category: sql_injection
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-89
+      _quickScan: true
+      _vulnType: SQL_INJECTION
+      _cwe: CWE-89
+      _chineseSeverity: 严重
+    - id: QS-PYTHON-761
+      name: PATH TRAVERSAL
+      patterns:
+        - open\(.*filename
+      category: file_operation
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-22
+      _quickScan: true
+      _vulnType: PATH_TRAVERSAL
+      _cwe: CWE-22
+      _chineseSeverity: 高危
+    - id: QS-PYTHON-762
+      name: FORMAT STRING VULNERABILITY
+      patterns:
+        - format\s*\(\s*(?:user|input|request|data|param)
+      category: format_string
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-134
+      _quickScan: true
+      _vulnType: FORMAT_STRING_VULNERABILITY
+      _cwe: CWE-134
+      _chineseSeverity: 高危
+    - id: QS-PYTHON-763
+      name: FORMAT STRING VULNERABILITY
+      patterns:
+        - \.\s*format\s*\(\s*(?:user|input|request|data|param)
+      category: format_string
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-134
+      _quickScan: true
+      _vulnType: FORMAT_STRING_VULNERABILITY
+      _cwe: CWE-134
+      _chineseSeverity: 高危
+    - id: QS-PYTHON-764
+      name: ARBITRARY FILE READ
+      patterns:
+        - open\s*\(\s*(?:user|input|request|data|param|filename|filepath|path)
+      category: file_operation
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-22
+      _quickScan: true
+      _vulnType: ARBITRARY_FILE_READ
+      _cwe: CWE-22
+      _chineseSeverity: 高危
+    - id: QS-PYTHON-765
+      name: PATH TRAVERSAL
+      patterns:
+        - os\.path\.join\s*\([^)]*(?:user|input|request|filename)
+      category: file_operation
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-22
+      _quickScan: true
+      _vulnType: PATH_TRAVERSAL
+      _cwe: CWE-22
+      _chineseSeverity: 高危
+    - id: QS-PYTHON-766
+      name: COMMAND INJECTION
+      patterns:
+        - subprocess\.\w+\s*\(.*\+
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+      _quickScan: true
+      _vulnType: COMMAND_INJECTION
+      _cwe: CWE-78
+      _chineseSeverity: 严重
+    - id: QS-PYTHON-767
+      name: COMMAND INJECTION
+      patterns:
+        - os\.system\s*\([^)]*\+
+      category: command_exec
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-78
+      _quickScan: true
+      _vulnType: COMMAND_INJECTION
+      _cwe: CWE-78
+      _chineseSeverity: 严重
+    - id: QS-PYTHON-768
+      name: HARDCODED CREDENTIALS
+      patterns:
+        - secret\s*=\s*"
+      category: hard_coded_secret
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-798
+      _quickScan: true
+      _vulnType: HARDCODED_CREDENTIALS
+      _cwe: CWE-798
+      _chineseSeverity: 严重
+    - id: QS-PYTHON-769
+      name: HARDCODED CREDENTIALS
+      patterns:
+        - api_key\s*=\s*"
+      category: hard_coded_secret
+      severity: CRITICAL
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-798
+      _quickScan: true
+      _vulnType: HARDCODED_CREDENTIALS
+      _cwe: CWE-798
+      _chineseSeverity: 严重
+    - id: SEC-AUTH-PY-716
+      name: AUTH BYPASS
+      patterns:
+        - skip_auth|bypass_auth|auth_bypass
+      category: auth_bypass
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-863
+      _quickScan: true
+      _vulnType: AUTH_BYPASS
+      _cwe: CWE-863
+      _chineseSeverity: 高危
+    - id: SEC-AUTH2-PY-717
+      name: AUTH BYPASS
+      patterns:
+        - verify_token|check_auth|is_authenticated
+      category: auth_bypass
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-863
+      _quickScan: true
+      _vulnType: AUTH_BYPASS
+      _cwe: CWE-863
+      _chineseSeverity: 中危
+    - id: SEC-ACCESS-PY-718
+      name: MISSING ACCESS CONTROL
+      patterns:
+        - "@app\\.route.*methods.*without.*login_required"
+      category: auth_bypass
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-862
+      _quickScan: true
+      _vulnType: MISSING_ACCESS_CONTROL
+      _cwe: CWE-862
+      _chineseSeverity: 高危
+    - id: SEC-IDOR-PY-719
+      name: MISSING ACCESS CONTROL
+      patterns:
+        - def\s+\w+.*resource_id.*:\s*$\s*return\s+get_resource
+      category: auth_bypass
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-862
+      _quickScan: true
+      _vulnType: MISSING_ACCESS_CONTROL
+      _cwe: CWE-862
+      _chineseSeverity: 高危
+    - id: SEC-HARDCRED-PY-720
+      name: HARDCODED CREDENTIALS
+      patterns:
+        - HARDCODED_CREDENTIALS_pattern
+      category: hard_coded_secret
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-798
+      _quickScan: true
+      _vulnType: HARDCODED_CREDENTIALS
+      _cwe: CWE-798
+      _chineseSeverity: 高危
+    - id: SEC-RATE-PY-721
+      name: NO RATE LIMIT
+      patterns:
+        - NO_RATE_LIMIT_pattern
+      category: auth_bypass
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-770
+      _quickScan: true
+      _vulnType: NO_RATE_LIMIT
+      _cwe: CWE-770
+      _chineseSeverity: 中危
+    - id: SEC-FMTSTR-PY-722
+      name: FORMAT STRING VULNERABILITY
+      patterns:
+        - \.format\s*\(\s*(?:user|input|request|data|param)
+      category: format_string
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-134
+      _quickScan: true
+      _vulnType: FORMAT_STRING_VULNERABILITY
+      _cwe: CWE-134
+      _chineseSeverity: 中危
+    - id: SENDFILE-PY-723
+      name: PATH TRAVERSAL
+      patterns:
+        - send_file\s*\(
+      category: file_operation
+      severity: HIGH
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-22
+      _quickScan: true
+      _vulnType: PATH_TRAVERSAL
+      _cwe: CWE-22
+      _chineseSeverity: 高危
+    - id: SEC-LOGINJ-PY-724
+      name: LOG INJECTION
+      patterns:
+        - logging\.info\s*\(\s*f"
+      category: log_injection
+      severity: MEDIUM
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-117
+      _quickScan: true
+      _vulnType: LOG_INJECTION
+      _cwe: CWE-117
+      _chineseSeverity: 中危
+    - id: SEC-EXCEPT-PY-725
+      name: IMPROPER EXCEPTION HANDLING
+      patterns:
+        - except\s+\w+.*:\s*return
+      category: info_leak
+      severity: LOW
+      profiles:
+        - security
+        - default
+      guidelines:
+        cwe:
+          - CWE-390
+      _quickScan: true
+      _vulnType: IMPROPER_EXCEPTION_HANDLING
+      _cwe: CWE-390
+      _chineseSeverity: 低危
+  sanitizers:
+    - name: Input Validation
+      patterns:
+        - re\.match
+        - re\.search
+        - re\.fullmatch
+        - validate_
+        - is_valid_
+        - schema\.validate
+        - pydantic\.BaseModel
+        - marshmallow\.
+        - cerberus\.
+      category: validation
+    - name: Output Encoding
+      patterns:
+        - html\.escape
+        - html\.unescape
+        - markupsafe\.
+        - bleach\.
+        - jinja2\.Markup
+        - escape\(
+      category: encoding
+    - name: SQL Parameterization
+      patterns:
+        - execute\s*\(\s*[^,]+,\s*\[
+        - execute\s*\(\s*[^,]+,\s*\(
+        - execute.*%s
+        - execute.*:\w+
+        - prepare\(
+        - paramstyle
+        - bindparam
+      category: sql_safe
+    - name: Shell Escaping
+      patterns:
+        - shlex\.quote
+        - shlex\.escape
+        - subprocess\.list2cmdline
+        - pipes\.quote
+      category: shell_safe
+    - name: Path Security
+      patterns:
+        - os\.path\.abspath
+        - os\.path\.realpath
+        - os\.path\.normpath
+        - pathlib\.Path.*resolve
+        - pathlib\.Path.*absolute
+        - basename\(
+        - realpath\(
+      category: path_safe
+    - name: URL Security
+      patterns:
+        - urllib\.parse\.quote
+        - urllib\.parse\.quote_plus
+        - urlencode\(
+        - quote\(
+      category: url_safe

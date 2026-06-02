@@ -1,0 +1,49 @@
+business_logic:
+  description: 业务逻辑漏洞
+  cwe: CWE-840
+  languages:
+    python:
+      riskPatterns:
+        - pattern: price|amount|total|balance.*=.*request\.
+          description: 金额/价格由客户端输入控制
+        - pattern: status\s*=\s*request\.
+          description: 状态由客户端输入直接控制
+        - pattern: def\s+(cancel|refund|approve|reject).*\(.*request
+          description: 敏感操作无状态校验
+      safePatterns:
+        - pattern: server.*price|recalculate|verify_amount
+          description: 服务端重新计算价格
+        - pattern: transition.*status|can_transition|valid_status
+          description: 状态机转换验证
+      severity: HIGH
+      remediation: 价格/金额必须在服务端验证，状态转换使用状态机
+    javascript:
+      riskPatterns:
+        - pattern: price\s*[:=].*req\.(body|query)
+          description: 价格由客户端请求直接决定
+        - pattern: status\s*[:=].*req\.(body|query)
+          description: 状态由客户端输入控制
+        - pattern: quantity\s*[:=].*req\.(body|query)
+          description: 数量由客户端输入控制
+      safePatterns:
+        - pattern: product\.price|serverPrice|dbPrice
+          description: 从数据库取价格
+        - pattern: statusMachine|validTransitions
+          description: 状态机验证
+      severity: HIGH
+      remediation: 价格从数据库获取，状态转换在服务端验证
+    java:
+      riskPatterns:
+        - pattern: price\.set|setPrice\(.*request
+          description: 价格由客户端控制
+        - pattern: order\.setStatus\(.*request
+          description: 订单状态由客户端控制
+        - pattern: amount\.set|setAmount\(.*request
+          description: 金额由客户端控制
+      safePatterns:
+        - pattern: "@Transactional.*verify|checkBalance|validateOrder"
+          description: 事务中验证
+        - pattern: StateMachine|OrderStatus.*transition
+          description: 状态机转换
+      severity: HIGH
+      remediation: 金额和状态必须在服务端验证，使用状态机
